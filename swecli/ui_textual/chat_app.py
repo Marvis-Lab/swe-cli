@@ -481,11 +481,11 @@ class SWECLIChatApp(App):
 
     def action_scroll_up(self) -> None:
         """Scroll conversation up (Page Up)."""
-        self.conversation.scroll_page_up()
+        self.conversation.scroll_partial_page(direction=-1)
 
     def action_scroll_down(self) -> None:
         """Scroll conversation down (Page Down)."""
-        self.conversation.scroll_page_down()
+        self.conversation.scroll_partial_page(direction=1)
 
     def action_scroll_up_line(self) -> None:
         """Scroll conversation up one line (Up Arrow)."""

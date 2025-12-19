@@ -120,7 +120,7 @@ class ConversationLog(RichLog):
         """Scroll a fraction of the viewport instead of a full page."""
         self._user_scrolled = True
         self.auto_scroll = False
-        stride = max(self.size.height // 6, 3)  # Smaller jump for better control
+        stride = max(self.size.height // 10, 3)  # 10% of viewport per page
         self.scroll_relative(y=direction * stride)
 
     def _reset_auto_scroll(self) -> None:
@@ -688,6 +688,13 @@ class ConversationLog(RichLog):
         segments = list(formatted.render(console))
         strip = Strip(segments)
 
+        # Pad strip to clear old content when new line is shorter
+        # Get the old line's cell length to ensure we clear all characters
+        old_line = self.lines[self._tool_call_start]
+        old_width = old_line.cell_length if hasattr(old_line, 'cell_length') else 0
+        target_width = max(old_width, self.size.width or 200)
+        strip = strip.adjust_cell_length(target_width)
+
         # Update the line at the original position (in-place)
         self.lines[self._tool_call_start] = strip
 
@@ -768,9 +775,18 @@ class ConversationLog(RichLog):
         from rich.console import Console
         from textual.strip import Strip
 
-        console = Console(width=max(self.size.width or 200, 200), force_terminal=True)
-        segments = list(console.render(formatted))
+        # Use Text.render() instead of Console.render() for clean segments
+        # Console.render() may add wrapping/transformations that cause corruption
+        console = Console(width=1000, force_terminal=True, no_color=False)
+        segments = list(formatted.render(console))
         strip = Strip(segments)
+
+        # Pad strip to clear old content when new line is shorter
+        # Get the old line's cell length to ensure we clear all characters
+        old_line = self.lines[self._nested_tool_line]
+        old_width = old_line.cell_length if hasattr(old_line, 'cell_length') else 0
+        target_width = max(old_width, self.size.width or 200)
+        strip = strip.adjust_cell_length(target_width)
 
         # Update the line at the tracked position (in-place)
         self.lines[self._nested_tool_line] = strip
