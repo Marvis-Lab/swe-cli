@@ -12,6 +12,7 @@ from swecli.core.context_engineering.tools.handlers.process_handlers import Proc
 from swecli.core.context_engineering.tools.handlers.web_handlers import WebToolHandler
 from swecli.core.context_engineering.tools.handlers.screenshot_handler import ScreenshotToolHandler
 from swecli.core.context_engineering.tools.handlers.todo_handler import TodoHandler
+from swecli.core.context_engineering.tools.implementations.pdf_tool import PDFTool
 from swecli.core.context_engineering.tools.symbol_tools import (
     handle_find_symbol,
     handle_find_referencing_symbols,
@@ -30,6 +31,7 @@ _PLAN_READ_ONLY_TOOLS = {
     "get_process_output",
     "list_screenshots",
     "analyze_image",  # VLM is read-only, safe for planning mode
+    "read_pdf",  # PDF extraction is read-only
     # Symbol tools (read-only)
     "find_symbol",
     "find_referencing_symbols",
@@ -68,6 +70,7 @@ class ToolRegistry:
         self._mcp_handler = McpToolHandler(mcp_manager)
         self._screenshot_handler = ScreenshotToolHandler()
         self.todo_handler = TodoHandler()
+        self._pdf_tool = PDFTool()
         self._subagent_manager: Union[Any, None] = None
         self.set_mcp_manager(mcp_manager)
 
@@ -103,6 +106,8 @@ class ToolRegistry:
             "rename_symbol": lambda args: handle_rename_symbol(args),
             # Subagent spawning tool
             "spawn_subagent": self._execute_spawn_subagent,
+            # PDF extraction tool
+            "read_pdf": self._read_pdf,
         }
 
     def set_subagent_manager(self, manager: Any) -> None:
@@ -160,11 +165,15 @@ class ToolRegistry:
         # Get ui_callback from context for nested tool call display
         ui_callback = context.ui_callback if context else None
 
+        # Get task_monitor from context for interrupt support
+        task_monitor = context.task_monitor if context else None
+
         result = self._subagent_manager.execute_subagent(
             name=subagent_type,
             task=description,
             deps=deps,
             ui_callback=ui_callback,
+            task_monitor=task_monitor,
         )
 
         # Format output for consistency
@@ -184,6 +193,7 @@ class ToolRegistry:
                 "success": False,
                 "error": f"[{subagent_type}] {error}",
                 "output": None,
+                "interrupted": result.get("interrupted", False),  # Propagate interrupt flag
             }
 
     def get_schemas(self) -> list[dict[str, Any]]:
@@ -409,3 +419,58 @@ class ToolRegistry:
     def _complete_todo(self, arguments: dict[str, Any], context: Any = None) -> dict[str, Any]:
         """Execute the complete_todo tool."""
         return self.todo_handler.complete_todo(id=arguments.get("id"))
+
+    def _read_pdf(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        """Execute the read_pdf tool to extract text from a PDF file.
+
+        Args:
+            arguments: Dict with 'file_path' key
+
+        Returns:
+            Result with extracted text content and metadata
+        """
+        file_path = arguments.get("file_path", "")
+        if not file_path:
+            return {
+                "success": False,
+                "error": "file_path is required for read_pdf",
+                "output": None,
+            }
+
+        result = self._pdf_tool.extract_text(file_path)
+
+        if result.get("success"):
+            # Format output for display
+            content = result.get("content", "")
+            metadata = result.get("metadata", {})
+            page_count = result.get("page_count", 0)
+            sections = result.get("sections", [])
+
+            output_parts = []
+            if metadata:
+                if metadata.get("title"):
+                    output_parts.append(f"Title: {metadata['title']}")
+                if metadata.get("author"):
+                    output_parts.append(f"Author: {metadata['author']}")
+            output_parts.append(f"Pages: {page_count}")
+            if sections:
+                output_parts.append(f"Detected sections: {len(sections)}")
+                section_titles = [s.get('title', '') for s in sections[:10]]
+                output_parts.append(f"  {', '.join(section_titles)}")
+
+            output_parts.append("\n--- Content ---\n")
+            output_parts.append(content)
+
+            return {
+                "success": True,
+                "output": "\n".join(output_parts),
+                "metadata": metadata,
+                "page_count": page_count,
+                "sections": sections,
+            }
+        else:
+            return {
+                "success": False,
+                "error": result.get("error", "Unknown error"),
+                "output": None,
+            }

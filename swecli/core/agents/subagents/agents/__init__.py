@@ -6,6 +6,7 @@ from .web_generator import WEB_GENERATOR_SUBAGENT
 from .code_reviewer import CODE_REVIEWER_SUBAGENT
 from .test_writer import TEST_WRITER_SUBAGENT
 from .documentation import DOCUMENTATION_SUBAGENT
+from .paper2code import PAPER2CODE_SUBAGENT
 
 ALL_SUBAGENTS = [
     CODE_EXPLORER_SUBAGENT,
@@ -14,4 +15,5 @@ ALL_SUBAGENTS = [
     CODE_REVIEWER_SUBAGENT,
     TEST_WRITER_SUBAGENT,
     DOCUMENTATION_SUBAGENT,
+    PAPER2CODE_SUBAGENT,
 ]

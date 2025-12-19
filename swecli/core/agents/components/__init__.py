@@ -1,6 +1,6 @@
 """Supporting components used by agent implementations."""
 
-from .api_configuration import resolve_api_config, create_http_client
+from .api_configuration import resolve_api_config, create_http_client, build_max_tokens_param
 from .http_client import AgentHttpClient, HttpResult
 from .plan_parser import ParsedPlan, parse_plan, extract_plan_from_response
 from .response_processing import ResponseCleaner
@@ -16,6 +16,7 @@ __all__ = [
     "ResponseCleaner",
     "SystemPromptBuilder",
     "ToolSchemaBuilder",
+    "build_max_tokens_param",
     "create_http_client",
     "extract_plan_from_response",
     "parse_plan",

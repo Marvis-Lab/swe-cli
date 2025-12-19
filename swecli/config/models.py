@@ -20,14 +20,15 @@ class ModelInfo:
     id: str
     name: str
     provider: str
-    pricing_input: float
-    pricing_output: float
-    pricing_unit: str
     context_length: int
     capabilities: List[str]
+    pricing_input: float = 0.0
+    pricing_output: float = 0.0
+    pricing_unit: str = "per million tokens"
     serverless: bool = False
     tunable: bool = False
     recommended: bool = False
+    max_tokens: Optional[int] = None
 
     def __str__(self) -> str:
         """String representation of model."""
@@ -36,12 +37,13 @@ class ModelInfo:
             f"{self.name}\n"
             f"  Provider: {self.provider}\n"
             f"  Context: {self.context_length:,} tokens\n"
-            f"  Pricing: ${self.pricing_input:.2f}/$  {self.pricing_output:.2f} {self.pricing_unit}\n"
             f"  Capabilities: {caps}"
         )
 
     def format_pricing(self) -> str:
         """Format pricing for display."""
+        if self.pricing_input == 0 and self.pricing_output == 0:
+            return "N/A"
         return f"${self.pricing_input:.2f} in / ${self.pricing_output:.2f} out {self.pricing_unit}"
 
 
@@ -106,18 +108,20 @@ class ModelRegistry:
             models = {}
 
             for model_key, model_data in provider_data["models"].items():
+                pricing = model_data.get("pricing", {})
                 models[model_key] = ModelInfo(
                     id=model_data["id"],
                     name=model_data["name"],
                     provider=model_data["provider"],
-                    pricing_input=model_data["pricing"]["input"],
-                    pricing_output=model_data["pricing"]["output"],
-                    pricing_unit=model_data["pricing"]["unit"],
                     context_length=model_data["context_length"],
                     capabilities=model_data["capabilities"],
+                    pricing_input=pricing.get("input", 0.0),
+                    pricing_output=pricing.get("output", 0.0),
+                    pricing_unit=pricing.get("unit", "per million tokens"),
                     serverless=model_data.get("serverless", False),
                     tunable=model_data.get("tunable", False),
                     recommended=model_data.get("recommended", False),
+                    max_tokens=model_data.get("max_tokens"),
                 )
 
             self.providers[provider_id] = ProviderInfo(
@@ -279,18 +283,20 @@ class ModelRegistry:
         for provider_id, provider_data in data["providers"].items():
             models = {}
             for model_key, model_data in provider_data["models"].items():
+                pricing = model_data.get("pricing", {})
                 models[model_key] = ModelInfo(
                     id=model_data["id"],
                     name=model_data["name"],
                     provider=model_data["provider"],
-                    pricing_input=model_data["pricing"]["input"],
-                    pricing_output=model_data["pricing"]["output"],
-                    pricing_unit=model_data["pricing"]["unit"],
                     context_length=model_data["context_length"],
                     capabilities=model_data["capabilities"],
+                    pricing_input=pricing.get("input", 0.0),
+                    pricing_output=pricing.get("output", 0.0),
+                    pricing_unit=pricing.get("unit", "per million tokens"),
                     serverless=model_data.get("serverless", False),
                     tunable=model_data.get("tunable", False),
                     recommended=model_data.get("recommended", False),
+                    max_tokens=model_data.get("max_tokens"),
                 )
 
             self.providers[provider_id] = ProviderInfo(

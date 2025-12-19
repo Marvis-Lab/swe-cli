@@ -248,6 +248,32 @@ class REPL:
             self.tool_registry.set_mcp_manager(self.mcp_manager)
         self.runtime_suite.refresh_agents()
 
+    def rebuild_agents(self) -> None:
+        """Rebuild agents with updated configuration (e.g., after model/provider change).
+
+        This is needed when the model provider changes, as the HTTP client
+        needs to use the new provider's API key.
+        """
+        # Refresh config
+        self.config = self.config_manager.get_config()
+
+        # Rebuild agents with new config
+        self.runtime_suite.rebuild_agents(
+            self.config,
+            self.mode_manager,
+            self.config_manager.working_dir,
+        )
+
+        # Update agent references
+        self.normal_agent = self.runtime_suite.agents.normal
+        self.planning_agent = self.runtime_suite.agents.planning
+
+        # Update current agent based on mode
+        if self.mode_manager.current_mode == OperationMode.PLAN:
+            self.agent = self.planning_agent
+        else:
+            self.agent = self.normal_agent
+
     def _build_key_bindings(self) -> KeyBindings:
         """Configure prompt key bindings for high-speed workflows."""
         kb = KeyBindings()

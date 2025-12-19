@@ -7,6 +7,40 @@ from typing import Tuple, Any
 from swecli.models.config import AppConfig
 
 
+# Models that require max_completion_tokens instead of max_tokens
+_MAX_COMPLETION_TOKENS_PREFIXES = ("o1", "o3", "o4", "gpt-5")
+
+
+def uses_max_completion_tokens(model: str) -> bool:
+    """Check if a model requires max_completion_tokens instead of max_tokens.
+
+    GPT-5 and O-series models (o1, o3, o4) use max_completion_tokens parameter
+    instead of max_tokens for the OpenAI API.
+
+    Args:
+        model: The model ID string
+
+    Returns:
+        True if the model uses max_completion_tokens
+    """
+    return model.startswith(_MAX_COMPLETION_TOKENS_PREFIXES)
+
+
+def build_max_tokens_param(model: str, max_tokens: int) -> dict[str, int]:
+    """Build the appropriate max tokens parameter for a model.
+
+    Args:
+        model: The model ID string
+        max_tokens: The max tokens value
+
+    Returns:
+        Dict with either {"max_completion_tokens": value} or {"max_tokens": value}
+    """
+    if uses_max_completion_tokens(model):
+        return {"max_completion_tokens": max_tokens}
+    return {"max_tokens": max_tokens}
+
+
 def resolve_api_config(config: AppConfig) -> Tuple[str, dict[str, str]]:
     """Return the API URL and headers according to the configured provider.
 

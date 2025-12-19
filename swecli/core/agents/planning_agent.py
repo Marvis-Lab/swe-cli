@@ -10,6 +10,7 @@ from swecli.core.agents.components import (
     AgentHttpClient,
     PlanningPromptBuilder,
     ResponseCleaner,
+    build_max_tokens_param,
     resolve_api_config,
 )
 from swecli.core.agents.components.tool_schema_builder import PlanningToolSchemaBuilder
@@ -55,7 +56,7 @@ class PlanningAgent(BaseAgent):
             "tools": self.tool_schemas,
             "tool_choice": "auto",
             "temperature": self.config.temperature,
-            "max_tokens": self.config.max_tokens,
+            **build_max_tokens_param(self.config.model, self.config.max_tokens),
         }
 
         result = self._http_client.post_json(payload, task_monitor=task_monitor)
@@ -120,7 +121,7 @@ class PlanningAgent(BaseAgent):
                 "tools": self.tool_schemas,
                 "tool_choice": "auto",
                 "temperature": self.config.temperature,
-                "max_tokens": self.config.max_tokens,
+                **build_max_tokens_param(self.config.model, self.config.max_tokens),
             }
 
             result = self._http_client.post_json(payload)

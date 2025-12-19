@@ -23,6 +23,25 @@ class RuntimeSuite:
         """Refresh tool schemas/prompts for both agents after tool updates."""
         self.agent_factory.refresh_tools(self.agents)
 
+    def rebuild_agents(self, config: Any, mode_manager: Any, working_dir: Any = None) -> None:
+        """Rebuild agents with new configuration (e.g., after model/provider change).
+
+        This is needed when the model provider changes, as the HTTP client
+        needs to use the new provider's API key.
+
+        Args:
+            config: New AppConfig with updated model/provider
+            mode_manager: Mode manager instance
+            working_dir: Working directory for file operations
+        """
+        self.agent_factory = AgentFactory(
+            config,
+            self.tool_registry,
+            mode_manager,
+            working_dir,
+        )
+        self.agents = self.agent_factory.create_agents()
+
 
 class RuntimeService:
     """Builds the tool registry and agents from high-level dependencies."""

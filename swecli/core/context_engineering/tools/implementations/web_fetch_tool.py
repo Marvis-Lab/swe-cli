@@ -121,6 +121,11 @@ class WebFetchTool:
             Dictionary with success, content, and optional error
         """
         try:
+            # Lazy import crawl4ai to avoid Pydantic deprecation warnings at startup
+            from crawl4ai import AsyncWebCrawler, BrowserConfig, CacheMode, CrawlerRunConfig
+            from crawl4ai.deep_crawling import BFSDeepCrawlStrategy, DFSDeepCrawlStrategy, BestFirstCrawlingStrategy
+            from crawl4ai.deep_crawling.filters import FilterChain, DomainFilter, URLPatternFilter
+
             # Validate URL format
             if not url.startswith(("http://", "https://")):
                 return {
@@ -157,13 +162,19 @@ class WebFetchTool:
             stream_mode = stream if deep_crawl else False
 
             if deep_crawl:
-                filter_chain = self._build_filter_chain(allowed_domains, blocked_domains, url_patterns)
+                filter_chain = self._build_filter_chain(
+                    allowed_domains, blocked_domains, url_patterns,
+                    FilterChain=FilterChain, DomainFilter=DomainFilter, URLPatternFilter=URLPatternFilter,
+                )
                 deep_strategy = self._build_deep_strategy(
                     strategy=crawl_strategy,
                     max_depth=max_depth,
                     include_external=include_external,
                     max_pages=max_pages,
                     filter_chain=filter_chain,
+                    BFSDeepCrawlStrategy=BFSDeepCrawlStrategy,
+                    DFSDeepCrawlStrategy=DFSDeepCrawlStrategy,
+                    BestFirstCrawlingStrategy=BestFirstCrawlingStrategy,
                 )
             else:
                 filter_chain = None
@@ -275,7 +286,11 @@ class WebFetchTool:
         allowed_domains: Optional[Sequence[str]],
         blocked_domains: Optional[Sequence[str]],
         url_patterns: Optional[Sequence[str]],
-    ) -> FilterChain | None:
+        *,
+        FilterChain: type,
+        DomainFilter: type,
+        URLPatternFilter: type,
+    ) -> Any:
         filters = []
 
         if allowed_domains or blocked_domains:
@@ -298,7 +313,10 @@ class WebFetchTool:
         max_depth: int,
         include_external: bool,
         max_pages: Optional[int],
-        filter_chain: FilterChain | None,
+        filter_chain: Any,
+        BFSDeepCrawlStrategy: type,
+        DFSDeepCrawlStrategy: type,
+        BestFirstCrawlingStrategy: type,
     ):
         strategy_key = (strategy or "best_first").lower()
         strategy_map = {

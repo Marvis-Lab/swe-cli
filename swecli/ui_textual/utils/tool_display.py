@@ -10,6 +10,7 @@ from rich.text import Text
 
 _TOOL_DISPLAY_PARTS: dict[str, tuple[str, str]] = {
     "read_file": ("Read", "file"),
+    "read_pdf": ("Read", "pdf"),
     "write_file": ("Write", "file"),
     "edit_file": ("Edit", "file"),
     "delete_file": ("Delete", "file"),
@@ -44,6 +45,7 @@ _PATH_HINT_KEYS = {"file_path", "path", "directory", "dir", "image_path", "worki
 
 _PRIMARY_ARG_MAP: dict[str, tuple[str, ...]] = {
     "read_file": ("file_path",),
+    "read_pdf": ("file_path",),
     "write_file": ("file_path", "path"),
     "edit_file": ("file_path", "path"),
     "delete_file": ("file_path", "path"),

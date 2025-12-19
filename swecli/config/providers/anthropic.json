@@ -5,28 +5,25 @@
   "api_key_env": "ANTHROPIC_API_KEY",
   "api_base_url": "https://api.anthropic.com/v1",
   "models": {
+    "claude-sonnet-4-20250514": {
+      "id": "claude-sonnet-4-20250514",
+      "name": "Claude Sonnet 4",
+      "provider": "Anthropic",
+      "context_length": 200000,
+      "capabilities": ["text", "vision", "code"],
+      "recommended": true
+    },
     "claude-3-5-sonnet-20241022": {
       "id": "claude-3-5-sonnet-20241022",
       "name": "Claude 3.5 Sonnet",
       "provider": "Anthropic",
-      "pricing": {
-        "input": 3.00,
-        "output": 15.00,
-        "unit": "per million tokens"
-      },
       "context_length": 200000,
-      "capabilities": ["text", "vision", "code"],
-      "recommended": true
+      "capabilities": ["text", "vision", "code"]
     },
     "claude-3-5-haiku-20241022": {
       "id": "claude-3-5-haiku-20241022",
       "name": "Claude 3.5 Haiku",
       "provider": "Anthropic",
-      "pricing": {
-        "input": 1.00,
-        "output": 5.00,
-        "unit": "per million tokens"
-      },
       "context_length": 200000,
       "capabilities": ["text", "vision"]
     },
@@ -34,13 +31,15 @@
       "id": "claude-3-opus-20240229",
       "name": "Claude 3 Opus",
       "provider": "Anthropic",
-      "pricing": {
-        "input": 15.00,
-        "output": 75.00,
-        "unit": "per million tokens"
-      },
       "context_length": 200000,
       "capabilities": ["text", "vision", "code"]
+    },
+    "claude-opus-4-20250514": {
+      "id": "claude-opus-4-20250514",
+      "name": "Claude Opus 4",
+      "provider": "Anthropic",
+      "context_length": 200000,
+      "capabilities": ["text", "vision", "code", "reasoning"]
     }
   }
 }

@@ -10,6 +10,7 @@ from swecli.core.agents.components import (
     ResponseCleaner,
     SystemPromptBuilder,
     ToolSchemaBuilder,
+    build_max_tokens_param,
     create_http_client,
 )
 from swecli.models.config import AppConfig
@@ -54,7 +55,7 @@ class SwecliAgent(BaseAgent):
             "tools": self.tool_schemas,
             "tool_choice": "auto",
             "temperature": self.config.temperature,
-            "max_tokens": self.config.max_tokens,
+            **build_max_tokens_param(self.config.model, self.config.max_tokens),
         }
 
         result = self._http_client.post_json(payload, task_monitor=task_monitor)
@@ -100,6 +101,7 @@ class SwecliAgent(BaseAgent):
         message_history: Optional[list[dict]] = None,
         ui_callback: Optional[Any] = None,
         max_iterations: Optional[int] = None,  # None = unlimited
+        task_monitor: Optional[Any] = None,  # Task monitor for interrupt support
     ) -> dict:
         messages = message_history or []
 
@@ -119,6 +121,16 @@ class SwecliAgent(BaseAgent):
                     "messages": messages,
                     "success": False,
                 }
+
+            # Check for interrupt request via task_monitor (Textual UI)
+            if task_monitor is not None and task_monitor.should_interrupt():
+                return {
+                    "content": "Task interrupted by user",
+                    "messages": messages,
+                    "success": False,
+                    "interrupted": True,
+                }
+
             # Check for interrupt request (for web UI)
             if hasattr(self, 'web_state') and self.web_state.is_interrupt_requested():
                 self.web_state.clear_interrupt()
@@ -135,11 +147,12 @@ class SwecliAgent(BaseAgent):
                 "tools": self.tool_schemas,
                 "tool_choice": "auto",
                 "temperature": self.config.temperature,
-                "max_tokens": self.config.max_tokens,
+                **build_max_tokens_param(self.config.model, self.config.max_tokens),
             }
 
-            monitor = None
-            if hasattr(self, 'web_state'):
+            # Use provided task_monitor, or create WebInterruptMonitor for web UI
+            monitor = task_monitor
+            if monitor is None and hasattr(self, 'web_state'):
                 monitor = WebInterruptMonitor(self.web_state)
 
             result = self._http_client.post_json(payload, task_monitor=monitor)
@@ -205,6 +218,15 @@ class SwecliAgent(BaseAgent):
                 # Notify UI callback after tool execution
                 if ui_callback and hasattr(ui_callback, "on_tool_result"):
                     ui_callback.on_tool_result(tool_name, tool_args, result)
+
+                # Check if tool execution was interrupted (e.g., subagent cancelled via Escape)
+                if result.get("interrupted"):
+                    return {
+                        "content": "Task interrupted by user",
+                        "messages": messages,
+                        "success": False,
+                        "interrupted": True,
+                    }
 
                 tool_result = (
                     result.get("output", "")

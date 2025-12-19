@@ -71,6 +71,7 @@ class SubAgentManager:
             "capture_screenshot",
             "list_screenshots",
             "capture_web_screenshot",
+            "read_pdf",
         ]
 
     def register_subagent(self, spec: SubAgentSpec) -> None:
@@ -155,6 +156,7 @@ class SubAgentManager:
         task: str,
         deps: SubAgentDeps,
         ui_callback: Any = None,
+        task_monitor: Any = None,
     ) -> dict[str, Any]:
         """Execute a subagent synchronously with the given task.
 
@@ -163,6 +165,7 @@ class SubAgentManager:
             task: The task description for the subagent
             deps: Dependencies for tool execution
             ui_callback: Optional UI callback for displaying tool calls
+            task_monitor: Optional task monitor for interrupt support
 
         Returns:
             Result dict with content, success, and messages
@@ -196,6 +199,7 @@ class SubAgentManager:
             message_history=None,  # Fresh context for subagent
             ui_callback=nested_callback,
             max_iterations=None,  # Unlimited - run until natural completion
+            task_monitor=task_monitor,  # Pass task monitor for interrupt support
         )
 
         return result

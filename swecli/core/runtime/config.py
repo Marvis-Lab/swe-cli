@@ -37,6 +37,8 @@ class ConfigManager:
         if global_config.exists():
             with open(global_config) as f:
                 global_data = json.load(f)
+                # Remove legacy api_key from config - keys should come from environment
+                global_data.pop("api_key", None)
                 _, global_changed = self._normalize_fireworks_models(global_data)
                 if global_changed:
                     with open(global_config, "w") as target:
@@ -48,6 +50,8 @@ class ConfigManager:
         if local_config.exists():
             with open(local_config) as f:
                 local_data = json.load(f)
+                # Remove legacy api_key from config - keys should come from environment
+                local_data.pop("api_key", None)
                 _, local_changed = self._normalize_fireworks_models(local_data)
                 if local_changed:
                     with open(local_config, "w") as target:
@@ -92,6 +96,8 @@ class ConfigManager:
         config_path.parent.mkdir(parents=True, exist_ok=True)
 
         # Only save user-facing settings, not internal defaults
+        # Note: api_key is intentionally excluded - keys should come from
+        # environment variables for security and to avoid cross-provider issues
         user_fields = {
             "model_provider",
             "model",
@@ -99,7 +105,6 @@ class ConfigManager:
             "model_thinking",
             "model_vlm_provider",
             "model_vlm",
-            "api_key",
             "api_base_url",
             "debug_logging",
         }

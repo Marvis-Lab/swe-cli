@@ -16,6 +16,7 @@ PLANNING_TOOLS = {
     "get_process_output",
     "list_screenshots",
     "list_web_screenshots",
+    "read_pdf",  # PDF extraction is read-only
     # Symbol tools (read-only)
     "find_symbol",
     "find_referencing_symbols",
@@ -643,6 +644,24 @@ _BUILTIN_TOOL_SCHEMAS: list[dict[str, Any]] = [
                     },
                 },
                 "required": [],
+            },
+        },
+    },
+    # ===== PDF Tool =====
+    {
+        "type": "function",
+        "function": {
+            "name": "read_pdf",
+            "description": "Extract text content from a PDF file (academic papers, documentation). Returns full text with page markers, detected sections (Abstract, Introduction, etc.), and metadata (title, author). Best for reading research papers to understand methodology and implement code.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "file_path": {
+                        "type": "string",
+                        "description": "Path to the PDF file (absolute or relative to working directory)",
+                    },
+                },
+                "required": ["file_path"],
             },
         },
     },

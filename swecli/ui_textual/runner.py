@@ -463,6 +463,8 @@ class TextualRunner:
             slot,
         )
         if result.success:
+            # Rebuild agents with new config (needed for API key changes)
+            await asyncio.to_thread(self.repl.rebuild_agents)
             self._refresh_ui_config()
         return result
 
