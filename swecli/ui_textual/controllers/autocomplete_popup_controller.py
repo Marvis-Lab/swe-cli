@@ -61,9 +61,9 @@ class AutocompletePopupController:
         window_active = active - window_start
         state: StateType = (tuple(rows), window_active)
 
-        if state == self._last_state:
-            self.popup.styles.display = "block"
-            return
+        # Always re-render to ensure highlight follows selection
+        # The state caching was preventing highlight updates when only
+        # the selection index changed within the same visible window
 
         table = Table.grid(padding=(0, 1))
         table.expand = True
