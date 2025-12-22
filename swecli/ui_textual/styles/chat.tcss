@@ -52,9 +52,9 @@ Rule {
     color: $text;
     border: round $surface-darken-1;
     padding: 0 1;
-    overflow-y: auto;
+    overflow-y: hidden;
     margin: 0 2 0 2;
-    max-height: 8;
+    max-height: 10;
 }
 
 #status-bar {
