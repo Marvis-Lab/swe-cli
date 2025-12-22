@@ -606,6 +606,13 @@ class TextualRunner:
             )
             return []
 
+        # Validate API key before attempting to chat
+        try:
+            config.get_api_key()
+        except ValueError as e:
+            self.app.notify_processing_error(f"Send failed: {e}")
+            return []
+
         session = self.session_manager.get_current_session()
         previous_count = len(session.messages) if session else 0
 

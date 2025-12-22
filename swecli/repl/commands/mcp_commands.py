@@ -125,15 +125,17 @@ class MCPCommands(CommandHandler):
     def connect(self, server_name: str) -> CommandResult:
         """Connect to a specific MCP server."""
         if self.mcp_manager.is_connected(server_name):
-            self.print_warning(f"Already connected to '{server_name}'")
+            self.console.print(f"[cyan]⏺[/cyan] MCP ({server_name})")
+            self.console.print(f"  ⎿ [yellow]Already connected[/yellow]")
             return CommandResult(success=True, message="Already connected")
 
-        self.console.print(f"Connecting to '{server_name}'...")
+        self.console.print(f"[cyan]⏺[/cyan] MCP ({server_name})")
+        self.console.print(f"  ⎿ Connecting...")
         try:
             success = self.mcp_manager.connect_sync(server_name)
             if success:
                 tools = self.mcp_manager.get_server_tools(server_name)
-                self.print_success(f"Connected to '{server_name}' ({len(tools)} tools available)")
+                self.console.print(f"  ⎿ [green]Connected ({len(tools)} tools)[/green]")
 
                 # Refresh runtime tooling
                 if self.refresh_runtime:
@@ -141,21 +143,22 @@ class MCPCommands(CommandHandler):
 
                 return CommandResult(success=True, message=f"Connected to {server_name}")
             else:
-                self.print_error(f"Failed to connect to '{server_name}'")
+                self.console.print(f"  ⎿ [red]❌ Connection failed[/red]")
                 return CommandResult(success=False, message="Connection failed")
         except Exception as e:
-            self.print_error(f"Error connecting to '{server_name}': {e}")
+            self.console.print(f"  ⎿ [red]❌ Error: {e}[/red]")
             return CommandResult(success=False, message=str(e))
 
     def disconnect(self, server_name: str) -> CommandResult:
         """Disconnect from a specific MCP server."""
+        self.console.print(f"[cyan]⏺[/cyan] MCP ({server_name})")
         if not self.mcp_manager.is_connected(server_name):
-            self.print_warning(f"Not connected to '{server_name}'")
+            self.console.print(f"  ⎿ [yellow]Not connected[/yellow]")
             return CommandResult(success=True, message="Not connected")
 
         try:
             self.mcp_manager.disconnect_sync(server_name)
-            self.print_success(f"Disconnected from '{server_name}'")
+            self.console.print(f"  ⎿ [green]Disconnected[/green]")
 
             # Refresh runtime tooling
             if self.refresh_runtime:
@@ -163,7 +166,7 @@ class MCPCommands(CommandHandler):
 
             return CommandResult(success=True, message=f"Disconnected from {server_name}")
         except Exception as e:
-            self.print_error(f"Error disconnecting from '{server_name}': {e}")
+            self.console.print(f"  ⎿ [red]❌ Error: {e}[/red]")
             return CommandResult(success=False, message=str(e))
 
     def show_tools(self, server_name: Optional[str]) -> CommandResult:

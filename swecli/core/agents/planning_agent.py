@@ -36,11 +36,40 @@ class PlanningAgent(BaseAgent):
         mode_manager: Any,
         working_dir: Any = None,
     ) -> None:
-        self.api_url, self.headers = resolve_api_config(config)
-        self._http_client = AgentHttpClient(self.api_url, self.headers)
+        # Lazy initialization - defer API key validation until first API call
+        self.__http_client = None
+        self.__api_config_resolved = False
+        self._api_url = None
+        self._headers = None
         self._response_cleaner = ResponseCleaner()
         self._working_dir = working_dir
         super().__init__(config, tool_registry, mode_manager)
+
+    def _ensure_api_config(self) -> None:
+        """Lazily resolve API config on first access (defers API key validation)."""
+        if not self.__api_config_resolved:
+            self._api_url, self._headers = resolve_api_config(self.config)
+            self.__api_config_resolved = True
+
+    @property
+    def api_url(self) -> str:
+        """Lazily get API URL."""
+        self._ensure_api_config()
+        return self._api_url
+
+    @property
+    def headers(self) -> dict:
+        """Lazily get headers."""
+        self._ensure_api_config()
+        return self._headers
+
+    @property
+    def _http_client(self) -> AgentHttpClient:
+        """Lazily create HTTP client on first access (defers API key validation)."""
+        if self.__http_client is None:
+            self._ensure_api_config()
+            self.__http_client = AgentHttpClient(self._api_url, self._headers)
+        return self.__http_client
 
     def build_system_prompt(self) -> str:
         return PlanningPromptBuilder(self._working_dir).build()
