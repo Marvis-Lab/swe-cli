@@ -136,10 +136,18 @@ def prepare_server_config(server_config: MCPServerConfig) -> MCPServerConfig:
     # Expand env vars in environment variables
     expanded_env = {key: expand_env_vars(value) for key, value in server_config.env.items()}
 
+    # Expand env vars in URL (for HTTP/SSE transport)
+    expanded_url = expand_env_vars(server_config.url) if server_config.url else None
+
+    # Expand env vars in headers (for HTTP/SSE transport)
+    expanded_headers = {key: expand_env_vars(value) for key, value in server_config.headers.items()}
+
     return MCPServerConfig(
         command=server_config.command,
         args=expanded_args,
         env=expanded_env,
+        url=expanded_url,
+        headers=expanded_headers,
         enabled=server_config.enabled,
         auto_start=server_config.auto_start,
         transport=server_config.transport,

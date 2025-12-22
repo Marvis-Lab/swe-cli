@@ -12,6 +12,7 @@ from swecli.core.context_engineering.tools.handlers.process_handlers import Proc
 from swecli.core.context_engineering.tools.handlers.web_handlers import WebToolHandler
 from swecli.core.context_engineering.tools.handlers.screenshot_handler import ScreenshotToolHandler
 from swecli.core.context_engineering.tools.handlers.todo_handler import TodoHandler
+from swecli.core.context_engineering.tools.handlers.mcp_config_handler import MCPConfigHandler
 from swecli.core.context_engineering.tools.implementations.pdf_tool import PDFTool
 from swecli.core.context_engineering.tools.symbol_tools import (
     handle_find_symbol,
@@ -68,6 +69,7 @@ class ToolRegistry:
         self._process_handler = ProcessToolHandler(bash_tool)
         self._web_handler = WebToolHandler(web_fetch_tool)
         self._mcp_handler = McpToolHandler(mcp_manager)
+        self._mcp_config_handler = MCPConfigHandler(mcp_manager)
         self._screenshot_handler = ScreenshotToolHandler()
         self.todo_handler = TodoHandler()
         self._pdf_tool = PDFTool()
@@ -108,6 +110,9 @@ class ToolRegistry:
             "spawn_subagent": self._execute_spawn_subagent,
             # PDF extraction tool
             "read_pdf": self._read_pdf,
+            # MCP configuration tools
+            "configure_mcp_server": self._mcp_config_handler.configure_mcp_server,
+            "list_mcp_presets": self._mcp_config_handler.list_mcp_presets,
         }
 
     def set_subagent_manager(self, manager: Any) -> None:
@@ -276,9 +281,10 @@ class ToolRegistry:
         return tool_name not in _PLAN_READ_ONLY_TOOLS
 
     def set_mcp_manager(self, mcp_manager: Union[Any, None]) -> None:
-        """Update the MCP manager and refresh the handler."""
+        """Update the MCP manager and refresh the handlers."""
         self.mcp_manager = mcp_manager
         self._mcp_handler = McpToolHandler(mcp_manager)
+        self._mcp_config_handler.set_mcp_manager(mcp_manager)
 
     def _open_browser(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """Execute the open_browser tool."""

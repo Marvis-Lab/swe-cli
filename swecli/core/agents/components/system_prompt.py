@@ -30,6 +30,9 @@ class SystemPromptBuilder:
         mcp_prompt = self._build_mcp_section()
         if mcp_prompt:
             prompt += mcp_prompt
+        else:
+            # Even without MCP tools, add configuration guidance
+            prompt += self._build_mcp_config_section()
 
         return prompt
 
@@ -75,6 +78,27 @@ class SystemPromptBuilder:
             lines.append(f"- `{tool_name}` - {description}\n")
 
         lines.append("\nUse these MCP tools when they're relevant to the user's task.\n")
+
+        # Add configuration guidance
+        lines.append("\n### MCP Server Configuration\n")
+        lines.append("You can help users set up new MCP servers using:\n")
+        lines.append("- `configure_mcp_server` - Configure a server from preset (github, postgres, slack, etc.)\n")
+        lines.append("- `list_mcp_presets` - Show available server presets\n")
+        lines.append("\nWhen users ask about setting up GitHub, database, or other integrations, use these tools.\n")
+
+        return "".join(lines)
+
+    def _build_mcp_config_section(self) -> str:
+        """Render the MCP configuration section when no servers are connected."""
+        lines = [
+            "\n## MCP Server Configuration\n",
+            "You can help users set up MCP (Model Context Protocol) servers for external integrations.\n\n",
+            "Available tools:\n",
+            "- `configure_mcp_server` - Configure a server from preset (github, postgres, slack, etc.)\n",
+            "- `list_mcp_presets` - Show available server presets\n\n",
+            "When users ask about setting up GitHub, database, Slack, or other integrations, ",
+            "use these tools to configure the appropriate MCP server.\n",
+        ]
         return "".join(lines)
 
 

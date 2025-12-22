@@ -518,6 +518,8 @@ class REPL:
             self._init_codebase(command)
         elif cmd == "/run":
             self._run_command(args)
+        elif cmd == "/resolve-issue":
+            self._resolve_issue(command)
         else:
             self.console.print(f"[red]Unknown command: {cmd}[/red]")
             self.console.print("Type /help for available commands.")
@@ -566,6 +568,54 @@ class REPL:
 
         except Exception as e:
             self.console.print(f"[red]✗ Error during initialization: {e}[/red]")
+            import traceback
+            traceback.print_exc()
+
+    def _resolve_issue(self, command: str) -> None:
+        """Handle /resolve-issue command to fix GitHub issues.
+
+        Args:
+            command: The full command string (e.g., "/resolve-issue https://github.com/owner/repo/issues/123")
+        """
+        from swecli.commands.issue_resolver import IssueResolverCommand
+
+        # Get subagent manager from runtime suite
+        subagent_manager = getattr(self.runtime_suite.agents, "subagent_manager", None)
+        if subagent_manager is None:
+            self.console.print("[red]Subagent manager not available[/red]")
+            return
+
+        # Create handler
+        handler = IssueResolverCommand(
+            console=self.console,
+            subagent_manager=subagent_manager,
+            working_dir=self.config_manager.working_dir,
+        )
+
+        # Parse arguments
+        try:
+            args = handler.parse_args(command)
+        except ValueError as e:
+            self.console.print(f"[red]{e}[/red]")
+            return
+
+        # Execute issue resolution
+        try:
+            result = handler.execute(args)
+
+            if result.success:
+                self.console.print(f"[green]{result.message}[/green]")
+                if result.pr_url:
+                    self.console.print(f"[cyan]Pull Request:[/cyan] {result.pr_url}")
+                if result.repo_path:
+                    self.console.print(f"[dim]Repository:[/dim] {result.repo_path}")
+            else:
+                self.console.print(f"[red]{result.message}[/red]")
+                if result.repo_path:
+                    self.console.print(f"[dim]Repository at:[/dim] {result.repo_path}")
+
+        except Exception as e:
+            self.console.print(f"[red]Error: {e}[/red]")
             import traceback
             traceback.print_exc()
 

@@ -818,4 +818,52 @@ _BUILTIN_TOOL_SCHEMAS: list[dict[str, Any]] = [
             },
         },
     },
+    # MCP Configuration Tools
+    {
+        "type": "function",
+        "function": {
+            "name": "configure_mcp_server",
+            "description": "Configure an MCP (Model Context Protocol) server from a preset. Use this when user asks to set up integrations like GitHub, database connections, or other MCP servers. This will add the server to ~/.swecli/mcp.json and optionally connect to it.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "preset_name": {
+                        "type": "string",
+                        "description": "Name of the preset to configure. Available presets: github, filesystem, postgres, sqlite, memory, fetch, brave-search, puppeteer, slack, gdrive, git, sequential-thinking",
+                    },
+                    "server_name": {
+                        "type": "string",
+                        "description": "Optional custom name for this server instance. Defaults to the preset name.",
+                    },
+                    "auto_connect": {
+                        "type": "boolean",
+                        "description": "Whether to connect to the server immediately after configuring. Default: true",
+                        "default": True,
+                    },
+                },
+                "required": ["preset_name"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_mcp_presets",
+            "description": "List available MCP server presets that can be configured. Use this to show the user what integrations are available.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "category": {
+                        "type": "string",
+                        "description": "Optional category to filter by (e.g., 'development', 'database', 'web', 'communication')",
+                    },
+                    "search": {
+                        "type": "string",
+                        "description": "Optional search query to find presets by name or description",
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
 ]

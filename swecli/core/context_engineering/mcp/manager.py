@@ -14,6 +14,8 @@ from fastmcp.client.transports import (
     UvStdioTransport,
     UvxStdioTransport,
     StdioTransport,
+    StreamableHttpTransport,
+    SSETransport,
 )
 
 from swecli.core.context_engineering.mcp.config import (
@@ -64,8 +66,45 @@ class MCPManager:
         self._loop_thread = None  # Background thread running the event loop
         self._loop_started = threading.Event()  # Signal when loop is ready
 
-    def _create_transport(self, command: str, args: List[str], env: Optional[Dict[str, str]]):
-        """Create appropriate transport based on command type.
+    def _create_transport_from_config(self, server_config: MCPServerConfig):
+        """Create appropriate transport based on server configuration.
+
+        Args:
+            server_config: Server configuration with transport type, url, headers, command, args, env
+
+        Returns:
+            Transport object for fastmcp Client
+        """
+        transport_type = server_config.transport.lower()
+
+        # HTTP transport for remote servers
+        if transport_type == "http":
+            if not server_config.url:
+                raise ValueError("HTTP transport requires a URL")
+            return StreamableHttpTransport(
+                url=server_config.url,
+                headers=server_config.headers or None,
+            )
+
+        # SSE transport for server-sent events
+        elif transport_type == "sse":
+            if not server_config.url:
+                raise ValueError("SSE transport requires a URL")
+            return SSETransport(
+                url=server_config.url,
+                headers=server_config.headers or None,
+            )
+
+        # Stdio transport (default)
+        else:
+            return self._create_stdio_transport(
+                server_config.command,
+                server_config.args,
+                server_config.env,
+            )
+
+    def _create_stdio_transport(self, command: str, args: List[str], env: Optional[Dict[str, str]]):
+        """Create appropriate stdio transport based on command type.
 
         Args:
             command: Command to run (npx, node, python, uv, uvx, etc.)
@@ -206,12 +245,8 @@ class MCPManager:
         try:
             # Suppress stderr during connection to hide MCP server logs
             with _SuppressStderr():
-                # Create transport based on command type
-                transport = self._create_transport(
-                    prepared_config.command,
-                    prepared_config.args,
-                    prepared_config.env
-                )
+                # Create transport based on config (supports stdio, http, sse)
+                transport = self._create_transport_from_config(prepared_config)
 
                 # Create FastMCP client
                 client = Client(transport)
@@ -482,21 +517,36 @@ class MCPManager:
             arguments,
         )
 
-    def add_server(self, name: str, command: str, args: List[str], env: Optional[Dict[str, str]] = None) -> None:
+    def add_server(
+        self,
+        name: str,
+        command: str = "",
+        args: Optional[List[str]] = None,
+        env: Optional[Dict[str, str]] = None,
+        transport: str = "stdio",
+        url: Optional[str] = None,
+        headers: Optional[Dict[str, str]] = None,
+    ) -> None:
         """Add a new MCP server to configuration.
 
         Args:
             name: Server name
-            command: Command to start the server
-            args: Command arguments
-            env: Environment variables
+            command: Command to start the server (for stdio transport)
+            args: Command arguments (for stdio transport)
+            env: Environment variables (for stdio transport)
+            transport: Transport type (stdio, http, sse)
+            url: URL for HTTP/SSE transport
+            headers: HTTP headers for HTTP/SSE transport
         """
         config = self.get_config()
 
         server_config = MCPServerConfig(
             command=command,
-            args=args,
+            args=args or [],
             env=env or {},
+            transport=transport,
+            url=url,
+            headers=headers or {},
             enabled=True,
             auto_start=True,
         )
