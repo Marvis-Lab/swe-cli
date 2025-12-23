@@ -2,7 +2,7 @@
 
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from prompt_toolkit import PromptSession
 from prompt_toolkit.history import FileHistory
@@ -521,8 +521,9 @@ class REPL:
         elif cmd == "/resolve-issue":
             self._resolve_issue(command)
         else:
-            self.console.print(f"[red]Unknown command: {cmd}[/red]")
-            self.console.print("Type /help for available commands.")
+            self.console.print(f"[cyan]⏺[/cyan] {cmd}")
+            self.console.print(f"  ⎿ [red]Unknown command[/red]")
+            self.console.print("  ⎿ Type /help for available commands")
 
     def _init_codebase(self, command: str) -> None:
         """Handle /init command to analyze codebase and generate AGENTS.md.
@@ -539,7 +540,8 @@ class REPL:
         try:
             args = handler.parse_args(command)
         except Exception as e:
-            self.console.print(f"[red]✗ Error parsing command: {e}[/red]")
+            self.console.print("[cyan]⏺[/cyan] init")
+            self.console.print(f"  ⎿ [red]Error parsing command: {e}[/red]")
             return
 
         # Create dependencies
@@ -557,46 +559,84 @@ class REPL:
         try:
             result = handler.execute(args, deps)
 
+            self.console.print("[cyan]⏺[/cyan] init")
             if result["success"]:
-                self.console.print(f"[green]{result['message']}[/green]")
+                self.console.print(f"  ⎿ [green]{result['message']}[/green]")
 
                 # Show summary of what was generated
                 if "content" in result:
-                    self.console.print(f"\n[dim]{result['content']}[/dim]")
+                    self.console.print(f"  ⎿ [dim]{result['content']}[/dim]")
             else:
-                self.console.print(f"[red]{result['message']}[/red]")
+                self.console.print(f"  ⎿ [red]{result['message']}[/red]")
 
         except Exception as e:
-            self.console.print(f"[red]✗ Error during initialization: {e}[/red]")
+            self.console.print("[cyan]⏺[/cyan] init")
+            self.console.print(f"  ⎿ [red]Error during initialization: {e}[/red]")
             import traceback
             traceback.print_exc()
 
-    def _resolve_issue(self, command: str) -> None:
+    def _resolve_issue(self, command: str, ui_callback: Any = None) -> None:
         """Handle /resolve-issue command to fix GitHub issues.
 
         Args:
             command: The full command string (e.g., "/resolve-issue https://github.com/owner/repo/issues/123")
+            ui_callback: Optional UI callback for real-time display. If None, uses console output.
         """
         from swecli.commands.issue_resolver import IssueResolverCommand
 
         # Get subagent manager from runtime suite
         subagent_manager = getattr(self.runtime_suite.agents, "subagent_manager", None)
         if subagent_manager is None:
-            self.console.print("[red]Subagent manager not available[/red]")
+            self.console.print("[cyan]⏺[/cyan] resolve-issue")
+            self.console.print("  ⎿ [red]Subagent manager not available[/red]")
             return
+
+        # Create a simple console callback if no ui_callback provided
+        if ui_callback is None:
+            class ConsoleUICallback:
+                """Simple console-based UI callback for progress display."""
+                def __init__(self, console):
+                    self.console = console
+                    self._depth = 0
+
+                def on_thinking_start(self):
+                    pass
+
+                def on_thinking_complete(self):
+                    pass
+
+                def on_tool_call(self, tool_name: str, tool_args: dict):
+                    indent = "  " * self._depth
+                    args_str = ", ".join(f"{k}={v!r}" for k, v in list(tool_args.items())[:2])
+                    self.console.print(f"{indent}[cyan]⏺[/cyan] {tool_name}({args_str})")
+                    self._depth += 1
+
+                def on_tool_result(self, tool_name: str, tool_args: dict, result: str):
+                    self._depth = max(0, self._depth - 1)
+                    indent = "  " * self._depth
+                    # Show truncated result
+                    result_preview = str(result)[:100] + "..." if len(str(result)) > 100 else str(result)
+                    self.console.print(f"{indent}[dim]⎿[/dim] {result_preview}")
+
+            ui_callback = ConsoleUICallback(self.console)
 
         # Create handler
         handler = IssueResolverCommand(
-            console=self.console,
             subagent_manager=subagent_manager,
+            mcp_manager=self.mcp_manager,
             working_dir=self.config_manager.working_dir,
+            mode_manager=self.mode_manager,
+            approval_manager=self.approval_manager,
+            undo_manager=self.undo_manager,
+            ui_callback=ui_callback,
         )
 
         # Parse arguments
         try:
             args = handler.parse_args(command)
         except ValueError as e:
-            self.console.print(f"[red]{e}[/red]")
+            self.console.print("[cyan]⏺[/cyan] resolve-issue")
+            self.console.print(f"  ⎿ [red]{e}[/red]")
             return
 
         # Execute issue resolution
@@ -604,18 +644,18 @@ class REPL:
             result = handler.execute(args)
 
             if result.success:
-                self.console.print(f"[green]{result.message}[/green]")
+                self.console.print(f"  ⎿ [green]{result.message}[/green]")
                 if result.pr_url:
-                    self.console.print(f"[cyan]Pull Request:[/cyan] {result.pr_url}")
+                    self.console.print(f"  ⎿ Pull Request: {result.pr_url}")
                 if result.repo_path:
-                    self.console.print(f"[dim]Repository:[/dim] {result.repo_path}")
+                    self.console.print(f"  ⎿ [dim]Repository: {result.repo_path}[/dim]")
             else:
-                self.console.print(f"[red]{result.message}[/red]")
+                self.console.print(f"  ⎿ [red]{result.message}[/red]")
                 if result.repo_path:
-                    self.console.print(f"[dim]Repository at:[/dim] {result.repo_path}")
+                    self.console.print(f"  ⎿ [dim]Repository: {result.repo_path}[/dim]")
 
         except Exception as e:
-            self.console.print(f"[red]Error: {e}[/red]")
+            self.console.print(f"  ⎿ [red]Error: {e}[/red]")
             import traceback
             traceback.print_exc()
 
@@ -626,15 +666,17 @@ class REPL:
             args: Command to execute
         """
         if not args:
-            self.console.print("[red]Please provide a command to run.[/red]")
+            self.console.print("[cyan]⏺[/cyan] run")
+            self.console.print("  ⎿ [red]Please provide a command to run[/red]")
             return
 
         command = args.strip()
 
         # Check if bash is enabled
         if not self.config.enable_bash:
-            self.console.print("[red]Bash execution is disabled.[/red]")
-            self.console.print("[dim]Enable it in config with 'enable_bash: true'[/dim]")
+            self.console.print("[cyan]⏺[/cyan] run")
+            self.console.print("  ⎿ [red]Bash execution is disabled[/red]")
+            self.console.print("  ⎿ [dim]Enable it in config with 'enable_bash: true'[/dim]")
             return
 
         # Create operation
@@ -647,7 +689,7 @@ class REPL:
         )
 
         # Show preview
-        self.console.print(f"\n[cyan]Command to execute:[/cyan] {command}")
+        self.console.print(f"[cyan]⏺[/cyan] run ({command})")
 
         # Check if approval is needed
         if not self.mode_manager.needs_approval(operation):
@@ -668,7 +710,7 @@ class REPL:
                 ))
 
                 if not result.approved:
-                    self.console.print("[yellow]Operation cancelled.[/yellow]")
+                    self.console.print("  ⎿ [yellow]Operation cancelled[/yellow]")
                     return
 
         # Execute command
@@ -676,16 +718,16 @@ class REPL:
             bash_result = self.bash_tool.execute(command, operation=operation)
 
             if bash_result.success:
-                self.console.print("\n[bold green]Output:[/bold green]")
-                self.console.print(bash_result.stdout)
+                self.console.print("  ⎿ [green]Success[/green]")
+                if bash_result.stdout:
+                    self.console.print(bash_result.stdout)
                 if bash_result.stderr:
-                    self.console.print("\n[bold yellow]Stderr:[/bold yellow]")
-                    self.console.print(bash_result.stderr)
-                self.console.print(f"\n[dim]Exit code: {bash_result.exit_code}[/dim]")
+                    self.console.print(f"  ⎿ [yellow]Stderr:[/yellow] {bash_result.stderr}")
+                self.console.print(f"  ⎿ [dim]Exit code: {bash_result.exit_code}[/dim]")
                 # Record for history
                 self.undo_manager.record_operation(operation)
             else:
-                self.console.print(f"[red]✗ Command failed: {bash_result.error}[/red]")
+                self.console.print(f"  ⎿ [red]Command failed: {bash_result.error}[/red]")
 
         except Exception as e:
             self.error_handler.handle_error(e, operation)

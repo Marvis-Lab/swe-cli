@@ -51,11 +51,12 @@ class ModeCommands(CommandHandler):
         """
         if not mode_name:
             # Show current mode
+            self.console.print("[cyan]⏺[/cyan] mode")
             self.console.print(
-                f"\n[bold]Current Mode:[/bold] {self.mode_manager.current_mode.value.upper()}"
+                f"  ⎿ Current: {self.mode_manager.current_mode.value.upper()}"
             )
-            self.console.print(self.mode_manager.get_mode_description())
-            self.console.print("\n[dim]Available modes: normal, plan[/dim]")
+            self.console.print(f"  ⎿ {self.mode_manager.get_mode_description()}")
+            self.console.print("  ⎿ [dim]Available: normal, plan[/dim]")
             return CommandResult(success=True)
 
         mode_name = mode_name.strip().lower()
@@ -67,7 +68,7 @@ class ModeCommands(CommandHandler):
                 new_mode = OperationMode.PLAN
             else:
                 self.print_error(f"Unknown mode: {mode_name}")
-                self.console.print("[dim]Available modes: normal, plan[/dim]")
+                self.console.print("  ⎿ [dim]Available: normal, plan[/dim]")
                 return CommandResult(success=False, message=f"Unknown mode: {mode_name}")
 
             self.mode_manager.set_mode(new_mode)
@@ -77,7 +78,7 @@ class ModeCommands(CommandHandler):
                 self.approval_manager.reset_auto_approve()
 
             self.print_success(f"Switched to {new_mode.value.upper()} mode")
-            self.console.print(self.mode_manager.get_mode_description())
+            self.console.print(f"  ⎿ {self.mode_manager.get_mode_description()}")
 
             return CommandResult(
                 success=True,

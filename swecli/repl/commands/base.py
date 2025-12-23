@@ -48,34 +48,46 @@ class CommandHandler(ABC):
         """
         pass
 
+    def print_command_header(self, command_name: str, params: str = "") -> None:
+        """Print command header with ⏺ symbol.
+
+        Args:
+            command_name: Name of the command
+            params: Optional parameters to display
+        """
+        if params:
+            self.console.print(f"[cyan]⏺[/cyan] {command_name} ({params})")
+        else:
+            self.console.print(f"[cyan]⏺[/cyan] {command_name}")
+
     def print_success(self, message: str) -> None:
-        """Print success message.
+        """Print success message with ⎿ prefix.
 
         Args:
             message: Message to display
         """
-        self.console.print(f"[green]{message}[/green]")
+        self.console.print(f"  ⎿ [green]{message}[/green]")
 
     def print_error(self, message: str) -> None:
-        """Print error message.
+        """Print error message with ⎿ prefix.
 
         Args:
             message: Error message to display
         """
-        self.console.print(f"[red]{message}[/red]")
+        self.console.print(f"  ⎿ [red]{message}[/red]")
 
     def print_warning(self, message: str) -> None:
-        """Print warning message.
+        """Print warning message with ⎿ prefix.
 
         Args:
             message: Warning message to display
         """
-        self.console.print(f"[yellow]{message}[/yellow]")
+        self.console.print(f"  ⎿ [yellow]{message}[/yellow]")
 
     def print_info(self, message: str) -> None:
-        """Print info message.
+        """Print info message with ⎿ prefix.
 
         Args:
             message: Info message to display
         """
-        self.console.print(f"[cyan]{message}[/cyan]")
+        self.console.print(f"  ⎿ {message}")

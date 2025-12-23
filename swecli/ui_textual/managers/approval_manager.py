@@ -156,7 +156,7 @@ class ChatApprovalManager:
         # Auto-deny rule
         if matched_rule.action == self.RuleAction.AUTO_DENY:
             self.rules_manager.add_history(command, False, rule_matched=matched_rule.id)
-            self.console.print(f"[red]✗ Denied by rule: {matched_rule.name}[/red]")
+            self.console.print(f"  ⎿ [red]Denied by rule: {matched_rule.name}[/red]")
             return ApprovalResult(
                 approved=False,
                 choice=ApprovalChoice.DENY,
