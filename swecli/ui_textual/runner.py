@@ -794,6 +794,11 @@ Work through each implementation step in order. Mark each todo item as 'in_progr
             self._handle_mcp_view_command(command)
             return
 
+        # Special handling for /resolve-issue - use TextualUICallback for proper display
+        if lowered.startswith("/resolve-issue"):
+            self._handle_resolve_issue_command(command)
+            return
+
         with self.repl.console.capture() as capture:
             self.repl._handle_command(command)
         output = capture.get()
@@ -985,6 +990,37 @@ Work through each implementation step in order. Mark each todo item as 'in_progr
 
         output = string_io.getvalue()
         self._enqueue_console_text(output)
+
+    def _handle_resolve_issue_command(self, command: str) -> None:
+        """Handle /resolve-issue command with TextualUICallback for proper display.
+
+        Args:
+            command: The full command (e.g., "/resolve-issue https://github.com/owner/repo/issues/123")
+        """
+        from io import StringIO
+        from rich.console import Console as RichConsole
+
+        # Create UI callback for real-time tool display
+        conversation_widget = None
+        try:
+            from swecli.ui_textual.chat_app import ConversationLog
+            conversation_widget = self.app.query_one("#conversation", ConversationLog)
+        except Exception:
+            if hasattr(self.app, 'conversation') and self.app.conversation is not None:
+                conversation_widget = self.app.conversation
+
+        ui_callback = None
+        if conversation_widget is not None:
+            from swecli.ui_textual.ui_callback import TextualUICallback
+            ui_callback = TextualUICallback(conversation_widget, self.app)
+
+        # Capture any console output during execution
+        with self.repl.console.capture() as capture:
+            self.repl._resolve_issue(command, ui_callback=ui_callback)
+
+        output = capture.get()
+        if output.strip():
+            self._enqueue_console_text(output)
 
     def _handle_interrupt(self) -> bool:
         """Handle interrupt request from UI (ESC key press).

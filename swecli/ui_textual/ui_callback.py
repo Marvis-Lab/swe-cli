@@ -57,6 +57,48 @@ class TextualUICallback:
             if hasattr(self.conversation, 'add_assistant_message'):
                 self._run_on_ui(self.conversation.add_assistant_message, content)
 
+    def on_message(self, message: str) -> None:
+        """Called to display a simple progress message (no spinner).
+
+        Args:
+            message: The message to display
+        """
+        if hasattr(self.conversation, 'add_system_message'):
+            self._run_on_ui(self.conversation.add_system_message, message)
+
+    def on_progress_start(self, message: str) -> None:
+        """Called when a progress operation starts (shows spinner).
+
+        Args:
+            message: The progress message to display with spinner
+        """
+        from rich.text import Text
+
+        display_text = Text(message, style="white")
+        if hasattr(self.conversation, 'add_tool_call'):
+            self._run_on_ui(self.conversation.add_tool_call, display_text)
+        if hasattr(self.conversation, 'start_tool_execution'):
+            self._run_on_ui(self.conversation.start_tool_execution)
+
+    def on_progress_complete(self, message: str = "", success: bool = True) -> None:
+        """Called when a progress operation completes.
+
+        Args:
+            message: Optional result message to display
+            success: Whether the operation succeeded (affects bullet color)
+        """
+        from rich.text import Text
+
+        # Stop spinner (shows green/red bullet based on success)
+        if hasattr(self.conversation, 'stop_tool_execution'):
+            self._run_on_ui(lambda: self.conversation.stop_tool_execution(success))
+
+        # Show result line (if message provided)
+        if message:
+            result_line = Text("  ⎿  ", style="#a0a4ad")
+            result_line.append(message, style="#a0a4ad")
+            self._run_on_ui(self.conversation.write, result_line)
+
     def on_interrupt(self) -> None:
         """Called when execution is interrupted by user.
 
@@ -133,23 +175,27 @@ class TextualUICallback:
         if hasattr(self.conversation, 'start_tool_execution'):
             self._run_on_ui(self.conversation.start_tool_execution)
 
-    def on_tool_result(self, tool_name: str, tool_args: Dict[str, Any], result: Dict[str, Any]) -> None:
+    def on_tool_result(self, tool_name: str, tool_args: Dict[str, Any], result: Any) -> None:
         """Called when a tool execution completes.
 
         Args:
             tool_name: Name of the tool that was executed
             tool_args: Arguments that were used
-            result: Result of the tool execution
+            result: Result of the tool execution (can be dict or string)
         """
+        # Handle string results by converting to dict format
+        if isinstance(result, str):
+            result = {"success": True, "output": result}
+
         # Stop spinner animation (blocking so the bullet restores before results render)
         # Pass success status to color the bullet (green for success, red for failure)
-        success = result.get("success", True)
+        success = result.get("success", True) if isinstance(result, dict) else True
         if hasattr(self.conversation, 'stop_tool_execution'):
             self._run_on_ui(lambda: self.conversation.stop_tool_execution(success))
 
         # Skip displaying "Operation cancelled by user" errors
         # These are already shown by the approval controller interrupt message
-        if not result.get("success") and result.get("error") == "Operation cancelled by user":
+        if isinstance(result, dict) and not result.get("success") and result.get("error") == "Operation cancelled by user":
             return
 
         # Format the result using the Claude-style formatter
@@ -222,7 +268,7 @@ class TextualUICallback:
         self,
         tool_name: str,
         tool_args: Dict[str, Any],
-        result: Dict[str, Any],
+        result: Any,
         depth: int,
         parent: str,
     ) -> None:
@@ -231,18 +277,23 @@ class TextualUICallback:
         Args:
             tool_name: Name of the tool that was executed
             tool_args: Arguments that were used
-            result: Result of the tool execution
+            result: Result of the tool execution (can be dict or string)
             depth: Nesting depth level
             parent: Name/identifier of the parent subagent
         """
+        # Handle string results by converting to dict format
+        if isinstance(result, str):
+            result = {"success": True, "output": result}
+
         # Update the nested tool call status to complete
         if hasattr(self.conversation, 'complete_nested_tool_call'):
+            success = result.get("success", False) if isinstance(result, dict) else True
             self._run_on_ui(
                 self.conversation.complete_nested_tool_call,
                 tool_name,
                 depth,
                 parent,
-                result.get("success", False),
+                success,
             )
 
         normalized_args = self._normalize_arguments(tool_args)

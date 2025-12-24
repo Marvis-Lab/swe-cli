@@ -176,18 +176,19 @@ class GitHelper:
         except subprocess.TimeoutExpired:
             return False
 
-    def push_branch(self, repo_path: Path) -> tuple[bool, str]:
-        """Push the current branch to origin.
+    def push_branch(self, repo_path: Path, remote: str = "origin") -> tuple[bool, str]:
+        """Push the current branch to a remote.
 
         Args:
             repo_path: Path to repository
+            remote: Remote name (default: origin)
 
         Returns:
             Tuple of (success, error_message)
         """
         try:
             result = subprocess.run(
-                ["git", "push", "-u", "origin", "HEAD"],
+                ["git", "push", "-u", remote, "HEAD"],
                 cwd=repo_path,
                 capture_output=True,
                 text=True,

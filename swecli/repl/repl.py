@@ -582,6 +582,24 @@ class REPL:
             command: The full command string (e.g., "/resolve-issue https://github.com/owner/repo/issues/123")
             ui_callback: Optional UI callback for real-time display. If None, uses console output.
         """
+        # Catch FD errors early - these happen in Textual's event loop
+        try:
+            self._resolve_issue_inner(command, ui_callback)
+        except ValueError as e:
+            if "fds_to_keep" in str(e):
+                # This is the subprocess FD error - handle gracefully
+                self.console.print("[cyan]⏺[/cyan] resolve-issue")
+                self.console.print("  ⎿ [yellow]Subprocess error in Textual context - retrying...[/yellow]")
+                # Try again - sometimes it works on retry
+                try:
+                    self._resolve_issue_inner(command, ui_callback)
+                except Exception as retry_e:
+                    self.console.print(f"  ⎿ [red]Error: {retry_e}[/red]")
+            else:
+                raise
+
+    def _resolve_issue_inner(self, command: str, ui_callback: Any = None) -> None:
+        """Inner implementation of resolve-issue command."""
         from swecli.commands.issue_resolver import IssueResolverCommand
 
         # Get subagent manager from runtime suite
