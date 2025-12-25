@@ -1068,11 +1068,33 @@ class ConversationLog(RichLog):
         else:
             self._spinner_start = len(self.lines)
 
+        # Update _last_line_has_content to reflect actual last line state
+        # This prevents add_tool_call() from seeing stale state
+        if self.lines:
+            last_line = self.lines[-1]
+            # Check Strip objects (RichLog stores lines as Strip)
+            if hasattr(last_line, '_segments'):
+                segments = last_line._segments
+                if len(segments) == 0:
+                    self._last_line_has_content = False
+                elif len(segments) == 1 and not segments[0].text.strip():
+                    self._last_line_has_content = False
+                else:
+                    # Has content if any segment has non-empty text
+                    self._last_line_has_content = any(s.text.strip() for s in segments)
+            elif hasattr(last_line, 'plain'):
+                self._last_line_has_content = bool(last_line.plain.strip())
+            else:
+                self._last_line_has_content = False
+        else:
+            self._last_line_has_content = False
+
         if preserve_index:
             self._spinner_line_count = 0
         else:
             self._spinner_start = None
             self._spinner_line_count = 0
+
 
     # --- Spinner handling ------------------------------------------------
 
@@ -1121,13 +1143,6 @@ class ConversationLog(RichLog):
         # Get segments directly from the Text object instead of console render
         segments = list(formatted.render(console))
         strip = Strip(segments)
-
-        # Pad strip to clear old content when new line is shorter
-        # Get the old line's cell length to ensure we clear all characters
-        old_line = self.lines[self._tool_call_start]
-        old_width = old_line.cell_length if hasattr(old_line, 'cell_length') else 0
-        target_width = max(old_width, self.size.width or 200)
-        strip = strip.adjust_cell_length(target_width)
 
         # Update the line at the original position (in-place)
         self.lines[self._tool_call_start] = strip
@@ -1214,13 +1229,6 @@ class ConversationLog(RichLog):
         console = Console(width=1000, force_terminal=True, no_color=False)
         segments = list(formatted.render(console))
         strip = Strip(segments)
-
-        # Pad strip to clear old content when new line is shorter
-        # Get the old line's cell length to ensure we clear all characters
-        old_line = self.lines[self._nested_tool_line]
-        old_width = old_line.cell_length if hasattr(old_line, 'cell_length') else 0
-        target_width = max(old_width, self.size.width or 200)
-        strip = strip.adjust_cell_length(target_width)
 
         # Update the line at the tracked position (in-place)
         self.lines[self._nested_tool_line] = strip
