@@ -8,11 +8,10 @@ import os
 import platform
 import shutil
 import subprocess
-import tarfile
 import threading
 import urllib.request
-import zipfile
 from collections.abc import Iterable
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, cast
 
@@ -400,8 +399,6 @@ class CSharpLanguageServer(SolidLanguageServer):
         Ensure .NET 9 runtime is available using runtime dependency configuration.
         Returns the path to the dotnet executable.
         """
-        # TODO: use RuntimeDependency util methods instead of custom download logic
-
         # Check if dotnet is already available on the system
         system_dotnet = shutil.which("dotnet")
         if system_dotnet:
@@ -414,8 +411,9 @@ class CSharpLanguageServer(SolidLanguageServer):
             except subprocess.CalledProcessError:
                 pass
 
-        # Download .NET 9 runtime using config
+        # Target directory for .NET runtime
         dotnet_dir = Path(cls.ls_resources_dir(solidlsp_settings)) / "dotnet-runtime-9.0"
+
         assert dotnet_runtime_dep.binary_name is not None, "Runtime dependency must have a binary_name"
         dotnet_exe = dotnet_dir / dotnet_runtime_dep.binary_name
 
@@ -423,47 +421,39 @@ class CSharpLanguageServer(SolidLanguageServer):
             log.info(f"Using cached .NET runtime from {dotnet_exe}")
             return str(dotnet_exe)
 
-        # Download .NET runtime
         log.info("Downloading .NET 9 runtime...")
-        dotnet_dir.mkdir(parents=True, exist_ok=True)
 
+        # Handle URL override
         custom_settings = solidlsp_settings.get_ls_specific_settings(cls.get_language_enum_instance())
         custom_dotnet_runtime_url = custom_settings.get("dotnet_runtime_url")
+
+        dep_to_install = dotnet_runtime_dep
         if custom_dotnet_runtime_url is not None:
             log.info(f"Using custom .NET runtime url: {custom_dotnet_runtime_url}")
-            url = custom_dotnet_runtime_url
-        else:
-            url = dotnet_runtime_dep.url
+            dep_to_install = replace(dotnet_runtime_dep, url=custom_dotnet_runtime_url)
 
-        archive_type = dotnet_runtime_dep.archive_type
-
-        # Download the runtime
-        download_path = dotnet_dir / f"dotnet-runtime.{archive_type}"
+        # Use RuntimeDependencyCollection to install
         try:
-            log.debug(f"Downloading from {url}")
-            urllib.request.urlretrieve(url, download_path)
+            # We create a collection with just this dependency to leverage its install logic
+            # We don't need overrides here as we already applied the custom URL if needed
+            collection = RuntimeDependencyCollection([dep_to_install])
 
-            # Extract the archive
-            if archive_type == "zip":
-                with zipfile.ZipFile(download_path, "r") as zip_ref:
-                    zip_ref.extractall(dotnet_dir)
-            else:
-                # tar.gz
-                with tarfile.open(download_path, "r:gz") as tar_ref:
-                    tar_ref.extractall(dotnet_dir)
+            # install() returns a dict of {id: binary_path}
+            installed_paths = collection.install(str(dotnet_dir))
 
-            # Remove the archive
-            download_path.unlink()
+            result_path = installed_paths.get(dep_to_install.id)
+            if not result_path:
+                raise SolidLSPException(f"Failed to resolve installed path for {dep_to_install.id}")
 
             # Make dotnet executable on Unix
             if platform.system().lower() != "windows":
-                dotnet_exe.chmod(0o755)
+                Path(result_path).chmod(0o755)
 
-            log.info(f"Successfully installed .NET 9 runtime to {dotnet_exe}")
-            return str(dotnet_exe)
+            log.info(f"Successfully installed .NET 9 runtime to {result_path}")
+            return result_path
 
         except Exception as e:
-            raise SolidLSPException(f"Failed to download .NET 9 runtime from {url}: {e}") from e
+            raise SolidLSPException(f"Failed to download .NET 9 runtime: {e}") from e
 
     def _get_initialize_params(self) -> InitializeParams:
         """
