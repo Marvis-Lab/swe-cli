@@ -25,6 +25,9 @@ class TextualUICallback:
         self._app = chat_app
         self.formatter = StyleFormatter()
         self._current_thinking = False
+        self._streaming_bash_box = False  # True when streaming bash output to box
+        self._pending_bash_command = ""  # Command being executed (for VS Code terminal display)
+        self._pending_bash_working_dir = "."  # Working directory for bash command
 
     def on_thinking_start(self) -> None:
         """Called when the agent starts thinking."""
@@ -79,6 +82,21 @@ class TextualUICallback:
             self._run_on_ui(self.conversation.add_tool_call, display_text)
         if hasattr(self.conversation, 'start_tool_execution'):
             self._run_on_ui(self.conversation.start_tool_execution)
+
+    def on_progress_update(self, message: str) -> None:
+        """Update progress text in-place (same line, keeps spinner running).
+
+        Use this for multi-step progress where you want to update the text
+        without creating a new line. The spinner and timer continue running.
+
+        Args:
+            message: New progress message to display
+        """
+        from rich.text import Text
+
+        display_text = Text(message, style="white")
+        if hasattr(self.conversation, 'update_progress_text'):
+            self._run_on_ui(self.conversation.update_progress_text, display_text)
 
     def on_progress_complete(self, message: str = "", success: bool = True) -> None:
         """Called when a progress operation completes.
@@ -149,6 +167,16 @@ class TextualUICallback:
 
         self._run_on_ui(write_interrupt_replacing_blank_line)
 
+    def on_bash_output_line(self, line: str, is_stderr: bool = False) -> None:
+        """Called for each line of bash output during streaming execution.
+
+        Args:
+            line: A single line of output from the bash command
+            is_stderr: True if this line came from stderr
+        """
+        if self._streaming_bash_box and hasattr(self.conversation, 'append_to_streaming_box'):
+            self._run_on_ui(self.conversation.append_to_streaming_box, line, is_stderr)
+
     def on_tool_call(self, tool_name: str, tool_args: Dict[str, Any]) -> None:
         """Called when a tool call is about to be executed.
 
@@ -175,6 +203,33 @@ class TextualUICallback:
         if hasattr(self.conversation, 'start_tool_execution'):
             self._run_on_ui(self.conversation.start_tool_execution)
 
+        # For bash commands, start streaming box with command info
+        if tool_name in ("bash_execute", "run_command"):
+            self._pending_bash_command = normalized_args.get("command", "")
+            # Get working_dir - try multiple sources
+            import os
+            working_dir = os.getcwd()  # Default to current working directory
+
+            # Try to get from runner's bash_tool if available
+            if self.chat_app and hasattr(self.chat_app, 'runner'):
+                runner = self.chat_app.runner
+                if hasattr(runner, 'query_processor'):
+                    qp = runner.query_processor
+                    if hasattr(qp, 'bash_tool') and qp.bash_tool:
+                        bash_wd = getattr(qp.bash_tool, 'working_dir', None)
+                        if bash_wd:
+                            working_dir = str(bash_wd)
+
+            self._pending_bash_working_dir = working_dir
+
+            if hasattr(self.conversation, 'start_streaming_bash_box'):
+                self._run_on_ui(
+                    self.conversation.start_streaming_bash_box,
+                    self._pending_bash_command,
+                    self._pending_bash_working_dir,
+                )
+                self._streaming_bash_box = True
+
     def on_tool_result(self, tool_name: str, tool_args: Dict[str, Any], result: Any) -> None:
         """Called when a tool execution completes.
 
@@ -193,9 +248,50 @@ class TextualUICallback:
         if hasattr(self.conversation, 'stop_tool_execution'):
             self._run_on_ui(lambda: self.conversation.stop_tool_execution(success))
 
-        # Skip displaying "Operation cancelled by user" errors
+        # Skip displaying interrupted operations
         # These are already shown by the approval controller interrupt message
-        if isinstance(result, dict) and not result.get("success") and result.get("error") == "Operation cancelled by user":
+        if isinstance(result, dict) and result.get("interrupted"):
+            return
+
+        # Special handling for bash commands - close streaming box or show summary
+        if tool_name in ("bash_execute", "run_command") and isinstance(result, dict):
+            is_error = not result.get("success", True)
+            exit_code = result.get("exit_code", 1 if is_error else 0)
+
+            # If streaming box is active, close it
+            if self._streaming_bash_box:
+                if hasattr(self.conversation, 'close_streaming_bash_box'):
+                    self._run_on_ui(self.conversation.close_streaming_bash_box, is_error, exit_code)
+                self._streaming_bash_box = False
+
+                # Record summary for history
+                stdout = result.get("stdout") or result.get("output") or ""
+                if stdout and self.chat_app and hasattr(self.chat_app, "record_tool_summary"):
+                    lines = stdout.strip().splitlines()
+                    if lines:
+                        summary = lines[0][:70] + "..." if len(lines[0]) > 70 else lines[0]
+                        if len(lines) > 1:
+                            summary += f" ({len(lines)} lines)"
+                        self._run_on_ui(self.chat_app.record_tool_summary, tool_name, self._normalize_arguments(tool_args), [summary])
+
+                if self.chat_app and hasattr(self.chat_app, "resume_reasoning_spinner"):
+                    self._run_on_ui(self.chat_app.resume_reasoning_spinner)
+                return
+
+            # Fallback: show simple summary if no streaming was happening (no output case)
+            # Show summary like: ⎿ ✓ Done (exit 0) or ⎿ ✖ Failed (exit 1)
+            from rich.text import Text
+            grey = "#a0a4ad"
+            if is_error:
+                summary = Text("  ⎿ ", style=grey)
+                summary.append(f"✖ Failed (exit {exit_code})", style="red bold")
+            else:
+                summary = Text("  ⎿ ", style=grey)
+                summary.append(f"✓ Done (exit {exit_code})", style="green")
+            self._run_on_ui(self.conversation.write, summary)
+
+            if self.chat_app and hasattr(self.chat_app, "resume_reasoning_spinner"):
+                self._run_on_ui(self.chat_app.resume_reasoning_spinner)
             return
 
         # Format the result using the Claude-style formatter
@@ -285,6 +381,20 @@ class TextualUICallback:
         if isinstance(result, str):
             result = {"success": True, "output": result}
 
+        # Skip displaying interrupted operations
+        # These are already shown by the approval controller interrupt message
+        if isinstance(result, dict) and result.get("interrupted"):
+            # Still update the tool call status to show it was interrupted
+            if hasattr(self.conversation, 'complete_nested_tool_call'):
+                self._run_on_ui(
+                    self.conversation.complete_nested_tool_call,
+                    tool_name,
+                    depth,
+                    parent,
+                    False,  # success=False for interrupted
+                )
+            return
+
         # Update the nested tool call status to complete
         if hasattr(self.conversation, 'complete_nested_tool_call'):
             success = result.get("success", False) if isinstance(result, dict) else True
@@ -308,6 +418,35 @@ class TextualUICallback:
         elif tool_name == "complete_todo" and result.get("success"):
             todo_data = result.get("todo", {})
             self._display_todo_complete_result(todo_data, depth)
+        elif tool_name in ("bash_execute", "run_command") and isinstance(result, dict):
+            # Special handling for bash commands - render in VS Code Terminal style
+            stdout = result.get("stdout") or result.get("output") or ""
+            stderr = result.get("stderr") or ""
+            error_msg = result.get("error") or ""
+            is_error = not result.get("success", True)
+            exit_code = result.get("exit_code", 1 if is_error else 0)
+            command = normalized_args.get("command", "")
+
+            # Get working_dir from subagent context if available
+            working_dir = "."
+
+            # Combine stdout, stderr, and error for display
+            output = stdout.strip()
+            if stderr.strip():
+                output = (output + "\n" + stderr.strip()) if output else stderr.strip()
+            if is_error and error_msg.strip():
+                output = (output + "\n" + error_msg.strip()) if output else error_msg.strip()
+
+            if hasattr(self.conversation, 'add_nested_bash_output_box'):
+                self._run_on_ui(
+                    self.conversation.add_nested_bash_output_box,
+                    output,
+                    is_error,
+                    exit_code,
+                    command,
+                    working_dir,
+                    depth,
+                )
         else:
             # ALL other tools use unified StyleFormatter (same as main agent)
             self._display_tool_sub_result(tool_name, normalized_args, result, depth)
@@ -330,6 +469,10 @@ class TextualUICallback:
             result: Result of the tool execution
             depth: Nesting depth for indentation
         """
+        # Skip displaying interrupted operations (safety net - should be caught earlier)
+        if isinstance(result, dict) and result.get("interrupted"):
+            return
+
         # Special handling for edit_file - use dedicated diff display with colors
         # This avoids ANSI code stripping that happens in add_nested_tool_sub_results
         if tool_name == "edit_file" and result.get("success"):

@@ -2,6 +2,7 @@
 
 import platform
 import re
+import select
 import subprocess
 import time
 from pathlib import Path
@@ -99,6 +100,7 @@ class BashTool(BaseTool):
         operation: Optional[Operation] = None,
         task_monitor: Optional[Any] = None,
         auto_confirm: bool = False,
+        output_callback: Optional[Any] = None,
     ) -> BashResult:
         """Execute a bash command.
 
@@ -112,6 +114,7 @@ class BashTool(BaseTool):
             operation: Operation object for tracking
             task_monitor: Optional TaskMonitor for interrupt support
             auto_confirm: Automatically confirm y/n prompts for interactive commands
+            output_callback: Optional callback(line, is_stderr=False) for streaming output
 
         Returns:
             BashResult with execution details
@@ -190,6 +193,7 @@ class BashTool(BaseTool):
                     stdout=subprocess.PIPE if capture_output else None,
                     stderr=subprocess.PIPE if capture_output else None,
                     text=True,
+                    bufsize=1,  # Line buffered for real-time streaming
                     cwd=str(work_dir),
                     env=env,
                 )
@@ -260,6 +264,7 @@ class BashTool(BaseTool):
                 stdout=subprocess.PIPE if capture_output else None,
                 stderr=subprocess.PIPE if capture_output else None,
                 text=True,
+                bufsize=1,  # Line buffered for real-time streaming
                 cwd=str(work_dir),
                 env=env,
             )
@@ -274,13 +279,43 @@ class BashTool(BaseTool):
                 except Exception:
                     pass
 
-            # Poll process with interrupt checking
+            # Poll process with interrupt checking and streaming output
             stdout_lines = []
             stderr_lines = []
             poll_interval = 0.1  # Check every 100ms
             time_elapsed = 0.0
 
             while process.poll() is None:
+                # Stream output if callback is provided
+                if output_callback and capture_output:
+                    # Use select to check if data is available (non-blocking)
+                    try:
+                        streams_to_check = []
+                        if process.stdout:
+                            streams_to_check.append(process.stdout)
+                        if process.stderr:
+                            streams_to_check.append(process.stderr)
+
+                        if streams_to_check:
+                            readable, _, _ = select.select(streams_to_check, [], [], 0)
+                            for stream in readable:
+                                line = stream.readline()
+                                if line:
+                                    is_stderr = (stream == process.stderr)
+                                    line_text = line.rstrip('\n')
+                                    if is_stderr:
+                                        stderr_lines.append(line_text)
+                                    else:
+                                        stdout_lines.append(line_text)
+                                    # Call the callback with the line
+                                    try:
+                                        output_callback(line_text, is_stderr=is_stderr)
+                                    except Exception:
+                                        pass  # Don't let callback errors break execution
+                    except (ValueError, OSError):
+                        # Stream may be closed or invalid
+                        pass
+
                 # Check for interrupt
                 if task_monitor is not None:
                     should_interrupt = False
@@ -307,7 +342,7 @@ class BashTool(BaseTool):
                             success=False,
                             command=command,
                             exit_code=-1,
-                            stdout="",
+                            stdout="\n".join(stdout_lines) if stdout_lines else "",
                             stderr=error,
                             duration=duration,
                             error=error,
@@ -324,15 +359,6 @@ class BashTool(BaseTool):
                     duration = time.time() - start_time
                     error = f"Command timed out after {timeout} seconds"
 
-                    # Try to get partial output
-                    partial_stdout = ""
-                    partial_stderr = ""
-                    if capture_output:
-                        try:
-                            partial_stdout, partial_stderr = process.communicate(timeout=0.1)
-                        except Exception:
-                            pass
-
                     if operation:
                         operation.mark_failed(error)
 
@@ -340,16 +366,38 @@ class BashTool(BaseTool):
                         success=False,
                         command=command,
                         exit_code=-1,
-                        stdout=partial_stdout,
-                        stderr=partial_stderr,
+                        stdout="\n".join(stdout_lines) if stdout_lines else "",
+                        stderr="\n".join(stderr_lines) if stderr_lines else "",
                         duration=duration,
                         error=error,
                         operation_id=operation.id if operation else None,
                     )
 
-            # Process finished - collect output
+            # Process finished - collect any remaining output
             if capture_output:
-                stdout_text, stderr_text = process.communicate()
+                if output_callback:
+                    # Read any remaining lines that weren't picked up by select
+                    if process.stdout:
+                        for line in process.stdout:
+                            line_text = line.rstrip('\n')
+                            stdout_lines.append(line_text)
+                            try:
+                                output_callback(line_text, is_stderr=False)
+                            except Exception:
+                                pass
+                    if process.stderr:
+                        for line in process.stderr:
+                            line_text = line.rstrip('\n')
+                            stderr_lines.append(line_text)
+                            try:
+                                output_callback(line_text, is_stderr=True)
+                            except Exception:
+                                pass
+                    stdout_text = "\n".join(stdout_lines)
+                    stderr_text = "\n".join(stderr_lines)
+                else:
+                    # No streaming - use communicate() as before
+                    stdout_text, stderr_text = process.communicate()
             else:
                 stdout_text, stderr_text = "", ""
 
