@@ -65,7 +65,7 @@ _PRIMARY_ARG_MAP: dict[str, tuple[str, ...]] = {
     "git_commit": ("message",),
 }
 
-_MAX_SUMMARY_LEN = 60
+_MAX_SUMMARY_LEN = 150
 _NESTED_KEY_PRIORITY = (
     "command",
     "file_path",
@@ -272,9 +272,7 @@ def format_tool_call(tool_name: str, tool_args: Mapping[str, Any]) -> str:
     elif tool_name == "spawn_subagent" and tool_args:
         subagent_type = tool_args.get("subagent_type", "general-purpose")
         description = tool_args.get("description", "")
-        # Truncate description for display
-        if description and len(description) > 50:
-            description = description[:47] + "..."
+        # Show full description without truncation
         if description:
             return f"Spawn[{subagent_type}]({description})"
         return f"Spawn[{subagent_type}]"

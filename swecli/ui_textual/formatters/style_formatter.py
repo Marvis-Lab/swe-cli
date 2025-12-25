@@ -108,7 +108,7 @@ class StyleFormatter:
 
     def _format_read_file_result(self, tool_args: Dict[str, Any], result: Dict[str, Any]) -> List[str]:
         if not result.get("success"):
-            error_msg = result.get("error", "Unknown error")
+            error_msg = result.get("error") or "Unknown error"
             if "interrupted by user" in error_msg.lower():
                 return [create_interrupt_message(STANDARD_INTERRUPT_MESSAGE)]
             return [self._error_line(error_msg)]
@@ -123,7 +123,7 @@ class StyleFormatter:
 
     def _format_write_file_result(self, tool_args: Dict[str, Any], result: Dict[str, Any]) -> List[str]:
         if not result.get("success"):
-            error_msg = result.get("error", "Unknown error")
+            error_msg = result.get("error") or "Unknown error"
             if "interrupted by user" in error_msg.lower():
                 return [create_interrupt_message(STANDARD_INTERRUPT_MESSAGE)]
             return [self._error_line(error_msg)]
@@ -140,7 +140,7 @@ class StyleFormatter:
         from swecli.ui_textual.formatters_internal.utils import DiffParser
 
         if not result.get("success"):
-            error_msg = result.get("error", "Unknown error")
+            error_msg = result.get("error") or "Unknown error"
             if "interrupted by user" in error_msg.lower():
                 return [create_interrupt_message(STANDARD_INTERRUPT_MESSAGE)]
             return [self._error_line(error_msg)]
@@ -185,7 +185,7 @@ class StyleFormatter:
 
     def _format_search_result(self, tool_args: Dict[str, Any], result: Dict[str, Any]) -> List[str]:
         if not result.get("success"):
-            error_msg = result.get("error", "Unknown error")
+            error_msg = result.get("error") or "Unknown error"
             if "interrupted by user" in error_msg.lower():
                 return [create_interrupt_message(STANDARD_INTERRUPT_MESSAGE)]
             return [self._error_line(error_msg)]
@@ -211,7 +211,7 @@ class StyleFormatter:
 
     def _format_shell_result(self, tool_args: Dict[str, Any], result: Dict[str, Any]) -> List[str]:
         if not result.get("success"):
-            error_msg = result.get("error", "Unknown error")
+            error_msg = result.get("error") or "Unknown error"
             # Special handling for interrupted commands
             if "interrupted" in error_msg.lower():
                 return [create_interrupt_message(STANDARD_INTERRUPT_MESSAGE)]
@@ -289,7 +289,7 @@ class StyleFormatter:
 
     def _format_list_files_result(self, tool_args: Dict[str, Any], result: Dict[str, Any]) -> List[str]:
         if not result.get("success"):
-            error_msg = result.get("error", "Unknown error")
+            error_msg = result.get("error") or "Unknown error"
             if "interrupted by user" in error_msg.lower():
                 return [create_interrupt_message(STANDARD_INTERRUPT_MESSAGE)]
             return [self._error_line(error_msg)]
@@ -314,7 +314,7 @@ class StyleFormatter:
 
     def _format_fetch_url_result(self, tool_args: Dict[str, Any], result: Dict[str, Any]) -> List[str]:
         if not result.get("success"):
-            error_msg = result.get("error", "Unknown error")
+            error_msg = result.get("error") or "Unknown error"
             if "interrupted by user" in error_msg.lower():
                 return [create_interrupt_message(STANDARD_INTERRUPT_MESSAGE)]
             return [self._error_line(error_msg)]
@@ -325,7 +325,7 @@ class StyleFormatter:
 
     def _format_analyze_image_result(self, tool_args: Dict[str, Any], result: Dict[str, Any]) -> List[str]:
         if not result.get("success"):
-            error_msg = result.get("error", "Unknown error")
+            error_msg = result.get("error") or "Unknown error"
             if "interrupted by user" in error_msg.lower():
                 return [create_interrupt_message(STANDARD_INTERRUPT_MESSAGE)]
             return [self._error_line(error_msg)]
@@ -333,7 +333,7 @@ class StyleFormatter:
 
     def _format_process_output_result(self, tool_args: Dict[str, Any], result: Dict[str, Any]) -> List[str]:
         if not result.get("success"):
-            error_msg = result.get("error", "Unknown error")
+            error_msg = result.get("error") or "Unknown error"
             if "interrupted by user" in error_msg.lower():
                 return [create_interrupt_message(STANDARD_INTERRUPT_MESSAGE)]
             return [self._error_line(error_msg)]
@@ -353,7 +353,7 @@ class StyleFormatter:
     def _format_write_todos_result(self, tool_args: Dict[str, Any], result: Dict[str, Any]) -> List[str]:
         """Format write_todos result showing all created todos."""
         if not result.get("success"):
-            error_msg = result.get("error", "Unknown error")
+            error_msg = result.get("error") or "Unknown error"
             return [self._error_line(error_msg)]
 
         output = result.get("output", "")
@@ -366,7 +366,7 @@ class StyleFormatter:
 
     def _format_generic_result(self, tool_name: str, tool_args: Dict[str, Any], result: Dict[str, Any]) -> List[str]:
         if not result.get("success"):
-            error_msg = result.get("error", "Unknown error")
+            error_msg = result.get("error") or "Unknown error"
             if "interrupted by user" in error_msg.lower():
                 return [create_interrupt_message(STANDARD_INTERRUPT_MESSAGE)]
             return [self._error_line(error_msg)]
