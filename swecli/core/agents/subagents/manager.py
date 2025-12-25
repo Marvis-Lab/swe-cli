@@ -157,6 +157,8 @@ class SubAgentManager:
         deps: SubAgentDeps,
         ui_callback: Any = None,
         task_monitor: Any = None,
+        working_dir: Any = None,
+        docker_handler: Any = None,
     ) -> dict[str, Any]:
         """Execute a subagent synchronously with the given task.
 
@@ -166,6 +168,10 @@ class SubAgentManager:
             deps: Dependencies for tool execution
             ui_callback: Optional UI callback for displaying tool calls
             task_monitor: Optional task monitor for interrupt support
+            working_dir: Optional working directory override for the subagent
+            docker_handler: Optional DockerToolHandler for Docker-based execution.
+                           When provided, all tool calls are routed through Docker
+                           instead of local execution.
 
         Returns:
             Result dict with content, success, and messages
@@ -179,7 +185,57 @@ class SubAgentManager:
             }
 
         compiled = self._agents[name]
-        agent = compiled["agent"]
+
+        # Determine which tool registry to use
+        if docker_handler is not None:
+            # Use Docker-based tool registry for Docker execution
+            from swecli.core.docker.tool_handler import DockerToolRegistry
+            tool_registry = DockerToolRegistry(docker_handler)
+        else:
+            tool_registry = self._tool_registry
+
+        # If working_dir or docker_handler is provided, create a new agent
+        # Otherwise use the pre-registered agent
+        if working_dir is not None or docker_handler is not None:
+            from swecli.core.agents import SwecliAgent
+            from .agents import ALL_SUBAGENTS
+
+            # Find the spec for this subagent
+            spec = next((s for s in ALL_SUBAGENTS if s["name"] == name), None)
+            if spec is None:
+                return {
+                    "success": False,
+                    "error": f"Spec not found for subagent '{name}'",
+                    "content": "",
+                }
+
+            # Create new agent with overridden tool_registry and/or working_dir
+            agent = SwecliAgent(
+                config=self._get_subagent_config(spec),
+                tool_registry=tool_registry,
+                mode_manager=self._mode_manager,
+                working_dir=working_dir if working_dir is not None else self._working_dir,
+            )
+            # Apply system prompt override
+            if spec.get("system_prompt"):
+                agent.system_prompt = spec["system_prompt"]
+        else:
+            agent = compiled["agent"]
+
+        # Display spawn tool call BEFORE creating nested callback
+        # This ensures the Spawn line appears before any nested tool calls
+        if ui_callback is not None and hasattr(ui_callback, "on_tool_call"):
+            # Build a short description for display (first line of task)
+            first_line = task.split("\n")[0].strip()
+            if len(first_line) > 100:
+                first_line = first_line[:97] + "..."
+            ui_callback.on_tool_call("spawn_subagent", {
+                "subagent_type": name,
+                "description": first_line,
+            })
+            # Small delay to ensure UI renders before nested calls start
+            import time
+            time.sleep(0.05)
 
         # Create nested callback wrapper if parent callback provided
         nested_callback = None
