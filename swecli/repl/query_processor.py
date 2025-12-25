@@ -986,8 +986,8 @@ class QueryProcessor:
                         success = result.get("success", False)
                         ui_callback.on_debug(f"Tool '{tool_name}' completed (success={success})", "TOOL")
 
-                    # Check if operation was cancelled
-                    if not result["success"] and result.get("error") == "Operation cancelled by user":
+                    # Check if operation was cancelled/interrupted
+                    if result.get("interrupted"):
                         operation_cancelled = True
 
                     # Notify UI about tool result
@@ -1001,10 +1001,6 @@ class QueryProcessor:
                     # Handle separate_response for spawn_subagent (display as assistant message)
                     separate_response = result.get("separate_response")
                     if separate_response and ui_callback:
-                        subagent_type = result.get("subagent_type", "subagent")
-                        # Add subagent completion marker via callback's conversation log
-                        if hasattr(ui_callback, 'conversation') and hasattr(ui_callback.conversation, 'add_subagent_completion'):
-                            ui_callback._run_on_ui(ui_callback.conversation.add_subagent_completion, subagent_type)
                         # Display the final result as an assistant message
                         if hasattr(ui_callback, 'on_assistant_message'):
                             ui_callback.on_assistant_message(separate_response)

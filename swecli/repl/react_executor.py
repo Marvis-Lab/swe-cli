@@ -501,8 +501,8 @@ class ReActExecutor:
                 success = result.get("success", False)
                 ui_callback.on_debug(f"Tool '{tool_name}' completed (success={success})", "TOOL")
 
-            # Check if operation was cancelled
-            if not result["success"] and result.get("error") == "Operation cancelled by user":
+            # Check if operation was cancelled/interrupted
+            if result.get("interrupted"):
                 operation_cancelled = True
 
             # Notify UI about tool result (callback mode)

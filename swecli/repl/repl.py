@@ -641,7 +641,6 @@ class REPL:
         # Create handler
         handler = IssueResolverCommand(
             subagent_manager=subagent_manager,
-            mcp_manager=self.mcp_manager,
             working_dir=self.config_manager.working_dir,
             mode_manager=self.mode_manager,
             approval_manager=self.approval_manager,
