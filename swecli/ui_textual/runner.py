@@ -799,6 +799,11 @@ Work through each implementation step in order. Mark each todo item as 'in_progr
             self._handle_resolve_issue_command(command)
             return
 
+        # Special handling for /paper2code - use TextualUICallback for proper display
+        if lowered.startswith("/paper2code"):
+            self._handle_paper2code_command(command)
+            return
+
         with self.repl.console.capture() as capture:
             self.repl._handle_command(command)
         output = capture.get()
@@ -1022,6 +1027,34 @@ Work through each implementation step in order. Mark each todo item as 'in_progr
         if output.strip():
             self._enqueue_console_text(output)
 
+    def _handle_paper2code_command(self, command: str) -> None:
+        """Handle /paper2code command with TextualUICallback for proper display.
+
+        Args:
+            command: The full command (e.g., "/paper2code path/to/paper.pdf")
+        """
+        # Create UI callback for real-time tool display
+        conversation_widget = None
+        try:
+            from swecli.ui_textual.chat_app import ConversationLog
+            conversation_widget = self.app.query_one("#conversation", ConversationLog)
+        except Exception:
+            if hasattr(self.app, 'conversation') and self.app.conversation is not None:
+                conversation_widget = self.app.conversation
+
+        ui_callback = None
+        if conversation_widget is not None:
+            from swecli.ui_textual.ui_callback import TextualUICallback
+            ui_callback = TextualUICallback(conversation_widget, self.app)
+
+        # Capture any console output during execution
+        with self.repl.console.capture() as capture:
+            self.repl._paper2code(command, ui_callback=ui_callback)
+
+        output = capture.get()
+        if output.strip():
+            self._enqueue_console_text(output)
+
     def _handle_interrupt(self) -> bool:
         """Handle interrupt request from UI (ESC key press).
 
@@ -1212,9 +1245,8 @@ Work through each implementation step in order. Mark each todo item as 'in_progr
         self._console_task = asyncio.create_task(self._drain_console_queue())
         try:
             # Use alternate screen mode (inline=False) for clean TUI with no terminal noise
-            # This ensures scrolling up shows a clean screen, not previous terminal output
-            # Disable mouse to allow natural terminal text selection
-            await self.app.run_async(inline=False, mouse=False)
+            # Enable mouse for scroll support; text selection requires Option/Alt + drag
+            await self.app.run_async(inline=False, mouse=True)
         finally:
             # Stop message processor thread
             self._stop_message_processor()

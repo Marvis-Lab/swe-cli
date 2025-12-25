@@ -10,6 +10,7 @@ from rich.console import Group
 from rich.panel import Panel
 from rich.syntax import Syntax
 from rich.text import Text
+from textual.events import MouseDown, MouseMove, MouseScrollDown, MouseScrollUp, MouseUp
 from textual.geometry import Size
 from textual.timer import Timer
 from textual.widgets import RichLog
@@ -61,6 +62,8 @@ class ConversationLog(RichLog):
         self._streaming_box_header_line: int | None = None  # Line index of header row
         self._streaming_box_width: int = 60  # Box width
         self._streaming_box_top_line: int | None = None  # Line index of top border (for error restyling)
+        # Mouse drag detection for selection tip
+        self._mouse_down_pos: tuple[int, int] | None = None
 
     def write(self, content, *args, **kwargs) -> None:
         """Override write to track content state for spacing logic."""
@@ -112,8 +115,80 @@ class ConversationLog(RichLog):
             for idx in sorted_lines[:to_remove]:
                 self._protected_lines.discard(idx)
 
-    def on_key(self, event) -> None:
-        """Detect manual scrolling via keyboard to disable auto-scroll."""
+    async def on_key(self, event) -> None:
+        """Handle key events, delegating to overlays if active, else scrolling."""
+        
+        # Check for active overlays (Approval Prompt or Model Picker)
+        app = getattr(self, "app", None)
+        if app:
+            # 1. Approval Prompt
+            approval_controller = getattr(app, "_approval_controller", None)
+            if approval_controller and getattr(approval_controller, "active", False):
+                if event.key == "up":
+                    event.stop()
+                    event.prevent_default()
+                    if hasattr(app, "_approval_move"):
+                        app._approval_move(-1)
+                    return
+                if event.key == "down":
+                    event.stop()
+                    event.prevent_default()
+                    if hasattr(app, "_approval_move"):
+                        app._approval_move(1)
+                    return
+                if event.key in {"enter", "return"} and "+" not in event.key:
+                    event.stop()
+                    event.prevent_default()
+                    if hasattr(app, "_approval_confirm"):
+                        app._approval_confirm()
+                    return
+                if event.key in {"escape", "ctrl+c"}:
+                    event.stop()
+                    event.prevent_default()
+                    if hasattr(app, "_approval_cancel"):
+                        app._approval_cancel()
+                    return
+                return  # Swallow other keys in approval mode? Or let them pass?
+
+            # 2. Model Picker
+            model_picker = getattr(app, "_model_picker", None)
+            if model_picker and getattr(model_picker, "active", False):
+                if event.key == "up":
+                    event.stop()
+                    event.prevent_default()
+                    if hasattr(app, "_model_picker_move"):
+                        app._model_picker_move(-1)
+                    return
+                if event.key == "down":
+                    event.stop()
+                    event.prevent_default()
+                    if hasattr(app, "_model_picker_move"):
+                        app._model_picker_move(1)
+                    return
+                if event.key in {"enter", "return"} and "+" not in event.key:
+                    event.stop()
+                    event.prevent_default()
+                    confirm = getattr(app, "_model_picker_confirm", None)
+                    if confirm is not None:
+                        result = confirm()
+                        import inspect
+                        if inspect.isawaitable(result):
+                            await result
+                    return
+                if event.key in {"escape", "ctrl+c"}:
+                    event.stop()
+                    event.prevent_default()
+                    if hasattr(app, "_model_picker_cancel"):
+                        app._model_picker_cancel()
+                    return
+                if event.character and event.character.lower() == "b":
+                    event.stop()
+                    event.prevent_default()
+                    if hasattr(app, "_model_picker_back"):
+                        app._model_picker_back()
+                    return
+
+        # Default scrolling behavior
         # Handle Page Up/Down (or Fn+Up/Down) with a smaller stride for finer control
         if event.key == "pageup":
             self.scroll_partial_page(direction=-1)
@@ -137,6 +212,37 @@ class ConversationLog(RichLog):
         self.auto_scroll = False
         stride = max(self.size.height // 10, 3)  # 10% of viewport per page
         self.scroll_relative(y=direction * stride)
+
+    def on_mouse_scroll_down(self, event: MouseScrollDown) -> None:
+        """Handle mouse scroll down (wheel down / two-finger swipe down)."""
+        self._user_scrolled = True
+        self.auto_scroll = False
+        self.scroll_relative(y=3)  # Scroll 3 lines per tick
+        event.stop()
+
+    def on_mouse_scroll_up(self, event: MouseScrollUp) -> None:
+        """Handle mouse scroll up (wheel up / two-finger swipe up)."""
+        self._user_scrolled = True
+        self.auto_scroll = False
+        self.scroll_relative(y=-3)  # Scroll 3 lines per tick
+        self._reset_auto_scroll()  # Re-enable auto-scroll if at bottom
+        event.stop()
+
+    def on_mouse_down(self, event: MouseDown) -> None:
+        """Track mouse down for drag detection."""
+        self._mouse_down_pos = (event.x, event.y)
+
+    def on_mouse_move(self, event: MouseMove) -> None:
+        """Detect drag without Shift and show selection tip."""
+        if self._mouse_down_pos and not event.shift:
+            # User is dragging without Shift - show selection tip
+            if hasattr(self.app, 'show_selection_tip'):
+                self.app.show_selection_tip()
+            self._mouse_down_pos = None  # Only show once per drag
+
+    def on_mouse_up(self, event: MouseUp) -> None:
+        """Clear mouse down tracking."""
+        self._mouse_down_pos = None
 
     def _reset_auto_scroll(self) -> None:
         """Reset auto-scroll when new content arrives."""
@@ -640,7 +746,7 @@ class ConversationLog(RichLog):
         # Get widget width, leave margin for "  ⎿ " prefix (4 chars)
         available = (self.size.width or 120) - 4
         # Clamp between reasonable min/max
-        return max(60, min(available, 200))
+        return max(60, min(available, 120))
 
     def _format_path(self, path: str) -> str:
         """Shorten path by replacing home directory with ~."""

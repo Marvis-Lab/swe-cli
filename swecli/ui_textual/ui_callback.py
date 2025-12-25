@@ -26,6 +26,7 @@ class TextualUICallback:
         self.formatter = StyleFormatter()
         self._current_thinking = False
         self._streaming_bash_box = False  # True when streaming bash output to box
+        self._pending_bash_start = False  # True when bash box start is deferred
         self._pending_bash_command = ""  # Command being executed (for VS Code terminal display)
         self._pending_bash_working_dir = "."  # Working directory for bash command
 
@@ -174,6 +175,17 @@ class TextualUICallback:
             line: A single line of output from the bash command
             is_stderr: True if this line came from stderr
         """
+        # Lazy start: only open the box when we actually have output
+        if self._pending_bash_start:
+            self._pending_bash_start = False
+            self._streaming_bash_box = True
+            if hasattr(self.conversation, 'start_streaming_bash_box'):
+                self._run_on_ui(
+                    self.conversation.start_streaming_bash_box,
+                    self._pending_bash_command,
+                    self._pending_bash_working_dir,
+                )
+
         if self._streaming_bash_box and hasattr(self.conversation, 'append_to_streaming_box'):
             self._run_on_ui(self.conversation.append_to_streaming_box, line, is_stderr)
 
@@ -222,13 +234,10 @@ class TextualUICallback:
 
             self._pending_bash_working_dir = working_dir
 
+            # Don't start box yet - wait for first output line (lazy start)
+            # This prevents empty boxes appearing during approval prompts
             if hasattr(self.conversation, 'start_streaming_bash_box'):
-                self._run_on_ui(
-                    self.conversation.start_streaming_bash_box,
-                    self._pending_bash_command,
-                    self._pending_bash_working_dir,
-                )
-                self._streaming_bash_box = True
+                self._pending_bash_start = True
 
     def on_tool_result(self, tool_name: str, tool_args: Dict[str, Any], result: Any) -> None:
         """Called when a tool execution completes.
@@ -257,6 +266,9 @@ class TextualUICallback:
         if tool_name in ("bash_execute", "run_command") and isinstance(result, dict):
             is_error = not result.get("success", True)
             exit_code = result.get("exit_code", 1 if is_error else 0)
+
+            # Reset pending start flag if it was never triggered (no output)
+            self._pending_bash_start = False
 
             # If streaming box is active, close it
             if self._streaming_bash_box:

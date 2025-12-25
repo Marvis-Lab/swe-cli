@@ -520,6 +520,8 @@ class REPL:
             self._run_command(args)
         elif cmd == "/resolve-issue":
             self._resolve_issue(command)
+        elif cmd == "/paper2code":
+            self._paper2code(command)
         else:
             self.console.print(f"[cyan]⏺[/cyan] {cmd}")
             self.console.print(f"  ⎿  [red]Unknown command[/red]")
@@ -641,6 +643,7 @@ class REPL:
         # Create handler
         handler = IssueResolverCommand(
             subagent_manager=subagent_manager,
+            mcp_manager=self.mcp_manager,
             working_dir=self.config_manager.working_dir,
             mode_manager=self.mode_manager,
             approval_manager=self.approval_manager,
@@ -670,6 +673,76 @@ class REPL:
                 self.console.print(f"  ⎿  [red]{result.message}[/red]")
                 if result.repo_path:
                     self.console.print(f"  ⎿  [dim]Repository: {result.repo_path}[/dim]")
+
+        except Exception as e:
+            self.console.print(f"  ⎿  [red]Error: {e}[/red]")
+            import traceback
+            traceback.print_exc()
+
+    def _paper2code(self, command: str, ui_callback: Any = None) -> None:
+        """Handle /paper2code command.
+
+        Args:
+            command: Full command string
+            ui_callback: Optional UI callback
+        """
+        from swecli.commands.paper2code_command import Paper2CodeCommand
+
+        # Get subagent manager from runtime suite
+        subagent_manager = getattr(self.runtime_suite.agents, "subagent_manager", None)
+        if subagent_manager is None:
+            self.console.print("[cyan]⏺[/cyan] paper2code")
+            self.console.print("  ⎿  [red]Subagent manager not available[/red]")
+            return
+
+        # Create simple console callback if none provided
+        if ui_callback is None:
+            class ConsoleUICallback:
+                def __init__(self, console):
+                    self.console = console
+                    self._depth = 0
+                def on_thinking_start(self): pass
+                def on_thinking_complete(self): pass
+                def on_tool_call(self, tool_name: str, tool_args: dict):
+                    indent = "  " * self._depth
+                    args_str = ", ".join(f"{k}={v!r}" for k, v in list(tool_args.items())[:2])
+                    self.console.print(f"{indent}[cyan]⏺[/cyan] {tool_name}({args_str})")
+                    self._depth += 1
+                def on_tool_result(self, tool_name: str, tool_args: dict, result: str):
+                    self._depth = max(0, self._depth - 1)
+                    indent = "  " * self._depth
+                    result_preview = str(result)[:100] + "..." if len(str(result)) > 100 else str(result)
+                    self.console.print(f"{indent}[dim]⎿[/dim]  {result_preview}")
+
+            ui_callback = ConsoleUICallback(self.console)
+
+        # Create handler
+        handler = Paper2CodeCommand(
+            subagent_manager=subagent_manager,
+            working_dir=self.config_manager.working_dir,
+            mode_manager=self.mode_manager,
+            approval_manager=self.approval_manager,
+            undo_manager=self.undo_manager,
+            ui_callback=ui_callback,
+        )
+
+        try:
+            args = handler.parse_args(command)
+        except ValueError as e:
+            self.console.print("[cyan]⏺[/cyan] paper2code")
+            self.console.print(f"  ⎿  [red]{e}[/red]")
+            return
+
+        self.console.print(f"[cyan]⏺[/cyan] paper2code ({args.pdf_path})")
+
+        try:
+            result = handler.execute(args)
+            if result.success:
+                self.console.print(f"  ⎿  [green]{result.message}[/green]")
+                if result.output_path:
+                    self.console.print(f"  ⎿  Output: {result.output_path}")
+            else:
+                self.console.print(f"  ⎿  [red]{result.message}[/red]")
 
         except Exception as e:
             self.console.print(f"  ⎿  [red]Error: {e}[/red]")

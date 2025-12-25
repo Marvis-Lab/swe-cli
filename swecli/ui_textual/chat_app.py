@@ -34,8 +34,8 @@ class SWECLIChatApp(App):
 
     CSS_PATH = "styles/chat.tcss"
 
-    # Disable mouse support to allow natural terminal text selection
-    ENABLE_MOUSE = False
+    # Enable mouse for scroll support; text selection requires Option/Alt + drag
+    ENABLE_MOUSE = True
 
     BINDINGS = [
         Binding("ctrl+c", "clear_or_quit", "", show=False, priority=True),
@@ -116,6 +116,8 @@ class SWECLIChatApp(App):
         self._history = MessageHistory()
         self._message_controller = MessageController(self)
         self._exit_confirmation_mode = False
+        self._selection_tip_timer: Any | None = None
+        self._default_label = "› Type your message (Enter to send, Shift+Enter for new line):"
 
     def compose(self) -> ComposeResult:
         """Create child widgets."""
@@ -474,6 +476,27 @@ class SWECLIChatApp(App):
             self.input_label.update(f"› {queue_size} {msg} queued")
         else:
             self.input_label.update("› Type your message (Enter to send, Shift+Enter for new line):")
+
+    def show_selection_tip(self) -> None:
+        """Show temporary tip for text selection."""
+        # Don't override exit confirmation message
+        if self._exit_confirmation_mode:
+            return
+
+        # Cancel existing timer if any
+        if self._selection_tip_timer:
+            self._selection_tip_timer.stop()
+
+        self.input_label.update("› 💡 Shift+drag (or Option+drag on Mac) to select text")
+        self._selection_tip_timer = self.set_timer(4, self._revert_input_label)
+
+    def _revert_input_label(self) -> None:
+        """Revert input label to default."""
+        if self._exit_confirmation_mode:
+            return
+
+        self.input_label.update(self._default_label)
+        self._selection_tip_timer = None
 
     def action_quit(self) -> None:
         """Quit the application (Ctrl+C)."""
