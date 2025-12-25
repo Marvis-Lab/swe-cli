@@ -131,6 +131,20 @@ class SWEBenchInstance:
         """Extract repository name from repo field."""
         return self.repo.split("/")[1]
 
+    @property
+    def docker_image(self) -> str:
+        """Get the SWE-bench Docker image for this instance.
+
+        SWE-bench provides pre-built Docker images with the correct environment
+        for each instance. The image naming convention is:
+            swebench/sweb.eval.x86_64.{instance_id}:latest
+
+        Docker doesn't allow double underscores, so '__' is replaced with '_1776_'.
+        """
+        # Replace __ with _1776_ (Docker doesn't allow double underscores)
+        id_docker_safe = self.instance_id.replace("__", "_1776_")
+        return f"swebench/sweb.eval.x86_64.{id_docker_safe}:latest".lower()
+
 
 # Dataset mapping for different SWE-bench subsets
 # Keys use explicit names for clarity (swebench-lite vs just "lite")

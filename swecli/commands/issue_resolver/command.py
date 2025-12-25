@@ -1,4 +1,7 @@
-"""Command handler for /resolve-issue command."""
+"""Command handler for /resolve-issue command.
+
+Runs SWE-bench instances in Docker containers for isolated execution.
+"""
 
 from __future__ import annotations
 
@@ -6,39 +9,28 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
 
-from swecli.commands.issue_resolver.mcp_github import MCPGitHub
-from swecli.commands.issue_resolver.url_parser import parse_github_issue_url
-
 if TYPE_CHECKING:
     from swecli.core.agents.subagents.manager import SubAgentManager
-    from swecli.core.context_engineering.mcp.manager import MCPManager
 
 
 @dataclass
 class IssueResolverArgs:
     """Arguments for /resolve-issue command."""
 
-    # GitHub mode
-    issue_url: Optional[str] = None
-
     # SWE-bench mode
     dataset: Optional[str] = None  # "swebench-verified", "swebench-lite", "swebench-full"
     instance: Optional[str] = None  # Optional: specific instance ID
     parallel: int = 1  # Number of concurrent instances for batch mode
 
-    # Common options
-    skip_tests: bool = False
-    auto_pr: bool = True
-
-    @property
-    def is_swebench_mode(self) -> bool:
-        """Check if running in SWE-bench evaluation mode."""
-        return self.dataset is not None and self.dataset.startswith("swebench-")
+    # Docker configuration (always Docker mode)
+    docker_image: Optional[str] = None  # None = use SWE-bench image for instance
+    docker_memory: str = "4g"
+    docker_cpus: str = "4"
 
     @property
     def is_batch_mode(self) -> bool:
         """Check if running in batch mode (whole dataset)."""
-        return self.is_swebench_mode and self.instance is None
+        return self.dataset is not None and self.instance is None
 
 
 @dataclass
@@ -55,21 +47,20 @@ class ResolveResult:
 
 
 class IssueResolverCommand:
-    """Thin wrapper that spawns Issue-Resolver subagent.
+    """Docker-based issue resolver for SWE-bench evaluation.
 
-    The subagent handles the complete workflow:
-    1. Clone repository
-    2. Create fix branch
-    3. Analyze and fix the issue
-    4. Commit changes
+    Runs each instance in an isolated Docker container:
+    1. Start container with Python environment
+    2. Clone repository inside container
+    3. Execute Issue-Resolver subagent
+    4. Extract patch and stop container
 
-    All progress is shown via the standard UI callback with ⏺ and ⎿ symbols.
+    All progress is shown via the standard UI callback.
     """
 
     def __init__(
         self,
         subagent_manager: "SubAgentManager",
-        mcp_manager: "MCPManager",
         working_dir: Optional[Path] = None,
         mode_manager: Optional[Any] = None,
         approval_manager: Optional[Any] = None,
@@ -80,16 +71,13 @@ class IssueResolverCommand:
 
         Args:
             subagent_manager: SubAgentManager for spawning Issue-Resolver
-            mcp_manager: MCP manager for GitHub operations
-            working_dir: Working directory for operations
+            working_dir: Working directory for saving patches
             mode_manager: Mode manager for subagent deps
             approval_manager: Approval manager for subagent deps
             undo_manager: Undo manager for subagent deps
             ui_callback: UI callback for displaying progress
         """
         self.subagent_manager = subagent_manager
-        self.mcp_github = MCPGitHub(mcp_manager)
-        # Use current directory - repos will be cloned to ./swebench-repos/
         self.working_dir = working_dir or Path.cwd()
         self.mode_manager = mode_manager
         self.approval_manager = approval_manager
@@ -112,72 +100,52 @@ class IssueResolverCommand:
 
         parts = command.strip().split()
 
-        # Common options
-        skip_tests = "--skip-tests" in parts
-        auto_pr = "--no-pr" not in parts
-
-        # Check for --dataset flag (SWE-bench evaluation mode)
-        if "--dataset" in parts:
-            idx = parts.index("--dataset")
-            if idx + 1 >= len(parts):
-                raise ValueError("--dataset requires a value")
-            dataset = parts[idx + 1]
-
-            if dataset not in VALID_DATASETS:
-                raise ValueError(
-                    f"Invalid dataset '{dataset}'. "
-                    f"Must be one of: {', '.join(VALID_DATASETS)}"
-                )
-
-            # Optional --instance (if not provided, runs whole dataset)
-            instance = None
-            if "--instance" in parts:
-                i_idx = parts.index("--instance")
-                if i_idx + 1 < len(parts):
-                    instance = parts[i_idx + 1]
-
-            # Optional --parallel (for batch mode)
-            parallel = 1
-            if "--parallel" in parts:
-                p_idx = parts.index("--parallel")
-                if p_idx + 1 < len(parts):
-                    try:
-                        parallel = int(parts[p_idx + 1])
-                        if parallel < 1:
-                            raise ValueError("--parallel must be at least 1")
-                    except ValueError:
-                        raise ValueError("--parallel requires a positive integer")
-
-            return IssueResolverArgs(
-                dataset=dataset,
-                instance=instance,
-                parallel=parallel,
-                skip_tests=skip_tests,
-                auto_pr=auto_pr,
-            )
-
-        # GitHub mode (existing behavior)
-        if len(parts) < 2:
+        # Check for --dataset flag (required)
+        if "--dataset" not in parts:
             raise ValueError(
                 "Usage:\n"
-                "  /resolve-issue <github-issue-url>\n"
-                "  /resolve-issue --dataset swebench-verified [--instance <id>] [--parallel N]"
+                "  /resolve-issue --dataset swebench-verified --instance <id>\n"
+                "  /resolve-issue --dataset swebench-verified [--parallel N]"
             )
 
-        url = parts[1]
+        idx = parts.index("--dataset")
+        if idx + 1 >= len(parts):
+            raise ValueError("--dataset requires a value")
+        dataset = parts[idx + 1]
 
-        # Validate URL
-        if not parse_github_issue_url(url):
-            raise ValueError(f"Invalid GitHub issue URL: {url}")
+        if dataset not in VALID_DATASETS:
+            raise ValueError(
+                f"Invalid dataset '{dataset}'. "
+                f"Must be one of: {', '.join(VALID_DATASETS)}"
+            )
+
+        # Optional --instance (if not provided, runs whole dataset)
+        instance = None
+        if "--instance" in parts:
+            i_idx = parts.index("--instance")
+            if i_idx + 1 < len(parts):
+                instance = parts[i_idx + 1]
+
+        # Optional --parallel (for batch mode)
+        parallel = 1
+        if "--parallel" in parts:
+            p_idx = parts.index("--parallel")
+            if p_idx + 1 < len(parts):
+                try:
+                    parallel = int(parts[p_idx + 1])
+                    if parallel < 1:
+                        raise ValueError("--parallel must be at least 1")
+                except ValueError:
+                    raise ValueError("--parallel requires a positive integer")
 
         return IssueResolverArgs(
-            issue_url=url,
-            skip_tests=skip_tests,
-            auto_pr=auto_pr,
+            dataset=dataset,
+            instance=instance,
+            parallel=parallel,
         )
 
     def execute(self, args: IssueResolverArgs) -> ResolveResult:
-        """Execute the issue resolution by spawning Issue-Resolver subagent.
+        """Execute the issue resolution in Docker container.
 
         Args:
             args: Parsed command arguments
@@ -185,263 +153,201 @@ class IssueResolverCommand:
         Returns:
             ResolveResult with success status and details
         """
-        if args.is_swebench_mode:
-            if args.is_batch_mode:
-                return self._execute_swebench_batch(args)
-            else:
-                return self._execute_swebench_single(args)
+        if args.is_batch_mode:
+            return self._execute_batch(args)
         else:
-            return self._execute_github_mode(args)
+            return self._execute_docker(args)
 
-    def _execute_github_mode(self, args: IssueResolverArgs) -> ResolveResult:
-        """Execute in GitHub mode (arbitrary issue URL).
+    def _execute_docker(self, args: IssueResolverArgs) -> ResolveResult:
+        """Execute in SWE-bench mode using Docker container.
 
         Flow:
-        1. Fetch issue details via GitHub MCP
-        2. Clone repo and create fix branch
-        3. Spawn subagent with working_dir set to the prepared repo
-        4. Generate prediction files
+        1. Load instance from HuggingFace dataset
+        2. Start Docker container
+        3. Clone repo and checkout base_commit inside container
+        4. Execute subagent with Docker runtime
+        5. Extract patch from container
+        6. Stop container
 
         Args:
-            args: Parsed command arguments with issue_url
+            args: Parsed command arguments with dataset, instance, and docker settings
 
         Returns:
             ResolveResult with success status and details
         """
-        from swecli.core.agents.subagents.manager import SubAgentDeps
+        import asyncio
 
-        from .repo_setup import setup_github_repo
+        from swecli.core.docker import DockerConfig, DockerDeployment, DockerToolHandler
 
-        # 1. Parse URL
-        issue_info = parse_github_issue_url(args.issue_url)
-        if not issue_info:
-            return ResolveResult(
-                success=False, message="Failed to parse GitHub issue URL"
-            )
-
-        # 2. Ensure GitHub MCP is connected (for fetching issue details)
-        connected, msg = self.mcp_github.ensure_connected()
-        if not connected:
-            return ResolveResult(
-                success=False,
-                message=f"GitHub MCP connection failed: {msg}. "
-                "Make sure GITHUB_TOKEN environment variable is set.",
-            )
-
-        # 3. Fetch issue details via MCP
-        issue = self.mcp_github.get_issue(
-            issue_info.owner,
-            issue_info.repo,
-            issue_info.issue_number,
-        )
-
-        if not issue:
-            return ResolveResult(
-                success=False, message="Failed to fetch issue details"
-            )
-
-        # 4. Build paths
-        repo_dir = self.working_dir / f"{issue_info.owner}-{issue_info.repo}-issue-{issue_info.issue_number}"
-        repo_url = f"https://github.com/{issue_info.owner}/{issue_info.repo}.git"
-        branch_name = f"fix/issue-{issue_info.issue_number}"
-
-        # 5. Setup repo BEFORE spawning subagent
-        if self.ui_callback and hasattr(self.ui_callback, "on_progress_start"):
-            self.ui_callback.on_progress_start(f"Setting up repository for issue #{issue_info.issue_number}")
-
-        success, msg = setup_github_repo(repo_url, repo_dir, branch_name)
-        if not success:
-            if self.ui_callback and hasattr(self.ui_callback, "on_progress_complete"):
-                self.ui_callback.on_progress_complete(f"Failed: {msg}", success=False)
-            return ResolveResult(
-                success=False,
-                message=f"Repo setup failed: {msg}",
-                repo_path=repo_dir,
-            )
-
-        if self.ui_callback and hasattr(self.ui_callback, "on_progress_complete"):
-            self.ui_callback.on_progress_complete(f"Ready at {repo_dir}")
-
-        # 6. Build task (NO clone instructions - repo already ready)
-        task = self._build_github_task(issue, issue_info, repo_dir, branch_name)
-
-        # 7. Create dependencies for subagent
-        deps = SubAgentDeps(
-            mode_manager=self.mode_manager,
-            approval_manager=self.approval_manager,
-            undo_manager=self.undo_manager,
-        )
-
-        # 8. Execute subagent IN THE PREPARED REPO
-        try:
-            result = self.subagent_manager.execute_subagent(
-                name="Issue-Resolver",
-                task=task,
-                deps=deps,
-                ui_callback=self.ui_callback,
-                working_dir=repo_dir,  # Override working_dir to the prepared repo
-            )
-        except Exception as e:
-            return ResolveResult(
-                success=False,
-                message=f"Subagent failed: {str(e)}",
-                repo_path=repo_dir,
-                branch=branch_name,
-            )
-
-        if not result.get("success"):
-            return ResolveResult(
-                success=False,
-                message=f"Subagent failed: {result.get('error', 'Unknown error')}",
-                repo_path=repo_dir,
-                branch=branch_name,
-            )
-
-        # 9. Generate SWE-bench compatible prediction files
-        patch, pred_path = self._generate_prediction_github(issue_info, repo_dir)
-
-        return ResolveResult(
-            success=True,
-            message="Issue resolved successfully",
-            repo_path=repo_dir,
-            branch=branch_name,
-            patch=patch,
-            prediction_path=pred_path,
-        )
-
-    def _execute_swebench_single(self, args: IssueResolverArgs) -> ResolveResult:
-        """Execute in SWE-bench single instance mode.
-
-        Flow:
-        1. Load instance from HuggingFace dataset (auto-downloads if needed)
-        2. Clone repo and checkout base_commit
-        3. Spawn subagent with working_dir set to the prepared repo
-        4. Generate prediction files
-
-        Args:
-            args: Parsed command arguments with dataset and instance
-
-        Returns:
-            ResolveResult with success status and details
-        """
-        from swecli.core.agents.subagents.manager import SubAgentDeps
-
-        from .repo_setup import setup_swebench_repo
         from .swebench_loader import load_swebench_instance
 
-        # Step 1: Load dataset and check instance (auto-downloads if needed)
+        # Step 1: Load dataset and check instance
         if self.ui_callback and hasattr(self.ui_callback, "on_progress_start"):
             self.ui_callback.on_progress_start(f"Loading {args.dataset} dataset")
 
         try:
-            instance = load_swebench_instance(
-                args.instance,
-                args.dataset,
-            )
-        except ImportError as e:
+            instance = load_swebench_instance(args.instance, args.dataset)
+        except (ImportError, ValueError) as e:
             if self.ui_callback and hasattr(self.ui_callback, "on_progress_complete"):
                 self.ui_callback.on_progress_complete(str(e), success=False)
-            return ResolveResult(
-                success=False,
-                message=str(e),
-            )
-        except ValueError as e:
-            if self.ui_callback and hasattr(self.ui_callback, "on_progress_complete"):
-                self.ui_callback.on_progress_complete(str(e), success=False)
-            return ResolveResult(
-                success=False,
-                message=str(e),
-            )
+            return ResolveResult(success=False, message=str(e))
 
         if self.ui_callback and hasattr(self.ui_callback, "on_progress_complete"):
             self.ui_callback.on_progress_complete(
                 f"Loaded {instance.instance_id} ({instance.repo} @ {instance.base_commit[:7]})"
             )
 
-        # Step 2: Build paths - use repo_name as subdirectory (e.g., ./astropy)
-        repo_name = instance.repo.split("/")[-1]  # "astropy" from "astropy/astropy"
-        repo_dir = self.working_dir / repo_name
-        repo_url = f"https://github.com/{instance.repo}.git"
-        branch_name = f"fix/{instance.instance_id}"
-
-        # Step 3: Setup repo BEFORE spawning subagent
-        if self.ui_callback and hasattr(self.ui_callback, "on_progress_start"):
-            self.ui_callback.on_progress_start(f"Cloning {instance.repo}")
-
-        success, msg = setup_swebench_repo(repo_url, repo_dir, instance.base_commit, branch_name)
-        if not success:
-            if self.ui_callback and hasattr(self.ui_callback, "on_progress_complete"):
-                self.ui_callback.on_progress_complete(f"Failed: {msg}", success=False)
-            return ResolveResult(
-                success=False,
-                message=f"Repo setup failed: {msg}",
-                repo_path=repo_dir,
-            )
-
-        if self.ui_callback and hasattr(self.ui_callback, "on_progress_complete"):
-            self.ui_callback.on_progress_complete(f"Ready at {repo_dir}")
-
-        # 4. Build task (NO clone instructions - repo already ready)
-        task = self._build_swebench_task(instance, repo_dir, branch_name)
-
-        # 5. Create dependencies for subagent
-        deps = SubAgentDeps(
-            mode_manager=self.mode_manager,
-            approval_manager=self.approval_manager,
-            undo_manager=self.undo_manager,
+        # Step 2: Create Docker deployment config
+        # Use SWE-bench image for instance, or custom image if specified
+        docker_image = args.docker_image or instance.docker_image
+        config = DockerConfig(
+            image=docker_image,
+            memory=args.docker_memory,
+            cpus=args.docker_cpus,
         )
 
-        # 6. Execute subagent IN THE PREPARED REPO
-        try:
-            result = self.subagent_manager.execute_subagent(
-                name="Issue-Resolver",
-                task=task,
-                deps=deps,
-                ui_callback=self.ui_callback,
-                working_dir=repo_dir,  # Override working_dir to the prepared repo
-            )
-        except Exception as e:
-            return ResolveResult(
-                success=False,
-                message=f"Subagent failed: {str(e)}",
-                repo_path=repo_dir,
-                branch=branch_name,
-            )
+        # Use status callback to update Docker progress in-place
+        def on_docker_status(msg: str) -> None:
+            if self.ui_callback and hasattr(self.ui_callback, "on_progress_update"):
+                self.ui_callback.on_progress_update(f"Docker: {msg}")
 
-        # Handle string result (can happen if agent returns plain text)
-        if isinstance(result, str):
-            return ResolveResult(
-                success=True,
-                message=result,
-                repo_path=repo_dir,
-                branch=branch_name,
-            )
+        deployment = DockerDeployment(config=config, on_status=on_docker_status)
 
-        if not result.get("success"):
-            return ResolveResult(
-                success=False,
-                message=f"Subagent failed: {result.get('error', 'Unknown error')}",
-                repo_path=repo_dir,
-                branch=branch_name,
-            )
+        # Run the async Docker workflow
+        async def run_docker_workflow() -> ResolveResult:
+            try:
+                # Step 3: Start container (single progress line for all Docker setup)
+                # Show image name (truncate if too long)
+                image_short = docker_image.split("/")[-1][:40]
+                if self.ui_callback and hasattr(self.ui_callback, "on_progress_start"):
+                    self.ui_callback.on_progress_start(f"Docker: Pulling {image_short}...")
 
-        # 7. Generate SWE-bench compatible prediction files
-        patch, pred_path = self._generate_prediction_swebench(instance, args.dataset, repo_dir)
+                await deployment.start()
 
-        return ResolveResult(
-            success=True,
-            message=f"SWE-bench instance {instance.instance_id} resolved successfully",
-            repo_path=repo_dir,
-            branch=branch_name,
-            patch=patch,
-            prediction_path=pred_path,
-        )
+                # Get container name for display
+                container_name = deployment._container_name
 
-    def _execute_swebench_batch(self, args: IssueResolverArgs) -> ResolveResult:
-        """Execute in SWE-bench batch mode (whole dataset).
+                runtime = deployment.runtime
 
-        Runs all instances in the dataset, with auto-skip for completed ones
-        and optional parallel execution.
+                # SWE-bench images have repo pre-installed at /testbed
+                # with correct commit already checked out - no setup needed!
+                repo_path = "/testbed"
+
+                # Create fix branch for our changes
+                if self.ui_callback and hasattr(self.ui_callback, "on_progress_update"):
+                    self.ui_callback.on_progress_update("Docker: Creating fix branch...")
+
+                branch_name = f"fix/{instance.instance_id}"
+                branch_cmd = f"cd {repo_path} && git checkout -b {branch_name}"
+                await runtime.run(branch_cmd, timeout=30.0)
+
+                # Complete Docker setup with container name
+                if self.ui_callback and hasattr(self.ui_callback, "on_progress_complete"):
+                    self.ui_callback.on_progress_complete(f"{container_name} ready")
+
+                # Step 4: Create Docker tool handler
+                docker_handler = DockerToolHandler(runtime, workspace_dir=repo_path)
+
+                # Step 5: Build task for subagent
+                task = self._build_task(instance, branch_name)
+
+                # Step 6: Execute the Issue-Resolver subagent
+                # The subagent will use Docker tools for all operations
+                from swecli.core.agents.subagents.manager import SubAgentDeps
+
+                deps = SubAgentDeps(
+                    mode_manager=self.mode_manager,
+                    approval_manager=self.approval_manager,
+                    undo_manager=self.undo_manager,
+                )
+
+                # Execute with Docker tool handler - all tool calls route through container
+                result = self.subagent_manager.execute_subagent(
+                    name="Issue-Resolver",
+                    task=task,
+                    deps=deps,
+                    ui_callback=self.ui_callback,
+                    docker_handler=docker_handler,  # Route all tools through Docker
+                )
+
+                # Handle string result
+                if isinstance(result, str):
+                    pass  # Continue to extract patch
+                elif not result.get("success"):
+                    return ResolveResult(
+                        success=False,
+                        message=f"Subagent failed: {result.get('error', 'Unknown error')}",
+                    )
+
+                # Step 8: Extract patch from container
+                if self.ui_callback and hasattr(self.ui_callback, "on_progress_start"):
+                    self.ui_callback.on_progress_start("Extracting patch from container...")
+
+                patch_cmd = f"cd {repo_path} && git diff {instance.base_commit}"
+                obs = await runtime.run(patch_cmd, timeout=60.0)
+                patch = obs.output
+
+                # Save patch locally
+                repo_name = instance.repo.split("/")[-1]
+                patch_dir = self.working_dir / repo_name
+                patch_dir.mkdir(parents=True, exist_ok=True)
+                patch_path = patch_dir / f"{instance.instance_id}.patch"
+
+                if patch.strip():
+                    patch_path.write_text(patch)
+                    if self.ui_callback and hasattr(self.ui_callback, "on_progress_complete"):
+                        self.ui_callback.on_progress_complete(f"Saved to {patch_path}")
+                else:
+                    patch_path = None
+                    if self.ui_callback and hasattr(self.ui_callback, "on_progress_complete"):
+                        self.ui_callback.on_progress_complete("No changes detected", success=False)
+
+                return ResolveResult(
+                    success=True,
+                    message=f"SWE-bench instance {instance.instance_id} resolved in Docker",
+                    patch=patch,
+                    prediction_path=patch_path,
+                )
+
+            finally:
+                # Step 9: Stop container
+                if self.ui_callback and hasattr(self.ui_callback, "on_progress_start"):
+                    self.ui_callback.on_progress_start("Stopping container...")
+                await deployment.stop()
+                if self.ui_callback and hasattr(self.ui_callback, "on_progress_complete"):
+                    self.ui_callback.on_progress_complete("Container stopped")
+
+        # Run the async workflow
+        return asyncio.run(run_docker_workflow())
+
+    def _build_task(self, instance: Any, branch_name: str) -> str:
+        """Build task description for Docker-based execution.
+
+        SWE-bench images have the repo pre-installed at /testbed.
+        """
+        return f"""Fix issue {instance.instance_id}
+
+REPO: /testbed
+BRANCH: {branch_name}
+COMMIT: {instance.base_commit}
+
+## Problem
+
+{instance.problem_statement}
+
+## Instructions
+
+Follow the MANDATORY WORKFLOW in your system prompt. Start with Step 1 (VERIFY SETUP).
+
+IMPORTANT: The repository is at /testbed (SWE-bench convention).
+Use absolute paths like: /testbed/path/to/file.py
+"""
+
+    def _execute_batch(self, args: IssueResolverArgs) -> ResolveResult:
+        """Execute in batch mode (whole dataset).
+
+        Runs all instances in the dataset using Docker containers,
+        with auto-skip for completed ones and optional parallel execution.
 
         Args:
             args: Parsed command arguments with dataset and parallel
@@ -449,8 +355,6 @@ class IssueResolverCommand:
         Returns:
             ResolveResult with batch completion status
         """
-        from concurrent.futures import ThreadPoolExecutor, as_completed
-
         from .swebench_loader import get_all_instance_ids
 
         # Get all instance IDs
@@ -463,7 +367,7 @@ class IssueResolverCommand:
         predictions_dir = self.working_dir / "swebench-benchmarks" / args.dataset
         pending = [
             inst for inst in all_instances
-            if not (predictions_dir / f"{inst}.pred").exists()
+            if not (predictions_dir / f"{inst}.patch").exists()
         ]
 
         total = len(all_instances)
@@ -480,32 +384,21 @@ class IssueResolverCommand:
             msg = f"Starting batch: {len(pending)} pending, {skipped} skipped (already completed)"
             self.ui_callback.on_message(msg)
 
-        # Execute instances
-        if args.parallel > 1:
-            return self._execute_batch_parallel(pending, args, total)
-        else:
-            return self._execute_batch_sequential(pending, args, total)
-
-    def _execute_batch_sequential(
-        self, instances: list[str], args: IssueResolverArgs, total: int
-    ) -> ResolveResult:
-        """Execute instances sequentially."""
+        # Execute instances sequentially (each gets its own Docker container)
         succeeded = 0
         failed = 0
 
-        for i, instance_id in enumerate(instances, 1):
+        for i, instance_id in enumerate(pending, 1):
             if self.ui_callback and hasattr(self.ui_callback, "on_message"):
-                self.ui_callback.on_message(f"[{i}/{len(instances)}] Resolving {instance_id}...")
+                self.ui_callback.on_message(f"[{i}/{len(pending)}] Resolving {instance_id}...")
 
             # Create args for single instance
             single_args = IssueResolverArgs(
                 dataset=args.dataset,
                 instance=instance_id,
-                skip_tests=args.skip_tests,
-                auto_pr=args.auto_pr,
             )
 
-            result = self._execute_swebench_single(single_args)
+            result = self._execute_docker(single_args)
             if result.success:
                 succeeded += 1
             else:
@@ -515,199 +408,3 @@ class IssueResolverCommand:
             success=True,
             message=f"Batch complete: {succeeded} resolved, {failed} failed out of {total} total",
         )
-
-    def _execute_batch_parallel(
-        self, instances: list[str], args: IssueResolverArgs, total: int
-    ) -> ResolveResult:
-        """Execute instances in parallel."""
-        from concurrent.futures import ThreadPoolExecutor, as_completed
-
-        succeeded = 0
-        failed = 0
-
-        def resolve_instance(instance_id: str) -> tuple[str, bool]:
-            single_args = IssueResolverArgs(
-                dataset=args.dataset,
-                instance=instance_id,
-                skip_tests=args.skip_tests,
-                auto_pr=args.auto_pr,
-            )
-            result = self._execute_swebench_single(single_args)
-            return instance_id, result.success
-
-        with ThreadPoolExecutor(max_workers=args.parallel) as executor:
-            futures = {
-                executor.submit(resolve_instance, inst): inst
-                for inst in instances
-            }
-
-            for i, future in enumerate(as_completed(futures), 1):
-                instance_id = futures[future]
-                try:
-                    _, success = future.result()
-                    if success:
-                        succeeded += 1
-                    else:
-                        failed += 1
-                except Exception:
-                    failed += 1
-
-                if self.ui_callback and hasattr(self.ui_callback, "on_message"):
-                    self.ui_callback.on_message(
-                        f"[{i}/{len(instances)}] Completed {instance_id} "
-                        f"({succeeded} ok, {failed} failed)"
-                    )
-
-        return ResolveResult(
-            success=True,
-            message=f"Batch complete: {succeeded} resolved, {failed} failed out of {total} total",
-        )
-
-    def _build_github_task(
-        self, issue: Any, issue_info: Any, repo_dir: Path, branch_name: str
-    ) -> str:
-        """Build task description for GitHub mode.
-
-        The repo is already cloned and checked out on the fix branch.
-        """
-        labels_text = ", ".join(issue.labels) if issue.labels else "None"
-
-        return f"""Resolve GitHub issue #{issue_info.issue_number} from {issue_info.owner}/{issue_info.repo}
-
-## Issue Details
-
-**Title:** {issue.title}
-
-**Author:** {issue.author}
-
-**Labels:** {labels_text}
-
-**Description:**
-{issue.body}
-
-## Your Task
-
-You are already in the repository at `{repo_dir}` on branch `{branch_name}`.
-
-1. Analyze the issue and explore the codebase using `search` and `read_file`
-2. Make the necessary code changes using `edit_file`
-3. Commit your changes:
-   ```bash
-   git add -A
-   git commit -m "fix: {issue.title}"
-   ```
-4. Provide a summary of what was fixed
-
-## Important Notes
-
-- Make minimal, focused changes
-- Follow the existing code style
-- Commit your changes before finishing
-"""
-
-    def _build_swebench_task(
-        self, instance: Any, repo_dir: Path, branch_name: str
-    ) -> str:
-        """Build task description for SWE-bench evaluation mode.
-
-        The repo is already cloned and checked out at base_commit.
-        """
-        return f"""Resolve SWE-bench instance: {instance.instance_id}
-
-## Problem Statement
-
-{instance.problem_statement}
-
-## Repository Location
-
-The repository has been cloned to `{repo_dir}` and checked out at commit `{instance.base_commit}` on branch `{branch_name}`.
-
-**IMPORTANT**: Use absolute paths for all file operations. For example:
-- `read_file("{repo_dir}/path/to/file.py")`
-- `edit_file("{repo_dir}/path/to/file.py", ...)`
-- `search("{repo_dir}", ...)`
-
-For git commands, cd into the repo first:
-- `cd {repo_dir} && git add -A && git commit -m "fix: ..."`
-
-## Your Task
-
-1. Analyze the problem statement carefully
-2. Explore the codebase using `search` and `read_file` to understand the issue
-3. Implement the fix using `edit_file`
-4. Commit your changes:
-   ```bash
-   cd {repo_dir} && git add -A && git commit -m "fix: {instance.instance_id}"
-   ```
-5. Provide a summary of what was fixed
-
-## Important Notes
-
-- Make minimal, focused changes
-- Follow the existing code style
-- Commit your changes before finishing
-"""
-
-    def _generate_prediction_github(
-        self, issue_info: Any, repo_dir: Path
-    ) -> tuple[str, Optional[Path]]:
-        """Generate SWE-bench compatible prediction files for GitHub mode.
-
-        Args:
-            issue_info: Parsed issue information
-            repo_dir: Path to the cloned repository
-
-        Returns:
-            Tuple of (patch_content, prediction_file_path)
-        """
-        from .patch_extractor import extract_patch, get_base_branch
-        from .prediction import Prediction, generate_instance_id, save_prediction
-
-        # Extract patch from committed changes
-        base_branch = get_base_branch(repo_dir)
-        patch = extract_patch(repo_dir, base_branch)
-
-        # Generate instance ID in SWE-bench format
-        instance_id = generate_instance_id(
-            issue_info.owner, issue_info.repo, issue_info.issue_number
-        )
-
-        # Create and save prediction (GitHub mode saves to swebench-benchmarks/github/)
-        pred = Prediction(
-            instance_id=instance_id,
-            model_patch=patch if patch.strip() else None,
-        )
-        predictions_dir = self.working_dir / "swebench-benchmarks" / "github"
-        pred_path, _ = save_prediction(pred, predictions_dir)
-
-        return patch, pred_path
-
-    def _generate_prediction_swebench(
-        self, instance: Any, dataset: str, repo_dir: Path
-    ) -> tuple[str, Optional[Path]]:
-        """Generate SWE-bench compatible prediction files for SWE-bench mode.
-
-        Args:
-            instance: SWEBenchInstance from the dataset
-            dataset: Dataset name (e.g., "swebench-verified")
-            repo_dir: Path to the cloned repository
-
-        Returns:
-            Tuple of (patch_content, prediction_file_path)
-        """
-        from .patch_extractor import extract_patch
-        from .prediction import Prediction, save_prediction
-
-        # Extract patch from committed changes (diff from base_commit)
-        patch = extract_patch(repo_dir, instance.base_commit)
-
-        # Use instance_id directly from the dataset
-        pred = Prediction(
-            instance_id=instance.instance_id,
-            model_patch=patch if patch.strip() else None,
-        )
-        # Save to swebench-benchmarks/{dataset}/ folder
-        predictions_dir = self.working_dir / "swebench-benchmarks" / dataset
-        pred_path, _ = save_prediction(pred, predictions_dir)
-
-        return patch, pred_path
