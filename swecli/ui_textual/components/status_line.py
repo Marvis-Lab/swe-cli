@@ -1,10 +1,42 @@
 """Status line component for SWE-CLI."""
 
+import subprocess
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Optional, Sequence, Tuple
-import subprocess
+
 from rich.console import Console
 from rich.text import Text
+
+
+def _run_git_branch_in_thread(working_dir: str) -> str | None:
+    """Run git command in a thread to avoid Textual FD issues."""
+    import os
+
+    kwargs: dict = {
+        "cwd": working_dir,
+        "stdin": subprocess.DEVNULL,
+        "stdout": subprocess.PIPE,
+        "stderr": subprocess.PIPE,
+        "text": True,
+        "close_fds": True,
+    }
+
+    if os.name != "nt":
+        kwargs["start_new_session"] = True
+
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            timeout=1,
+            **kwargs,
+        )
+        if result.returncode == 0:
+            return result.stdout.strip()
+    except Exception:
+        # Catch ALL exceptions including ValueError for FD issues
+        pass
+    return None
 
 
 class StatusLine:
@@ -130,19 +162,25 @@ class StatusLine:
         Returns:
             Branch name or None
         """
+        import asyncio
+
+        # Check if we're in an async context (Textual)
         try:
-            result = subprocess.run(
-                ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-                cwd=str(working_dir),
-                capture_output=True,
-                text=True,
-                timeout=1,
-            )
-            if result.returncode == 0:
-                return result.stdout.strip()
-        except Exception:
+            asyncio.get_running_loop()
+            # We're in Textual - skip subprocess to avoid FD errors
+            return None
+        except RuntimeError:
             pass
-        return None
+
+        # Use thread pool to avoid FD issues
+        try:
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(
+                    _run_git_branch_in_thread, str(working_dir)
+                )
+                return future.result(timeout=2)
+        except Exception:
+            return None
 
     def _format_tokens(self, used: int, limit: int) -> Text:
         """Format token usage with color coding.

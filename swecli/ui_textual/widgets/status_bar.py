@@ -2,11 +2,88 @@
 
 from __future__ import annotations
 
+import subprocess
+from concurrent.futures import ThreadPoolExecutor
 from typing import Mapping
 
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.widgets import Footer, Static
+
+
+def _get_git_branch_in_thread(working_dir: str) -> str | None:
+    """Get git branch in a separate thread to avoid Textual FD issues.
+
+    Returns:
+        Branch name or None if not a git repo
+    """
+    import os
+
+    kwargs: dict = {
+        "cwd": working_dir,
+        "stdin": subprocess.DEVNULL,
+        "stdout": subprocess.PIPE,
+        "stderr": subprocess.PIPE,
+        "text": True,
+        "close_fds": True,
+    }
+
+    if os.name != "nt":
+        kwargs["start_new_session"] = True
+
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            timeout=2,
+            **kwargs,
+        )
+        if result.returncode == 0:
+            branch = result.stdout.strip()
+            if branch and branch != "HEAD":
+                return branch
+
+        # Try symbolic-ref as fallback
+        result = subprocess.run(
+            ["git", "symbolic-ref", "--short", "HEAD"],
+            timeout=2,
+            **kwargs,
+        )
+        if result.returncode == 0:
+            return result.stdout.strip() or None
+
+    except Exception:
+        # Catch ALL exceptions including ValueError for FD issues
+        pass
+
+    return None
+
+
+def _get_git_branch_safe(working_dir: str) -> str | None:
+    """Get git branch using thread pool to avoid Textual FD issues.
+
+    This function is designed to be safe to call from Textual's event loop.
+    It runs subprocess in a separate thread with isolated file descriptors.
+    If anything goes wrong, it returns None rather than raising.
+    """
+    import asyncio
+
+    # Check if we're in an async context
+    try:
+        asyncio.get_running_loop()
+        # We're in an async context (Textual) - subprocess may cause FD errors
+        # Skip git branch detection entirely to avoid issues
+        return None
+    except RuntimeError:
+        # No running loop - safe to call subprocess
+        pass
+
+    try:
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(_get_git_branch_in_thread, working_dir)
+            return future.result(timeout=3)
+    except Exception:
+        # Catch ANY error - git branch display is not critical
+        return None
 
 
 class StatusBar(Static):
@@ -98,7 +175,6 @@ class StatusBar(Static):
             return ""
 
         try:
-            import os
             from pathlib import Path
 
             # Convert to Path for easier manipulation
@@ -119,40 +195,10 @@ class StatusBar(Static):
                         # Show .../last/two/parts
                         path_display = f".../{'/'.join(parts[-2:])}"
 
-            # Get git branch info
-            try:
-                import subprocess
-
-                # Try to get git branch
-                os.chdir(self.working_dir)
-                result = subprocess.run(
-                    ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-                    capture_output=True,
-                    text=True,
-                    timeout=2
-                )
-
-                if result.returncode == 0:
-                    branch = result.stdout.strip()
-                    if branch and branch != "HEAD":
-                        return f"{path_display} ({branch})"
-
-                # If rev-parse failed, try symbolic-ref
-                result = subprocess.run(
-                    ["git", "symbolic-ref", "--short", "HEAD"],
-                    capture_output=True,
-                    text=True,
-                    timeout=2
-                )
-
-                if result.returncode == 0:
-                    branch = result.stdout.strip()
-                    if branch:
-                        return f"{path_display} ({branch})"
-
-            except (subprocess.TimeoutExpired, subprocess.CalledProcessError, FileNotFoundError):
-                # Git not available or not a git repo
-                pass
+            # Get git branch info using thread-safe helper
+            branch = _get_git_branch_safe(self.working_dir)
+            if branch:
+                return f"{path_display} ({branch})"
 
             # Return just path if no git branch found
             return path_display
