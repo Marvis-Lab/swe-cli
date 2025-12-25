@@ -140,6 +140,12 @@ class TerraformLS(SolidLanguageServer):
         )
         dependency = deps.get_single_dep_for_current_platform()
 
+        # Check if terraform-ls is already installed
+        terraform_ls_path = shutil.which(dependency.binary_name)
+        if terraform_ls_path:
+            log.debug(f"Found existing terraform-ls: {terraform_ls_path}")
+            return terraform_ls_path
+
         terraform_ls_executable_path = deps.binary_path(cls.ls_resources_dir(solidlsp_settings))
         if not os.path.exists(terraform_ls_executable_path):
             log.info(f"Downloading terraform-ls from {dependency.url}")
