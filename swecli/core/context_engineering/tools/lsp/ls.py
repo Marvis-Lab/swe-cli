@@ -868,25 +868,18 @@ class SolidLanguageServer(ABC):
 
             response = cast(list[LSPTypes.CompletionItem], response)
 
-            # TODO: Handle the case when the completion is a keyword
-            items = [item for item in response if item["kind"] != LSPTypes.CompletionItemKind.Keyword]
+            items = response
 
             completions_list: list[ls_types.CompletionItem] = []
 
             for item in items:
-                assert "insertText" in item or "textEdit" in item
+                assert "label" in item or "insertText" in item or "textEdit" in item
                 assert "kind" in item
                 completion_item = {}
                 if "detail" in item:
                     completion_item["detail"] = item["detail"]
 
-                if "label" in item:
-                    completion_item["completionText"] = item["label"]
-                    completion_item["kind"] = item["kind"]  # type: ignore
-                elif "insertText" in item:  # type: ignore
-                    completion_item["completionText"] = item["insertText"]
-                    completion_item["kind"] = item["kind"]
-                elif "textEdit" in item and "newText" in item["textEdit"]:
+                if "textEdit" in item and "newText" in item["textEdit"]:
                     completion_item["completionText"] = item["textEdit"]["newText"]
                     completion_item["kind"] = item["kind"]
                 elif "textEdit" in item and "range" in item["textEdit"]:
@@ -907,6 +900,12 @@ class SolidLanguageServer(ABC):
                     completion_item["kind"] = item["kind"]
                 elif "textEdit" in item and "insert" in item["textEdit"]:
                     assert False
+                elif "insertText" in item:  # type: ignore
+                    completion_item["completionText"] = item["insertText"]
+                    completion_item["kind"] = item["kind"]
+                elif "label" in item:
+                    completion_item["completionText"] = item["label"]
+                    completion_item["kind"] = item["kind"]  # type: ignore
                 else:
                     assert False
 

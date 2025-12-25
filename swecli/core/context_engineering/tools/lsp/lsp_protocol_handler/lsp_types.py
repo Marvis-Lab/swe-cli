@@ -2478,7 +2478,8 @@ class DocumentSymbol(TypedDict):
     """ The range that should be selected and revealed when this symbol is being picked, e.g the name of a function.
     Must be contained by the `range`. """
 
-    # TODO: I think this type is missing the 'children' field - DJ
+    children: NotRequired[list["DocumentSymbol"]]
+    """ Children of this symbol, e.g. properties of a class. """
 
 
 class DocumentSymbolRegistrationOptions(TypedDict):
