@@ -66,7 +66,7 @@ class CommandHandler(ABC):
         Args:
             message: Message to display
         """
-        self.console.print(f"  ⎿ [green]{message}[/green]")
+        self.console.print(f"  ⎿  [green]{message}[/green]")
 
     def print_error(self, message: str) -> None:
         """Print error message with ⎿ prefix.
@@ -74,7 +74,7 @@ class CommandHandler(ABC):
         Args:
             message: Error message to display
         """
-        self.console.print(f"  ⎿ [red]{message}[/red]")
+        self.console.print(f"  ⎿  [red]{message}[/red]")
 
     def print_warning(self, message: str) -> None:
         """Print warning message with ⎿ prefix.
@@ -82,7 +82,7 @@ class CommandHandler(ABC):
         Args:
             message: Warning message to display
         """
-        self.console.print(f"  ⎿ [yellow]{message}[/yellow]")
+        self.console.print(f"  ⎿  [yellow]{message}[/yellow]")
 
     def print_info(self, message: str) -> None:
         """Print info message with ⎿ prefix.
@@ -90,4 +90,4 @@ class CommandHandler(ABC):
         Args:
             message: Info message to display
         """
-        self.console.print(f"  ⎿ {message}")
+        self.console.print(f"  ⎿  {message}")

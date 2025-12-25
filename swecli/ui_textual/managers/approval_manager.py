@@ -156,7 +156,7 @@ class ChatApprovalManager:
         # Auto-deny rule
         if matched_rule.action == self.RuleAction.AUTO_DENY:
             self.rules_manager.add_history(command, False, rule_matched=matched_rule.id)
-            self.console.print(f"  ⎿ [red]Denied by rule: {matched_rule.name}[/red]")
+            self.console.print(f"  ⎿  [red]Denied by rule: {matched_rule.name}[/red]")
             return ApprovalResult(
                 approved=False,
                 choice=ApprovalChoice.DENY,
@@ -411,6 +411,18 @@ class ChatApprovalManager:
             rule_result, matched_rule = self._check_approval_rules(command)
             if rule_result:
                 return rule_result
+
+        # Check if already interrupted before showing modal
+        if self.chat_app and hasattr(self.chat_app, 'runner'):
+            runner = self.chat_app.runner
+            if hasattr(runner, 'query_processor'):
+                task_monitor = getattr(runner.query_processor, 'task_monitor', None)
+                if task_monitor and task_monitor.should_interrupt():
+                    return ApprovalResult(
+                        approved=False,
+                        choice=ApprovalChoice.DENY,
+                        cancelled=True,
+                    )
 
         # Show approval modal
         approved, choice, edited_command = await self._show_approval_modal(command, working_dir)

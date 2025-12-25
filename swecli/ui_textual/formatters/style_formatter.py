@@ -41,7 +41,7 @@ class StyleFormatter:
             result_lines = self._format_generic_result(tool_name, tool_args, result)
 
         if result_lines:
-            return f"⏺ {tool_display}\n" + "\n".join(f"  ⎿ {line}" for line in result_lines)
+            return f"⏺ {tool_display}\n" + "\n".join(f"  ⎿  {line}" for line in result_lines)
         return f"⏺ {tool_display}"
 
     def _format_tool_call(self, tool_name: str, tool_args: Dict[str, Any]) -> str:

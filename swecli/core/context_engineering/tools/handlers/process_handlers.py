@@ -57,9 +57,16 @@ class ProcessToolHandler:
         if not self._ensure_command_approval(command, background, operation, context):
             return {
                 "success": False,
-                "error": "Operation cancelled by user",
+                "interrupted": True,
                 "output": None,
             }
+
+        # Create output callback for streaming if ui_callback supports it
+        output_callback = None
+        if context.ui_callback and hasattr(context.ui_callback, 'on_bash_output_line'):
+            def _output_callback(line: str, is_stderr: bool = False) -> None:
+                context.ui_callback.on_bash_output_line(line, is_stderr)
+            output_callback = _output_callback
 
         result = self._bash_tool.execute(
             command,
@@ -67,6 +74,7 @@ class ProcessToolHandler:
             operation=operation,
             task_monitor=context.task_monitor,
             auto_confirm=getattr(context, "is_subagent", False),
+            output_callback=output_callback,
         )
 
         if result.success and context.undo_manager:
@@ -79,12 +87,18 @@ class ProcessToolHandler:
             return {
                 "success": True,
                 "output": combined_output or "Command executed",
+                "exit_code": result.exit_code,
                 "error": None,
             }
 
         error_parts = [p for p in (result.error, combined_output) if p]
         error_message = "\n".join(error_parts) if error_parts else "Command execution failed"
-        return {"success": False, "output": None, "error": error_message}
+        return {
+            "success": False,
+            "output": None,
+            "exit_code": result.exit_code,
+            "error": error_message,
+        }
 
     def list_processes(self) -> dict[str, Any]:
         if not self._bash_tool:
@@ -171,6 +185,10 @@ class ProcessToolHandler:
         if not approval_manager:
             operation.approved = True
             return True
+
+        # Early exit if already interrupted - don't show approval modal
+        if context.task_monitor and context.task_monitor.should_interrupt():
+            return False
 
         if hasattr(approval_manager, "pre_approved_commands") and command in approval_manager.pre_approved_commands:
             approval_manager.pre_approved_commands.discard(command)

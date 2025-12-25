@@ -45,4 +45,4 @@ class TipsManager:
     def format_tip(self, tip: str, color: str = "\033[38;5;240m") -> str:
         """Format a tip with ANSI styling for terminal fallbacks."""
         reset = "\033[0m"
-        return f"{color}  ⎿ Tip: {tip}{reset}"
+        return f"{color}  ⎿  Tip: {tip}{reset}"

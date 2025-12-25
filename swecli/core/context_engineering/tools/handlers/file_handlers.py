@@ -43,7 +43,7 @@ class FileToolHandler:
         if approved_content is None:
             return {
                 "success": False,
-                "error": "Operation cancelled by user",
+                "interrupted": True,
                 "output": None,
             }
 
@@ -119,7 +119,7 @@ class FileToolHandler:
         if not self._is_approved(operation, context, preview.diff):
             return {
                 "success": False,
-                "error": "Operation cancelled by user",
+                "interrupted": True,
                 "output": None,
             }
 

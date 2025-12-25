@@ -124,33 +124,24 @@ class ApprovalPromptController:
                 conversation.start_tool_execution()
         else:
             if call_start is not None:
-                conversation._truncate_from(call_start)
+                # DON'T truncate - preserve subagent history
+                # Just update the tool line in-place with red bullet and show interrupt message
                 timer = getattr(conversation, "_tool_spinner_timer", None)
                 if timer is not None:
                     timer.stop()
                     conversation._tool_spinner_timer = None
                 conversation._spinner_active = False
-                # Add red bullet to indicate interrupted tool call
-                if isinstance(call_display, Text):
-                    call_line = call_display.copy()
-                elif call_display is not None:
-                    call_line = Text(str(call_display), style="white")
-                else:
-                    call_line = Text("Command", style="white")
 
-                # Prepend with red bullet to indicate interruption
-                interrupted_line = Text("⏺ ", style="bold red")
-                # Convert call_line to plain text and append with white style
-                call_text = str(call_line)
-                interrupted_line.append(call_text, style="white")
-                conversation.write(interrupted_line, scroll_end=True, animate=False)
-                # Use shared interrupt message utility for consistency
+                # Update the tool line in-place with red bullet (preserves subagent history)
+                conversation._replace_tool_call_line("⏺", success=False)
+
+                # Add interrupt message after current content
                 from swecli.ui_textual.utils.interrupt_utils import create_interrupt_text, APPROVAL_INTERRUPT_MESSAGE
                 result_line = create_interrupt_text(APPROVAL_INTERRUPT_MESSAGE)
                 conversation.write(result_line, scroll_end=True, animate=False)
                 conversation.write(Text(""))
-            else:
-                conversation.add_system_message("Command cancelled.")
+            # Note: We don't show "Command cancelled." for the else case (when call_start is None)
+            # because the approval modal itself already shows the cancellation. This reduces noise.
             conversation._tool_display = None
             conversation._tool_call_start = None
 

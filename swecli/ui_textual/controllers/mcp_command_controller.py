@@ -204,12 +204,12 @@ class MCPCommandController:
             if server_names:
                 enqueue_console_text_callback(
                     f"⏺ MCP servers configured: {', '.join(server_names)}\n"
-                    f"  ⎿ Use [bold cyan]/mcp connect <server>[/bold cyan] to connect"
+                    f"  ⎿  Use [bold cyan]/mcp connect <server>[/bold cyan] to connect"
                 )
         else:
             enqueue_console_text_callback(
                 "⏺ MCP manager available\n"
-                "  ⎿ Use [bold cyan]/mcp connect <server>[/bold cyan] to connect"
+                "  ⎿  Use [bold cyan]/mcp connect <server>[/bold cyan] to connect"
             )
 
     def start_auto_connect_thread(self, force: bool = False) -> None:
@@ -250,9 +250,9 @@ class MCPCommandController:
 
             if success:
                 tools = mcp_manager.get_server_tools(server_name)
-                message = f"[green]⏺[/green] MCP ({server_name}) ({elapsed}s)\n  ⎿ Connected ({len(tools)} tools)"
+                message = f"[green]⏺[/green] MCP ({server_name}) ({elapsed}s)\n  ⎿  Connected ({len(tools)} tools)"
             else:
-                message = f"[red]⏺[/red] MCP ({server_name}) ({elapsed}s)\n  ⎿ ❌ Connection failed"
+                message = f"[red]⏺[/red] MCP ({server_name}) ({elapsed}s)\n  ⎿  ❌ Connection failed"
 
             # Use _enqueue_console_text from runner if available
             if hasattr(self, "_enqueue_console_text_callback"):

@@ -219,6 +219,7 @@ class SwecliAgent(BaseAgent):
                     mode_manager=deps.mode_manager,
                     approval_manager=deps.approval_manager,
                     undo_manager=deps.undo_manager,
+                    task_monitor=task_monitor,
                     is_subagent=is_subagent,
                 )
 

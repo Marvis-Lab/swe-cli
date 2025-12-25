@@ -134,6 +134,10 @@ class ResponseRenderer:
             lines.append(normalized)
             seen.add(normalized)
 
+        # Skip interrupted operations - already handled by interrupt display
+        if getattr(tool_call, "interrupted", False):
+            return lines
+
         error = getattr(tool_call, "error", None)
         if error:
             add_line(f"{TOOL_ERROR_SENTINEL} {str(error).strip()}")

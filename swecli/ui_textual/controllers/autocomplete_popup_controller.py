@@ -59,6 +59,8 @@ class AutocompletePopupController:
         ]
 
         window_active = active - window_start
+        # Ensure window_active is within valid range for the rows array
+        window_active = max(0, min(window_active, len(rows) - 1)) if rows else 0
         state: StateType = (tuple(rows), window_active)
 
         # Always re-render to ensure highlight follows selection
@@ -95,3 +97,5 @@ class AutocompletePopupController:
         self.popup.update(renderable)
         self.popup.styles.display = "block"
         self._last_state = state
+        # Force refresh to ensure visual update
+        self.popup.refresh()
