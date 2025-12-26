@@ -184,8 +184,6 @@ class BashTool(BaseTool):
 
             # Handle background execution
             if background:
-                import select
-
                 # Use Popen for background execution
                 process = subprocess.Popen(
                     command,
@@ -222,6 +220,51 @@ class BashTool(BaseTool):
                         # Stop if process died
                         if process.poll() is not None:
                             break
+
+                    # Drain any remaining output after process exits
+                    if process.poll() is not None:
+                        # Read remaining data from pipes
+                        remaining_stdout = process.stdout.read() if process.stdout else ""
+                        remaining_stderr = process.stderr.read() if process.stderr else ""
+                        if remaining_stdout:
+                            stdout_lines.extend(remaining_stdout.splitlines(keepends=True))
+                        if remaining_stderr:
+                            stderr_lines.extend(remaining_stderr.splitlines(keepends=True))
+
+                # Check if process exited during startup capture
+                # If it failed quickly (non-zero exit), treat it as a synchronous failure
+                exit_code = process.poll()
+                if exit_code is not None and exit_code != 0:
+                    # Process failed during startup - return actual result
+                    duration = time.time() - start_time
+                    stdout_text = "".join(stdout_lines).rstrip()
+                    stderr_text = "".join(stderr_lines).rstrip()
+
+                    # Send captured output through callback for streaming display
+                    if output_callback:
+                        for line in stdout_lines:
+                            try:
+                                output_callback(line.rstrip('\n'), is_stderr=False)
+                            except Exception:
+                                pass
+                        for line in stderr_lines:
+                            try:
+                                output_callback(line.rstrip('\n'), is_stderr=True)
+                            except Exception:
+                                pass
+
+                    if operation:
+                        operation.mark_failed(f"Command failed with exit code {exit_code}")
+
+                    return BashResult(
+                        success=False,
+                        command=command,
+                        exit_code=exit_code,
+                        stdout=stdout_text,
+                        stderr=stderr_text,
+                        duration=duration,
+                        operation_id=operation.id if operation else None,
+                    )
 
                 # Store process info with captured output
                 self._background_processes[process.pid] = {
@@ -375,29 +418,30 @@ class BashTool(BaseTool):
 
             # Process finished - collect any remaining output
             if capture_output:
+                # Use communicate() to reliably get all remaining output
+                # This works even if the process exited before the poll loop ran
+                remaining_stdout, remaining_stderr = process.communicate()
+
                 if output_callback:
-                    # Read any remaining lines that weren't picked up by select
-                    if process.stdout:
-                        for line in process.stdout:
-                            line_text = line.rstrip('\n')
-                            stdout_lines.append(line_text)
+                    # Stream any remaining output through callback
+                    if remaining_stdout:
+                        for line in remaining_stdout.splitlines():
+                            stdout_lines.append(line)
                             try:
-                                output_callback(line_text, is_stderr=False)
+                                output_callback(line, is_stderr=False)
                             except Exception:
                                 pass
-                    if process.stderr:
-                        for line in process.stderr:
-                            line_text = line.rstrip('\n')
-                            stderr_lines.append(line_text)
+                    if remaining_stderr:
+                        for line in remaining_stderr.splitlines():
+                            stderr_lines.append(line)
                             try:
-                                output_callback(line_text, is_stderr=True)
+                                output_callback(line, is_stderr=True)
                             except Exception:
                                 pass
-                    stdout_text = "\n".join(stdout_lines)
-                    stderr_text = "\n".join(stderr_lines)
-                else:
-                    # No streaming - use communicate() as before
-                    stdout_text, stderr_text = process.communicate()
+
+                # Combine streamed lines with any remaining output
+                stdout_text = "\n".join(stdout_lines) if stdout_lines else remaining_stdout or ""
+                stderr_text = "\n".join(stderr_lines) if stderr_lines else remaining_stderr or ""
             else:
                 stdout_text, stderr_text = "", ""
 

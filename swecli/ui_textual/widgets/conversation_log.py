@@ -62,6 +62,10 @@ class ConversationLog(RichLog):
         self._streaming_box_header_line: int | None = None  # Line index of header row
         self._streaming_box_width: int = 60  # Box width
         self._streaming_box_top_line: int | None = None  # Line index of top border (for error restyling)
+        # Streaming box data storage (for rebuild on close)
+        self._streaming_box_command: str = ""
+        self._streaming_box_working_dir: str = "."
+        self._streaming_box_content_lines: list[tuple[str, bool]] = []  # (line, is_stderr)
         # Mouse drag detection for selection tip
         self._mouse_down_pos: tuple[int, int] | None = None
 
@@ -801,10 +805,14 @@ class ConversationLog(RichLog):
         prompt_line.append(" │", style=border)
         self.write(prompt_line)
 
+        # Store data for rebuild on close
+        self._streaming_box_command = command
+        self._streaming_box_working_dir = working_dir
+        self._streaming_box_content_lines = []
+
     def append_to_streaming_box(self, line: str, is_stderr: bool = False) -> None:
         """Append a content line to the streaming box."""
         border = "#3a3f4b"  # Very dim borders
-        error_style = "#f85149"  # Red for stderr
         box_width = self._get_box_width()  # Dynamic width!
         content_width = box_width - 5  # Space for "│  " (3) + " │" (2)
 
@@ -813,7 +821,7 @@ class ConversationLog(RichLog):
 
         content_line = Text("    ")
         content_line.append("│  ", style=border)
-        content_line.append(display, style=error_style if is_stderr else "")
+        content_line.append(display)  # Neutral color - we don't know success/failure yet
 
         # Pad to EXACT content_width for aligned right border
         padding_needed = content_width - len(display)
@@ -821,17 +829,96 @@ class ConversationLog(RichLog):
         content_line.append(" │", style=border)
         self.write(content_line)
 
+        # Store for rebuild on close
+        self._streaming_box_content_lines.append((line, is_stderr))
+
+    def _render_complete_bash_box(
+        self,
+        command: str,
+        working_dir: str,
+        content_lines: list[tuple[str, bool]],
+        border_color: str,
+        is_error: bool,
+    ) -> None:
+        """Render a complete bash box with consistent styling.
+
+        Args:
+            command: The command that was executed
+            working_dir: The working directory
+            content_lines: List of (line, is_stderr) tuples
+            border_color: Color for all border characters
+            is_error: Whether to style content as error
+        """
+        pointer = "#a0a4ad"
+        path_style = "#58a6ff"
+        prompt_style = "#7ee787"
+        cmd_style = "#c9d1d9"
+        error_style = "#f85149" if is_error else ""
+        box_width = self._get_box_width()
+        content_width = box_width - 5
+
+        # Top border
+        top = Text("  ⎿ ", style=pointer)
+        top.append("╭" + "─" * (box_width - 2) + "╮", style=border_color)
+        self.write(top)
+
+        # Padding line
+        padding = Text("    ")
+        padding.append("│" + " " * (box_width - 2) + "│", style=border_color)
+        self.write(padding)
+
+        # Prompt line
+        formatted_path = self._format_path(working_dir)
+        prompt_prefix_len = len(formatted_path) + 3
+        max_cmd_len = content_width - prompt_prefix_len
+        cmd_normalized = command.replace("\n", " ").replace("  ", " ").strip()
+        cmd_display = cmd_normalized[:max_cmd_len] if max_cmd_len > 0 else ""
+
+        prompt_line = Text("    ")
+        prompt_line.append("│  ", style=border_color)
+        prompt_line.append(formatted_path, style=path_style)
+        prompt_line.append(" $ ", style=prompt_style)
+        prompt_line.append(cmd_display, style=cmd_style)
+        total_content = prompt_prefix_len + len(cmd_display)
+        padding_needed = content_width - total_content
+        prompt_line.append(" " * max(0, padding_needed))
+        prompt_line.append(" │", style=border_color)
+        self.write(prompt_line)
+
+        # Content lines
+        for line, _ in content_lines:  # Ignore is_stderr, use is_error for all
+            normalized = self._normalize_streaming_line(line)
+            display = normalized[:content_width]
+
+            content_line = Text("    ")
+            content_line.append("│  ", style=border_color)
+            content_line.append(display, style=error_style)
+            padding_needed = content_width - len(display)
+            content_line.append(" " * max(0, padding_needed))
+            content_line.append(" │", style=border_color)
+            self.write(content_line)
+
+        # Bottom padding
+        padding = Text("    ")
+        padding.append("│" + " " * (box_width - 2) + "│", style=border_color)
+        self.write(padding)
+
+        # Bottom border
+        bottom = Text("    ")
+        bottom.append("╰" + "─" * (box_width - 2) + "╯", style=border_color)
+        self.write(bottom)
+
     def close_streaming_bash_box(self, is_error: bool, exit_code: int) -> None:
         """Close box with padding and bottom border."""
-        border = "#f85149" if is_error else "#3a3f4b"
-        box_width = self._get_box_width()  # Dynamic width!
+        border = "#3a3f4b"  # Always gray - no transition
+        box_width = self._get_box_width()
 
         # Empty padding line before bottom border
         padding = Text("    ")
         padding.append("│" + " " * (box_width - 2) + "│", style=border)
         self.write(padding)
 
-        # Bottom border: ╰───────────────────────────────────────────╯
+        # Bottom border
         bottom = Text("    ")
         bottom.append("╰" + "─" * (box_width - 2) + "╯", style=border)
         self.write(bottom)
@@ -839,6 +926,9 @@ class ConversationLog(RichLog):
         # Reset state
         self._streaming_box_header_line = None
         self._streaming_box_top_line = None
+        self._streaming_box_command = ""
+        self._streaming_box_working_dir = "."
+        self._streaming_box_content_lines = []
 
     def _normalize_streaming_line(self, line: str) -> str:
         """Normalize: expand tabs, strip ANSI codes."""
