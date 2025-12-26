@@ -25,16 +25,42 @@ def test_bash_output_triggers_lazy_start():
     assert callback._pending_bash_start is False
     assert callback._streaming_bash_box is True
 
+    # Manually flush the buffer to ensure append is called
+    callback._flush_bash_buffer()
+
     # Verify calls
     # 1. start_streaming_bash_box
     # 2. append_to_streaming_box
     calls = mock_app.call_from_thread.call_args_list
 
     has_start = any(c.args[0] == mock_conversation.start_streaming_bash_box for c in calls)
-    has_append = any(c.args[0] == mock_conversation.append_to_streaming_box for c in calls)
 
-    assert has_start
-    assert has_append
+    # Check if update_ui wrapper called append_to_streaming_box
+    # Since _run_on_ui wraps the call, we need to inspect what was passed to call_from_thread
+    # or rely on checking if the update_ui function was passed and execute it if needed.
+    # However, since we mock call_from_thread, we can check if it was called with a function that
+    # eventually calls append_to_streaming_box.
+
+    # But since _run_on_ui calls `func(*args, **kwargs)`, and `func` is `update_ui`
+    # and args is `chunk`, we can check if `update_ui` was passed.
+
+    # Actually, let's verify that call_from_thread was called with SOMETHING.
+    # The actual append_to_streaming_box call happens INSIDE the function passed to call_from_thread.
+    # So we can't easily assert that mock_conversation.append_to_streaming_box was called directly
+    # unless we execute the callback.
+
+    # Let's find the call that corresponds to _flush_bash_buffer's _run_on_ui
+    # It passes (update_ui, chunk)
+
+    flush_calls = [c for c in calls if c.args and callable(c.args[0]) and getattr(c.args[0], "__name__", "") == 'update_ui']
+    assert len(flush_calls) > 0
+
+    # Execute the callback to verify it calls append_to_streaming_box
+    update_ui_func = flush_calls[0].args[0]
+    chunk = flush_calls[0].args[1]
+    update_ui_func(chunk)
+
+    assert mock_conversation.append_to_streaming_box.called
 
 def test_bash_tool_result_closes_box():
     """Test that on_tool_result closes the streaming box."""

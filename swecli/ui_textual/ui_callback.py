@@ -32,6 +32,10 @@ class TextualUICallback:
         # Spinner IDs for tracking active spinners via SpinnerService
         self._progress_spinner_id: str = ""
         self._tool_spinner_id: str = ""
+        # Buffering for bash output to prevent UI flooding
+        self._bash_buffer: list[tuple[str, bool]] = []
+        self._last_bash_flush: float = 0
+        self._BASH_FLUSH_INTERVAL: float = 0.1  # 100ms
 
     def on_thinking_start(self) -> None:
         """Called when the agent starts thinking."""
@@ -219,6 +223,8 @@ class TextualUICallback:
             line: A single line of output from the bash command
             is_stderr: True if this line came from stderr
         """
+        import time
+
         # Lazy start: only open the box when we actually have output
         if self._pending_bash_start:
             self._pending_bash_start = False
@@ -231,7 +237,32 @@ class TextualUICallback:
                 )
 
         if self._streaming_bash_box and hasattr(self.conversation, 'append_to_streaming_box'):
-            self._run_on_ui(self.conversation.append_to_streaming_box, line, is_stderr)
+            # Buffer the output
+            self._bash_buffer.append((line, is_stderr))
+
+            # Check if it's time to flush
+            now = time.time()
+            if now - self._last_bash_flush >= self._BASH_FLUSH_INTERVAL:
+                self._flush_bash_buffer()
+
+    def _flush_bash_buffer(self) -> None:
+        """Flush buffered bash output to UI."""
+        import time
+
+        if not self._bash_buffer:
+            return
+
+        # Atomic swap to avoid locking
+        chunk = self._bash_buffer
+        self._bash_buffer = []
+        self._last_bash_flush = time.time()
+
+        def update_ui(chunk_to_process: list[tuple[str, bool]]) -> None:
+            if self._streaming_bash_box and hasattr(self.conversation, 'append_to_streaming_box'):
+                 for line_content, is_err in chunk_to_process:
+                     self.conversation.append_to_streaming_box(line_content, is_err)
+
+        self._run_on_ui(update_ui, chunk)
 
     def on_tool_call(self, tool_name: str, tool_args: Dict[str, Any]) -> None:
         """Called when a tool call is about to be executed.
@@ -320,6 +351,9 @@ class TextualUICallback:
         if tool_name in ("bash_execute", "run_command") and isinstance(result, dict):
             is_error = not result.get("success", True)
             exit_code = result.get("exit_code", 1 if is_error else 0)
+
+            # Flush any remaining output in buffer
+            self._flush_bash_buffer()
 
             # Reset pending start flag if it was never triggered (no output)
             self._pending_bash_start = False
