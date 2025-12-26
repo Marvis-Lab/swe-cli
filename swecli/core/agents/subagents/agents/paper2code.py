@@ -211,7 +211,7 @@ config = load_config()
 
 PAPER2CODE_SUBAGENT = SubAgentSpec(
     name="Paper2Code",
-    description="Transforms academic PDF papers into complete code implementations using a multi-stage pipeline (planning → analysis → coding → debugging). Provide the path to a PDF paper and optionally the output directory.",
+    description="ALWAYS use for implementing/recreating code from PDF papers, arXiv papers, or academic papers. Provides 4-stage pipeline: planning → analysis → coding → debugging. Pass the PDF path.",
     system_prompt=PAPER2CODE_SYSTEM_PROMPT,
     tools=[
         "read_file",      # Read paper content and existing code

@@ -92,6 +92,15 @@ Use `spawn_subagent` to launch short-lived agents for isolated tasks. They run a
 ## Available Subagents
 {available_agents}
 
+## Subagent Trigger Rules
+
+ALWAYS spawn the corresponding subagent for these task types:
+- **Implementing/recreating PDF papers, arXiv papers, academic papers** → spawn `Paper2Code`
+- **Comprehensive code review** → spawn `Code-Reviewer`
+- **Writing tests for existing code** → spawn `Test-Writer`
+- **Deep codebase exploration or research** → spawn `Code-Explorer`
+- **Writing/updating documentation** → spawn `Documentation`
+
 ## When to Spawn
 
 **DO spawn for**:

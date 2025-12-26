@@ -222,21 +222,6 @@ class SubAgentManager:
         else:
             agent = compiled["agent"]
 
-        # Display spawn tool call BEFORE creating nested callback
-        # This ensures the Spawn line appears before any nested tool calls
-        if ui_callback is not None and hasattr(ui_callback, "on_tool_call"):
-            # Build a short description for display (first line of task)
-            first_line = task.split("\n")[0].strip()
-            if len(first_line) > 100:
-                first_line = first_line[:97] + "..."
-            ui_callback.on_tool_call("spawn_subagent", {
-                "subagent_type": name,
-                "description": first_line,
-            })
-            # Small delay to ensure UI renders before nested calls start
-            import time
-            time.sleep(0.05)
-
         # Create nested callback wrapper if parent callback provided
         nested_callback = None
         if ui_callback is not None:
