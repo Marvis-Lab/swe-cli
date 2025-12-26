@@ -104,7 +104,7 @@ _RUNTIME_DEPENDENCIES = [
         description=".NET 9 Runtime for Linux (x64)",
         url="https://builds.dotnet.microsoft.com/dotnet/Runtime/9.0.6/dotnet-runtime-9.0.6-linux-x64.tar.gz",
         platform_id="linux-x64",
-        archive_type="tar.gz",
+        archive_type="gztar",
         binary_name="dotnet",
     ),
     RuntimeDependency(
@@ -112,7 +112,7 @@ _RUNTIME_DEPENDENCIES = [
         description=".NET 9 Runtime for Linux (ARM64)",
         url="https://builds.dotnet.microsoft.com/dotnet/Runtime/9.0.6/dotnet-runtime-9.0.6-linux-arm64.tar.gz",
         platform_id="linux-arm64",
-        archive_type="tar.gz",
+        archive_type="gztar",
         binary_name="dotnet",
     ),
     RuntimeDependency(
@@ -120,7 +120,7 @@ _RUNTIME_DEPENDENCIES = [
         description=".NET 9 Runtime for macOS (x64)",
         url="https://builds.dotnet.microsoft.com/dotnet/Runtime/9.0.6/dotnet-runtime-9.0.6-osx-x64.tar.gz",
         platform_id="osx-x64",
-        archive_type="tar.gz",
+        archive_type="gztar",
         binary_name="dotnet",
     ),
     RuntimeDependency(
@@ -128,7 +128,7 @@ _RUNTIME_DEPENDENCIES = [
         description=".NET 9 Runtime for macOS (ARM64)",
         url="https://builds.dotnet.microsoft.com/dotnet/Runtime/9.0.6/dotnet-runtime-9.0.6-osx-arm64.tar.gz",
         platform_id="osx-arm64",
-        archive_type="tar.gz",
+        archive_type="gztar",
         binary_name="dotnet",
     ),
 ]
@@ -262,8 +262,6 @@ class CSharpLanguageServer(SolidLanguageServer):
     @classmethod
     def _ensure_dotnet_runtime(cls, dotnet_runtime_dep: RuntimeDependency, solidlsp_settings: SolidLSPSettings) -> str:
         """Ensure .NET runtime is available and return the dotnet executable path."""
-        # TODO: use RuntimeDependency util methods instead of custom validation/download logic
-
         # Check if dotnet is already available on the system
         system_dotnet = shutil.which("dotnet")
         if system_dotnet:
@@ -276,8 +274,45 @@ class CSharpLanguageServer(SolidLanguageServer):
             except subprocess.CalledProcessError:
                 pass
 
-        # Download .NET 9 runtime using config
-        return cls._ensure_dotnet_runtime_from_config(dotnet_runtime_dep, solidlsp_settings)
+        # Download .NET 9 runtime using RuntimeDependency util methods
+        dotnet_dir = Path(cls.ls_resources_dir(solidlsp_settings)) / "dotnet-runtime-9.0"
+        assert dotnet_runtime_dep.binary_name is not None, "Runtime dependency must have a binary_name"
+        dotnet_exe = dotnet_dir / dotnet_runtime_dep.binary_name
+
+        if dotnet_exe.exists():
+            log.info(f"Using cached .NET runtime from {dotnet_exe}")
+            return str(dotnet_exe)
+
+        log.info("Downloading .NET 9 runtime...")
+
+        # Handle legacy dotnet_runtime_url setting
+        custom_settings = solidlsp_settings.get_ls_specific_settings(cls.get_language_enum_instance())
+        custom_dotnet_runtime_url = custom_settings.get("dotnet_runtime_url")
+
+        runtime_dep_to_install = dotnet_runtime_dep
+        if custom_dotnet_runtime_url is not None:
+            log.info(f"Using custom .NET runtime url: {custom_dotnet_runtime_url}")
+            runtime_dep_to_install = replace(dotnet_runtime_dep, url=custom_dotnet_runtime_url)
+
+        # Install using RuntimeDependencyCollection
+        runtime_dependencies = RuntimeDependencyCollection([runtime_dep_to_install])
+
+        try:
+            results = runtime_dependencies.install(str(dotnet_dir))
+            installed_path = results.get(runtime_dep_to_install.id)
+
+            if not installed_path or not Path(installed_path).exists():
+                 raise SolidLSPException(f"Failed to install .NET runtime: Binary not found at expected path {installed_path}")
+
+            # Make dotnet executable on Unix
+            if platform.system().lower() != "windows":
+                Path(installed_path).chmod(0o755)
+
+            log.info(f"Successfully installed .NET 9 runtime to {installed_path}")
+            return installed_path
+
+        except Exception as e:
+            raise SolidLSPException(f"Failed to download/install .NET 9 runtime: {e}") from e
 
     @classmethod
     def _ensure_language_server(cls, lang_server_dep: RuntimeDependency, solidlsp_settings: SolidLSPSettings) -> str:
@@ -392,68 +427,6 @@ class CSharpLanguageServer(SolidLanguageServer):
             raise SolidLSPException(
                 f"Failed to download package {package_name} version {package_version} from Azure NuGet feed: {e}"
             ) from e
-
-    @classmethod
-    def _ensure_dotnet_runtime_from_config(cls, dotnet_runtime_dep: RuntimeDependency, solidlsp_settings: SolidLSPSettings) -> str:
-        """
-        Ensure .NET 9 runtime is available using runtime dependency configuration.
-        Returns the path to the dotnet executable.
-        """
-        # Check if dotnet is already available on the system
-        system_dotnet = shutil.which("dotnet")
-        if system_dotnet:
-            # Check if it's .NET 9
-            try:
-                result = subprocess.run([system_dotnet, "--list-runtimes"], capture_output=True, text=True, check=True)
-                if "Microsoft.NETCore.App 9." in result.stdout:
-                    log.info("Found system .NET 9 runtime")
-                    return system_dotnet
-            except subprocess.CalledProcessError:
-                pass
-
-        # Target directory for .NET runtime
-        dotnet_dir = Path(cls.ls_resources_dir(solidlsp_settings)) / "dotnet-runtime-9.0"
-
-        assert dotnet_runtime_dep.binary_name is not None, "Runtime dependency must have a binary_name"
-        dotnet_exe = dotnet_dir / dotnet_runtime_dep.binary_name
-
-        if dotnet_exe.exists():
-            log.info(f"Using cached .NET runtime from {dotnet_exe}")
-            return str(dotnet_exe)
-
-        log.info("Downloading .NET 9 runtime...")
-
-        # Handle URL override
-        custom_settings = solidlsp_settings.get_ls_specific_settings(cls.get_language_enum_instance())
-        custom_dotnet_runtime_url = custom_settings.get("dotnet_runtime_url")
-
-        dep_to_install = dotnet_runtime_dep
-        if custom_dotnet_runtime_url is not None:
-            log.info(f"Using custom .NET runtime url: {custom_dotnet_runtime_url}")
-            dep_to_install = replace(dotnet_runtime_dep, url=custom_dotnet_runtime_url)
-
-        # Use RuntimeDependencyCollection to install
-        try:
-            # We create a collection with just this dependency to leverage its install logic
-            # We don't need overrides here as we already applied the custom URL if needed
-            collection = RuntimeDependencyCollection([dep_to_install])
-
-            # install() returns a dict of {id: binary_path}
-            installed_paths = collection.install(str(dotnet_dir))
-
-            result_path = installed_paths.get(dep_to_install.id)
-            if not result_path:
-                raise SolidLSPException(f"Failed to resolve installed path for {dep_to_install.id}")
-
-            # Make dotnet executable on Unix
-            if platform.system().lower() != "windows":
-                Path(result_path).chmod(0o755)
-
-            log.info(f"Successfully installed .NET 9 runtime to {result_path}")
-            return result_path
-
-        except Exception as e:
-            raise SolidLSPException(f"Failed to download .NET 9 runtime: {e}") from e
 
     def _get_initialize_params(self) -> InitializeParams:
         """
