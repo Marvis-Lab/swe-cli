@@ -29,6 +29,9 @@ class TextualUICallback:
         self._pending_bash_start = False  # True when bash box start is deferred
         self._pending_bash_command = ""  # Command being executed (for VS Code terminal display)
         self._pending_bash_working_dir = "."  # Working directory for bash command
+        # Spinner IDs for tracking active spinners via SpinnerService
+        self._progress_spinner_id: str = ""
+        self._tool_spinner_id: str = ""
 
     def on_thinking_start(self) -> None:
         """Called when the agent starts thinking."""
@@ -52,8 +55,9 @@ class TextualUICallback:
         """
         if content and content.strip():
             # Stop spinner before showing assistant message
-            if hasattr(self.conversation, 'stop_spinner'):
-                self._run_on_ui(self.conversation.stop_spinner)
+            # Note: Only call _stop_local_spinner which goes through SpinnerController
+            # with grace period. Don't call conversation.stop_spinner directly as it
+            # bypasses the grace period and removes the spinner immediately.
             if self.chat_app and hasattr(self.chat_app, "_stop_local_spinner"):
                 self._run_on_ui(self.chat_app._stop_local_spinner)
 
@@ -76,14 +80,18 @@ class TextualUICallback:
         Args:
             message: The progress message to display with spinner
         """
-        from rich.text import Text
+        # Use SpinnerService for unified spinner management
+        if self._app is not None and hasattr(self._app, 'spinner_service'):
+            self._progress_spinner_id = self._app.spinner_service.start(message)
+        else:
+            # Fallback to direct calls if SpinnerService not available
+            from rich.text import Text
 
-        display_text = Text(message, style="white")
-        # Use blocking calls here to ensure spinner is visible before operation starts
-        if hasattr(self.conversation, 'add_tool_call') and self._app is not None:
-            self._app.call_from_thread(self.conversation.add_tool_call, display_text)
-        if hasattr(self.conversation, 'start_tool_execution') and self._app is not None:
-            self._app.call_from_thread(self.conversation.start_tool_execution)
+            display_text = Text(message, style="white")
+            if hasattr(self.conversation, 'add_tool_call') and self._app is not None:
+                self._app.call_from_thread(self.conversation.add_tool_call, display_text)
+            if hasattr(self.conversation, 'start_tool_execution') and self._app is not None:
+                self._app.call_from_thread(self.conversation.start_tool_execution)
 
     def on_progress_update(self, message: str) -> None:
         """Update progress text in-place (same line, keeps spinner running).
@@ -94,11 +102,16 @@ class TextualUICallback:
         Args:
             message: New progress message to display
         """
-        from rich.text import Text
+        # Use SpinnerService for unified spinner management
+        if self._progress_spinner_id and self._app is not None and hasattr(self._app, 'spinner_service'):
+            self._app.spinner_service.update(self._progress_spinner_id, message)
+        else:
+            # Fallback to direct calls if SpinnerService not available
+            from rich.text import Text
 
-        display_text = Text(message, style="white")
-        if hasattr(self.conversation, 'update_progress_text'):
-            self._run_on_ui(self.conversation.update_progress_text, display_text)
+            display_text = Text(message, style="white")
+            if hasattr(self.conversation, 'update_progress_text'):
+                self._run_on_ui(self.conversation.update_progress_text, display_text)
 
     def on_progress_complete(self, message: str = "", success: bool = True) -> None:
         """Called when a progress operation completes.
@@ -107,23 +120,53 @@ class TextualUICallback:
             message: Optional result message to display
             success: Whether the operation succeeded (affects bullet color)
         """
+        # Use SpinnerService for unified spinner management
+        if self._progress_spinner_id and self._app is not None and hasattr(self._app, 'spinner_service'):
+            self._app.spinner_service.stop(self._progress_spinner_id, success, message)
+            self._progress_spinner_id = ""
+        else:
+            # Fallback to direct calls if SpinnerService not available
+            from rich.text import Text
+
+            # Stop spinner (shows green/red bullet based on success)
+            if hasattr(self.conversation, 'stop_tool_execution'):
+                self._run_on_ui(lambda: self.conversation.stop_tool_execution(success))
+
+            # Show result line (if message provided)
+            if message:
+                result_line = Text("  ⎿  ", style="#a0a4ad")
+                result_line.append(message, style="#a0a4ad")
+                self._run_on_ui(self.conversation.write, result_line)
+
+    def on_docker_started(self, image: str) -> None:
+        """Called when a Docker container starts for a subagent.
+
+        Args:
+            image: The Docker image being used (e.g., 'ghcr.io/astral-sh/uv:python3.11-bookworm')
+        """
         from rich.text import Text
 
-        # Stop spinner (shows green/red bullet based on success)
-        if hasattr(self.conversation, 'stop_tool_execution'):
-            self._run_on_ui(lambda: self.conversation.stop_tool_execution(success))
+        # Format: "🐳 Docker: ghcr.io/astral-sh/uv:python3.11-bookworm"
+        docker_text = Text("🐳 Docker: ", style="bold cyan")
+        docker_text.append(image, style="dim cyan")
 
-        # Show result line (if message provided)
-        if message:
-            result_line = Text("  ⎿  ", style="#a0a4ad")
-            result_line.append(message, style="#a0a4ad")
-            self._run_on_ui(self.conversation.write, result_line)
+        if hasattr(self.conversation, 'write'):
+            self._run_on_ui(self.conversation.write, docker_text)
 
     def on_interrupt(self) -> None:
         """Called when execution is interrupted by user.
 
         Displays the interrupt message directly by replacing the blank line after user prompt.
         """
+        # Stop any active spinners via SpinnerService
+        if self._app is not None and hasattr(self._app, 'spinner_service'):
+            if self._tool_spinner_id:
+                self._app.spinner_service.stop(self._tool_spinner_id, success=False)
+                self._tool_spinner_id = ""
+            if self._progress_spinner_id:
+                self._app.spinner_service.stop(self._progress_spinner_id, success=False)
+                self._progress_spinner_id = ""
+
         # Stop spinner first - this removes spinner lines but leaves the blank line after user prompt
         if hasattr(self.conversation, 'stop_spinner'):
             self._run_on_ui(self.conversation.stop_spinner)
@@ -206,15 +249,17 @@ class TextualUICallback:
             self._run_on_ui(self.chat_app._stop_local_spinner)
 
         normalized_args = self._normalize_arguments(tool_args)
+        display_text = build_tool_call_text(tool_name, normalized_args)
 
-        # Display tool call (BLOCKING - ensure line is added before tool executes)
-        if hasattr(self.conversation, 'add_tool_call') and self._app is not None:
-            display_text = build_tool_call_text(tool_name, normalized_args)
-            self._app.call_from_thread(self.conversation.add_tool_call, display_text)
-
-        # Start spinner animation (BLOCKING - ensure timer is created before tool executes)
-        if hasattr(self.conversation, 'start_tool_execution') and self._app is not None:
-            self._app.call_from_thread(self.conversation.start_tool_execution)
+        # Use SpinnerService for unified spinner management
+        if self._app is not None and hasattr(self._app, 'spinner_service'):
+            self._tool_spinner_id = self._app.spinner_service.start(display_text)
+        else:
+            # Fallback to direct calls if SpinnerService not available
+            if hasattr(self.conversation, 'add_tool_call') and self._app is not None:
+                self._app.call_from_thread(self.conversation.add_tool_call, display_text)
+            if hasattr(self.conversation, 'start_tool_execution') and self._app is not None:
+                self._app.call_from_thread(self.conversation.start_tool_execution)
 
         # For bash commands, start streaming box with command info
         if tool_name in ("bash_execute", "run_command"):
@@ -252,11 +297,19 @@ class TextualUICallback:
         if isinstance(result, str):
             result = {"success": True, "output": result}
 
-        # Stop spinner animation (blocking so the bullet restores before results render)
+        # Stop spinner animation
         # Pass success status to color the bullet (green for success, red for failure)
         success = result.get("success", True) if isinstance(result, dict) else True
-        if hasattr(self.conversation, 'stop_tool_execution'):
-            self._run_on_ui(lambda: self.conversation.stop_tool_execution(success))
+
+        # Use SpinnerService for unified spinner management
+        if self._tool_spinner_id and self._app is not None and hasattr(self._app, 'spinner_service'):
+            # Stop spinner without result message - results are displayed separately
+            self._app.spinner_service.stop(self._tool_spinner_id, success)
+            self._tool_spinner_id = ""
+        else:
+            # Fallback to direct calls if SpinnerService not available
+            if hasattr(self.conversation, 'stop_tool_execution'):
+                self._run_on_ui(lambda: self.conversation.stop_tool_execution(success))
 
         # Skip displaying interrupted operations
         # These are already shown by the approval controller interrupt message
@@ -376,10 +429,10 @@ class TextualUICallback:
         """
         normalized_args = self._normalize_arguments(tool_args)
 
-        # Display nested tool call with indentation
-        if hasattr(self.conversation, 'add_nested_tool_call'):
+        # Display nested tool call with indentation (BLOCKING to ensure timer starts before tool executes)
+        if hasattr(self.conversation, 'add_nested_tool_call') and self._app is not None:
             display_text = build_tool_call_text(tool_name, normalized_args)
-            self._run_on_ui(
+            self._app.call_from_thread(
                 self.conversation.add_nested_tool_call,
                 display_text,
                 depth,

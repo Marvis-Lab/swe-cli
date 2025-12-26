@@ -272,10 +272,26 @@ def format_tool_call(tool_name: str, tool_args: Mapping[str, Any]) -> str:
     elif tool_name == "spawn_subagent" and tool_args:
         subagent_type = tool_args.get("subagent_type", "general-purpose")
         description = tool_args.get("description", "")
+
+        # Check if this subagent runs in Docker (known Docker-enabled subagents)
+        # This is determined by checking if docker_config is set in the subagent spec
+        docker_suffix = ""
+        try:
+            from swecli.core.agents.subagents.agents import ALL_SUBAGENTS
+            import shutil
+            for spec in ALL_SUBAGENTS:
+                if spec["name"] == subagent_type and spec.get("docker_config"):
+                    # Only show [Docker] if Docker is actually available
+                    if shutil.which("docker"):
+                        docker_suffix = " [Docker]"
+                    break
+        except ImportError:
+            pass
+
         # Show full description without truncation
         if description:
-            return f"Spawn[{subagent_type}]({description})"
-        return f"Spawn[{subagent_type}]"
+            return f"Spawn[{subagent_type}]({description}){docker_suffix}"
+        return f"Spawn[{subagent_type}]{docker_suffix}"
 
     # Enhanced formatting for update_todo tool - show todo-N format
     elif tool_name == "update_todo" and tool_args:

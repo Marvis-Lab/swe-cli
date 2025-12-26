@@ -60,6 +60,9 @@ class ConversationLog(RichLog):
         self._nested_tool_depth: int = 1  # Depth for indentation
         self._nested_pulse_bright = True  # Toggle for dim/bright pulsing
         self._nested_pulse_counter = 0  # Counter to slow down pulse rate
+        self._nested_tool_timer: Timer | None = None  # Independent timer for nested tool animation
+        self._nested_tool_timer_start: float | None = None  # Start time for elapsed tracking
+        self._nested_spinner_index = 0  # Spinner frame for nested tool
         # Track if last written line has content (for blank line insertion logic)
         self._last_line_has_content = False
         # Streaming bash box state
@@ -423,21 +426,84 @@ class ConversationLog(RichLog):
         else:
             tool_text = Text(str(display), style="white")
 
-        # Build indented line with bullet - START DIM to indicate "running"
+        # Build indented line with spinner - START with first spinner char
         formatted = Text()
         indent = "  " * depth
         formatted.append(indent)
-        formatted.append("⏺ ", style="dim green")  # Dim = running state
+        formatted.append(f"{self._spinner_chars[0]} ", style="bright_cyan")
         formatted.append_text(tool_text)
+        formatted.append(" (0s)", style="#7a8594")  # Initial elapsed time
 
         self.write(formatted, scroll_end=True, animate=False)
 
-        # Track this nested tool call for pulsing animation
+        # Track this nested tool call for animation
         self._nested_tool_line = len(self.lines) - 1
         self._nested_tool_text = tool_text.copy()
         self._nested_tool_depth = depth
-        self._nested_pulse_bright = False  # Start dim (running)
+        self._nested_pulse_bright = False
         self._nested_pulse_counter = 0
+        self._nested_spinner_index = 0
+        self._nested_tool_timer_start = time.monotonic()
+
+        # Start independent timer for nested tool animation
+        self._start_nested_tool_timer()
+
+    def _start_nested_tool_timer(self) -> None:
+        """Start the independent timer for nested tool spinner animation."""
+        if self._nested_tool_timer is not None:
+            self._nested_tool_timer.stop()
+        self._nested_tool_timer = self.set_timer(0.12, self._animate_nested_tool_spinner)
+
+    def _animate_nested_tool_spinner(self) -> None:
+        """Animate the nested tool spinner independently."""
+        if self._nested_tool_line is None or self._nested_tool_text is None:
+            return
+
+        # Update spinner frame
+        self._nested_spinner_index = (self._nested_spinner_index + 1) % len(self._spinner_chars)
+
+        # Render the updated line
+        self._render_nested_tool_line()
+
+        # Schedule next frame
+        self._nested_tool_timer = self.set_timer(0.12, self._animate_nested_tool_spinner)
+
+    def _render_nested_tool_line(self) -> None:
+        """Render the nested tool line with current spinner frame and elapsed time."""
+        if self._nested_tool_line is None or self._nested_tool_text is None:
+            return
+
+        if self._nested_tool_line >= len(self.lines):
+            return
+
+        # Calculate elapsed time
+        elapsed = 0
+        if self._nested_tool_timer_start is not None:
+            elapsed = int(time.monotonic() - self._nested_tool_timer_start)
+
+        # Build the animated line
+        formatted = Text()
+        indent = "  " * self._nested_tool_depth
+        formatted.append(indent)
+        spinner_char = self._spinner_chars[self._nested_spinner_index]
+        formatted.append(f"{spinner_char} ", style="bright_cyan")
+        formatted.append_text(self._nested_tool_text.copy())
+        formatted.append(f" ({elapsed}s)", style="#7a8594")
+
+        # Convert Text to Strip for in-place storage
+        from rich.console import Console
+        from textual.strip import Strip
+
+        console = Console(width=1000, force_terminal=True, no_color=False)
+        segments = list(formatted.render(console))
+        strip = Strip(segments)
+
+        # Update line in-place
+        self.lines[self._nested_tool_line] = strip
+        self._line_cache.clear()
+        self.refresh_line(self._nested_tool_line)
+        if hasattr(self, 'app') and self.app is not None:
+            self.app.refresh()
 
     def complete_nested_tool_call(
         self,
@@ -454,14 +520,56 @@ class ConversationLog(RichLog):
             parent: Name/identifier of the parent subagent
             success: Whether the tool execution succeeded
         """
+        # Stop the nested tool timer
+        if self._nested_tool_timer is not None:
+            self._nested_tool_timer.stop()
+            self._nested_tool_timer = None
+
         # Update the line to final state (green for success, red for failure)
         if self._nested_tool_line is not None and self._nested_tool_text is not None:
-            self._nested_pulse_bright = True  # Bright = completed state
-            self._pulse_nested_tool_line(success=success)
+            self._render_nested_tool_final(success)
 
-        # Clear nested tool tracking - this tool is no longer "running"
+        # Clear nested tool tracking
         self._nested_tool_line = None
         self._nested_tool_text = None
+        self._nested_tool_timer_start = None
+
+    def _render_nested_tool_final(self, success: bool) -> None:
+        """Render the final state of nested tool line with bullet."""
+        if self._nested_tool_line is None or self._nested_tool_text is None:
+            return
+
+        if self._nested_tool_line >= len(self.lines):
+            return
+
+        # Calculate final elapsed time
+        elapsed = 0
+        if self._nested_tool_timer_start is not None:
+            elapsed = int(time.monotonic() - self._nested_tool_timer_start)
+
+        # Build the final line with solid bullet
+        formatted = Text()
+        indent = "  " * self._nested_tool_depth
+        formatted.append(indent)
+        bullet_style = "green" if success else "red"
+        formatted.append("⏺ ", style=bullet_style)
+        formatted.append_text(self._nested_tool_text.copy())
+        formatted.append(f" ({elapsed}s)", style="#7a8594")
+
+        # Convert Text to Strip for in-place storage
+        from rich.console import Console
+        from textual.strip import Strip
+
+        console = Console(width=1000, force_terminal=True, no_color=False)
+        segments = list(formatted.render(console))
+        strip = Strip(segments)
+
+        # Update line in-place
+        self.lines[self._nested_tool_line] = strip
+        self._line_cache.clear()
+        self.refresh_line(self._nested_tool_line)
+        if hasattr(self, 'app') and self.app is not None:
+            self.app.refresh()
 
     def add_todo_sub_result(self, text: str, depth: int, is_last_parent: bool = True) -> None:
         """Add a single sub-result line for todo operations.
@@ -635,15 +743,19 @@ class ConversationLog(RichLog):
         if not code:
             return
         language = segment.get("language") or "text"
+
+        # Add indentation to each line of code
+        indented_code = "\n".join("  " + line for line in code.splitlines())
+
         syntax = Syntax(
-            code,
+            indented_code,
             language,
             theme="monokai",
-            line_numbers=bool(code.count("\n") > 0),
+            line_numbers=False,
+            word_wrap=False,
+            indent_guides=True,
         )
-        title = f"Code ({language})" if language and language != "text" else "Code"
-        panel = Panel(syntax, title=title, border_style="bright_blue")
-        self.write(panel)
+        self.write(syntax)
 
     def _write_generic_tool_result(self, text: str) -> None:
         lines = text.rstrip("\n").splitlines() or [text]
@@ -1055,53 +1167,11 @@ class ConversationLog(RichLog):
         self._render_tool_spinner_frame()
         self._spinner_index = (self._spinner_index + 1) % len(self._spinner_chars)
 
-        # Pulse nested tool indicator at slower rate (every 4 frames = ~0.5s)
-        self._nested_pulse_counter += 1
-        if self._nested_pulse_counter >= 4:
-            self._nested_pulse_counter = 0
-            self._nested_pulse_bright = not self._nested_pulse_bright
-            self._pulse_nested_tool_line()
+        # Note: Nested tool calls now have their own independent timer
+        # via _animate_nested_tool_spinner, so we don't pulse them here anymore
 
         self._schedule_tool_spinner()
 
-    def _pulse_nested_tool_line(self, success: bool = True) -> None:
-        """Update the nested tool call line with pulsing dim/bright effect."""
-        if self._nested_tool_line is None or self._nested_tool_text is None:
-            return
-
-        if self._nested_tool_line >= len(self.lines):
-            # Line index out of bounds
-            return
-
-        # Build the pulsed line
-        formatted = Text()
-        indent = "  " * self._nested_tool_depth
-        formatted.append(indent)
-
-        # Apply dim/bright pulsing to the bullet (red for failure, green for success)
-        if success:
-            bullet_style = "green" if self._nested_pulse_bright else "dim green"
-        else:
-            bullet_style = "red" if self._nested_pulse_bright else "dim red"
-        formatted.append("⏺ ", style=bullet_style)
-        formatted.append_text(self._nested_tool_text.copy())
-
-        # Convert Text to Strip for in-place storage in RichLog
-        from rich.console import Console
-        from textual.strip import Strip
-
-        # Use Text.render() instead of Console.render() for clean segments
-        # Console.render() may add wrapping/transformations that cause corruption
-        console = Console(width=1000, force_terminal=True, no_color=False)
-        segments = list(formatted.render(console))
-        strip = Strip(segments)
-
-        # Update the line at the tracked position (in-place)
-        self.lines[self._nested_tool_line] = strip
-
-        # Clear cache and refresh display
-        self._line_cache.clear()
-        self.refresh()
 
     def _truncate_from(self, index: int) -> None:
         if index >= len(self.lines):

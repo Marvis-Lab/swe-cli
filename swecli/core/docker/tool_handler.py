@@ -26,16 +26,24 @@ class DockerToolHandler:
     the swecli tool interface, translating calls to HTTP operations.
     """
 
-    def __init__(self, runtime: "RemoteRuntime", workspace_dir: str = "/testbed"):
+    def __init__(
+        self,
+        runtime: "RemoteRuntime",
+        workspace_dir: str = "/testbed",
+        shell_init: str = "",
+    ):
         """Initialize the Docker tool handler.
 
         Args:
             runtime: RemoteRuntime instance for communicating with container
             workspace_dir: Directory inside container where repo is located
                           (default: /testbed for SWE-bench images)
+            shell_init: Shell initialization command to prepend to all commands
+                       (e.g., conda activation for SWE-bench, empty for uv images)
         """
         self.runtime = runtime
         self.workspace_dir = workspace_dir
+        self.shell_init = shell_init
 
     async def run_command(
         self, arguments: dict[str, Any], context: Any = None
@@ -68,10 +76,10 @@ class DockerToolHandler:
             container_path = self._translate_path(working_dir)
             command = f"cd {container_path} && {command}"
 
-        # SWE-bench containers require conda activation for Python/pytest to work
-        # The testbed environment has all dependencies installed
-        CONDA_ACTIVATE = "source /opt/miniconda3/etc/profile.d/conda.sh && conda activate testbed && "
-        command = CONDA_ACTIVATE + command
+        # Prepend shell initialization if configured
+        # (e.g., conda activation for SWE-bench, empty for uv/plain images)
+        if self.shell_init:
+            command = f"{self.shell_init} && {command}"
 
         try:
             action = BashAction(
@@ -382,7 +390,7 @@ class DockerToolHandler:
             auth_token=self.runtime.auth_token,
             timeout=self.runtime.timeout,
         )
-        return DockerToolHandler(fresh_runtime, self.workspace_dir)
+        return DockerToolHandler(fresh_runtime, self.workspace_dir, self.shell_init)
 
     def run_command_sync(
         self, arguments: dict[str, Any], context: Any = None

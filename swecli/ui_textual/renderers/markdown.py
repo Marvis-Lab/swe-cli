@@ -27,6 +27,7 @@ def render_markdown_text_segment(content: str, *, leading: bool = False) -> Tupl
     renderables: List[RenderableType] = []
     wrote_any = False
     leading_consumed = not leading
+    indent = "  "  # Consistent indentation for all response lines
 
     def emit(renderable: RenderableType, allow_leading: bool = True) -> None:
         nonlocal wrote_any, leading_consumed
@@ -38,7 +39,13 @@ def render_markdown_text_segment(content: str, *, leading: bool = False) -> Tupl
             renderables.append(bullet)
             leading_consumed = True
         else:
-            renderables.append(renderable)
+            # Add indentation to non-leading lines
+            if isinstance(renderable, Text):
+                indented = Text(indent)
+                indented.append_text(renderable)
+                renderables.append(indented)
+            else:
+                renderables.append(renderable)
             if leading and allow_leading and not leading_consumed:
                 text_value = getattr(renderable, "plain", str(renderable))
                 if text_value.strip():

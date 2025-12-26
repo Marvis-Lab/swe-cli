@@ -94,6 +94,10 @@ class DockerConfig:
     # Extra environment variables
     environment: dict[str, str] = field(default_factory=dict)
 
+    # Shell initialization command (prepended to all commands)
+    # Empty for plain images (uv, python), conda activation for SWE-bench
+    shell_init: str = ""
+
 
 class DockerDeployment:
     """Manages Docker container lifecycle for runtime execution.

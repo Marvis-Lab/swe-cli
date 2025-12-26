@@ -216,9 +216,18 @@ class SubAgentManager:
             asyncio.set_event_loop(loop)
             loop.run_until_complete(deployment.start())
 
+            # Notify UI that Docker container started
+            if ui_callback and hasattr(ui_callback, 'on_docker_started'):
+                ui_callback.on_docker_started(docker_config.image)
+
             # Create Docker tool handler with local registry fallback for tools like read_pdf
             runtime = deployment.runtime
-            docker_handler = DockerToolHandler(runtime, workspace_dir=workspace_dir)
+            shell_init = docker_config.shell_init if hasattr(docker_config, 'shell_init') else ""
+            docker_handler = DockerToolHandler(
+                runtime,
+                workspace_dir=workspace_dir,
+                shell_init=shell_init,
+            )
 
             # Execute subagent with Docker tools (local_registry passed for fallback)
             result = self.execute_subagent(

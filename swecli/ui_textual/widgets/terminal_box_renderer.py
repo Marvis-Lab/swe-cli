@@ -169,6 +169,84 @@ class TerminalBoxRenderer:
         bottom.append("\u2570" + "\u2500" * (box_width - 2) + "\u256f", style=border)
         return bottom
 
+    # --- Code block rendering (minimal header bar style) ---
+
+    def render_code_block_header(self, language: str, box_width: int) -> Text:
+        """Render code block top border with language: ╭─ python ────────╮"""
+        border = self.BORDER_DEFAULT
+        lang_color = "#8b949e"  # Subtle gray for language label
+
+        # Build: ╭─ python ─────────────────╮
+        # Format: "    ╭─ {language} ─...─╮"
+        prefix = "\u256d\u2500 "  # ╭─
+        suffix = " \u2500"  # space + ─ before the rest
+
+        # Calculate how many dashes we need
+        lang_display = language if language else "code"
+        remaining = box_width - len(prefix) - len(lang_display) - len(suffix) - 1  # -1 for ╮
+        dashes = "\u2500" * max(0, remaining)
+
+        header = Text("    ")
+        header.append(prefix, style=border)
+        header.append(lang_display, style=lang_color)
+        header.append(suffix + dashes + "\u256e", style=border)
+        return header
+
+    def render_code_block_line(self, line: str, box_width: int) -> Text:
+        """Render a code block content line: │ code here  │"""
+        border = self.BORDER_DEFAULT
+        content_width = box_width - 4  # Space for "│ " (2) + " │" (2)
+
+        normalized = self.normalize_line(line)
+        display = normalized[:content_width]  # Truncate if needed
+
+        content_line = Text("    ")
+        content_line.append("\u2502 ", style=border)
+        content_line.append(display)
+
+        # Pad to EXACT content_width for aligned right border
+        padding_needed = content_width - len(display)
+        content_line.append(" " * max(0, padding_needed))
+        content_line.append(" \u2502", style=border)
+        return content_line
+
+    def render_code_block_bottom(self, box_width: int) -> Text:
+        """Render code block bottom border: ╰────────────╯"""
+        border = self.BORDER_DEFAULT
+        bottom = Text("    ")
+        bottom.append("\u2570" + "\u2500" * (box_width - 2) + "\u256f", style=border)
+        return bottom
+
+    def render_code_block(
+        self,
+        lines: List[str],
+        language: str,
+        box_width: int,
+    ) -> List[Text]:
+        """Render a code block with minimal header bar style.
+
+        Args:
+            lines: List of code lines to display
+            language: Programming language for the header
+            box_width: Width of the box
+
+        Returns:
+            List of Text objects to be written sequentially.
+        """
+        result: List[Text] = []
+
+        # Top border with language
+        result.append(self.render_code_block_header(language, box_width))
+
+        # Content lines
+        for line in lines:
+            result.append(self.render_code_block_line(line, box_width))
+
+        # Bottom border
+        result.append(self.render_code_block_bottom(box_width))
+
+        return result
+
     # --- Complete box rendering ---
 
     def render_complete_box(
