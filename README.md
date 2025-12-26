@@ -1,13 +1,28 @@
 <p align="center">
-  <img src="logo/swe-cli-high-resolution-logo-grayscale-transparent.png" alt="SWE-CLI Logo" width="400" style="border: 2px solid #e1e4e8; border-radius: 12px; padding: 20px;"/>
+  <img src="logo/swe-cli-high-resolution-logo-grayscale-transparent.png" alt="SWE-CLI Logo" width="400"/>
 </p>
 
-<h1 align="center">SWE-CLI</h1>
+<p align="center">
+  <strong>One-Stop, Cost-Effective CLI-based Coding Agent for Modern Software Engineering</strong>
+</p>
+
+<p align="center">
+  Interactive TUI • MCP Integration • Multi-Provider Support • SOLID Architecture
+</p>
 
 <p align="center">
   <a href="https://pypi.org/project/swe-cli/"><img alt="PyPI version" src="https://img.shields.io/pypi/v/swe-cli?style=flat-square" /></a>
-  <a href="https://python.org/"><img alt="Python version" src="https://img.shields.io/badge/python-%3E%3D3.10-brightgreen?style=flat-square" /></a>
-  <a href="./LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square" /></a>
+  <a href="./LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square" /></a>
+  <a href="https://python.org/"><img alt="Python version" src="https://img.shields.io/badge/python-%3E%3D3.10-blue.svg?style=flat-square" /></a>
+  <a href="https://github.com/swe-cli/swe-cli/issues"><img alt="Issues" src="https://img.shields.io/github/issues/swe-cli/swe-cli?style=flat-square" /></a>
+  <a href="https://github.com/swe-cli/swe-cli/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/swe-cli/swe-cli?style=flat-square" /></a>
+</p>
+
+<p align="center">
+  <a href="#overview"><strong>Overview</strong></a> •
+  <a href="#installation"><strong>Installation</strong></a> •
+  <a href="#quick-start"><strong>Quick Start</strong></a> •
+  <a href="#key-components"><strong>Key Components</strong></a>
 </p>
 
 ## Overview
