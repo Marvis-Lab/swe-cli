@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import shutil
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from swecli.models.config import AppConfig
@@ -150,6 +152,168 @@ class SubAgentManager:
         """
         return {name: agent["description"] for name, agent in self._agents.items()}
 
+    def _is_docker_available(self) -> bool:
+        """Check if Docker is available on the system."""
+        return shutil.which("docker") is not None
+
+    def _get_spec_for_subagent(self, name: str) -> SubAgentSpec | None:
+        """Get the SubAgentSpec for a registered subagent."""
+        from .agents import ALL_SUBAGENTS
+        return next((s for s in ALL_SUBAGENTS if s["name"] == name), None)
+
+    def _execute_with_docker(
+        self,
+        name: str,
+        task: str,
+        deps: SubAgentDeps,
+        spec: SubAgentSpec,
+        ui_callback: Any = None,
+        task_monitor: Any = None,
+    ) -> dict[str, Any]:
+        """Execute a subagent inside Docker with automatic container lifecycle.
+
+        This method:
+        1. Starts a Docker container with the spec's docker_config
+        2. Executes the subagent with all tools routed through Docker
+        3. Copies generated files from container to local working directory
+        4. Stops the container
+
+        Args:
+            name: The subagent type name
+            task: The task description
+            deps: Dependencies for tool execution
+            spec: The subagent specification with docker_config
+            ui_callback: Optional UI callback
+            task_monitor: Optional task monitor
+
+        Returns:
+            Result dict with content, success, and messages
+        """
+        import asyncio
+        from swecli.core.docker.deployment import DockerDeployment
+        from swecli.core.docker.tool_handler import DockerToolHandler, DockerToolRegistry
+
+        docker_config = spec.get("docker_config")
+        if docker_config is None:
+            return {
+                "success": False,
+                "error": "No docker_config in subagent spec",
+                "content": "",
+            }
+
+        # Workspace inside Docker container
+        workspace_dir = "/workspace"
+        local_working_dir = Path(self._working_dir) if self._working_dir else Path.cwd()
+
+        deployment = None
+        loop = None
+        try:
+            # Create and start Docker deployment
+            deployment = DockerDeployment(config=docker_config)
+
+            # Run async start in sync context - use a single event loop for the whole operation
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            loop.run_until_complete(deployment.start())
+
+            # Create Docker tool handler with local registry fallback for tools like read_pdf
+            runtime = deployment.runtime
+            docker_handler = DockerToolHandler(runtime, workspace_dir=workspace_dir)
+
+            # Execute subagent with Docker tools (local_registry passed for fallback)
+            result = self.execute_subagent(
+                name=name,
+                task=task,
+                deps=deps,
+                ui_callback=ui_callback,
+                task_monitor=task_monitor,
+                working_dir=workspace_dir,
+                docker_handler=docker_handler,
+            )
+
+            # Copy generated files from Docker to local working directory
+            if result.get("success"):
+                self._copy_files_from_docker(
+                    docker_handler=docker_handler,
+                    workspace_dir=workspace_dir,
+                    local_dir=local_working_dir,
+                )
+
+            return result
+
+        except Exception as e:
+            import traceback
+            return {
+                "success": False,
+                "error": f"Docker execution failed: {str(e)}\n{traceback.format_exc()}",
+                "content": "",
+            }
+        finally:
+            # Always stop the container
+            if deployment is not None and loop is not None:
+                try:
+                    loop.run_until_complete(deployment.stop())
+                except Exception:
+                    pass  # Ignore cleanup errors
+            # Close the loop after all async operations
+            if loop is not None:
+                try:
+                    loop.close()
+                except Exception:
+                    pass
+
+    def _copy_files_from_docker(
+        self,
+        docker_handler: Any,
+        workspace_dir: str,
+        local_dir: Path,
+    ) -> None:
+        """Copy generated files from Docker container to local directory.
+
+        Copies common code files: .py, .yaml, .toml, .txt, .json, .md
+        """
+        try:
+            # List files in workspace
+            result = docker_handler.list_files_sync({"path": workspace_dir})
+            if not result.get("success"):
+                return
+
+            files = result.get("output", "").strip().split("\n")
+
+            # File extensions to copy
+            copy_extensions = {".py", ".yaml", ".yml", ".toml", ".txt", ".json", ".md", ".cfg"}
+
+            for file_entry in files:
+                file_entry = file_entry.strip()
+                if not file_entry:
+                    continue
+
+                # Extract filename from listing (handle various formats)
+                filename = file_entry.split()[-1] if file_entry else ""
+                if not filename or filename.startswith("."):
+                    continue
+
+                # Check extension
+                file_path = Path(filename)
+                if file_path.suffix.lower() not in copy_extensions:
+                    continue
+
+                # Read file from Docker
+                docker_path = f"{workspace_dir}/{filename}"
+                read_result = docker_handler.read_file_sync({"file_path": docker_path})
+                if not read_result.get("success"):
+                    continue
+
+                content = read_result.get("output", "")
+
+                # Write to local directory
+                local_path = local_dir / filename
+                local_path.parent.mkdir(parents=True, exist_ok=True)
+                local_path.write_text(content)
+
+        except Exception:
+            pass  # Ignore copy errors, files may not exist
+
     def execute_subagent(
         self,
         name: str,
@@ -176,6 +340,23 @@ class SubAgentManager:
         Returns:
             Result dict with content, success, and messages
         """
+        # Auto-detect Docker execution for subagents with docker_config
+        # Only trigger if docker_handler is not already provided (to avoid recursion)
+        if docker_handler is None:
+            spec = self._get_spec_for_subagent(name)
+            if spec is not None and spec.get("docker_config") is not None:
+                if self._is_docker_available():
+                    # Execute with Docker lifecycle management
+                    return self._execute_with_docker(
+                        name=name,
+                        task=task,
+                        deps=deps,
+                        spec=spec,
+                        ui_callback=ui_callback,
+                        task_monitor=task_monitor,
+                    )
+                # If Docker not available, fall through to local execution
+
         if name not in self._agents:
             available = ", ".join(self._agents.keys())
             return {
@@ -189,8 +370,9 @@ class SubAgentManager:
         # Determine which tool registry to use
         if docker_handler is not None:
             # Use Docker-based tool registry for Docker execution
+            # Pass local registry for fallback on tools not supported in Docker (e.g., read_pdf)
             from swecli.core.docker.tool_handler import DockerToolRegistry
-            tool_registry = DockerToolRegistry(docker_handler)
+            tool_registry = DockerToolRegistry(docker_handler, local_registry=self._tool_registry)
         else:
             tool_registry = self._tool_registry
 

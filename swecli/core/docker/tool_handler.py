@@ -387,123 +387,42 @@ class DockerToolHandler:
     def run_command_sync(
         self, arguments: dict[str, Any], context: Any = None
     ) -> dict[str, Any]:
-        """Synchronous wrapper for run_command."""
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            loop = None
+        """Synchronous wrapper for run_command.
 
-        if loop and loop.is_running():
-            # In async context - run in thread with fresh handler
-            import concurrent.futures
-
-            def run_in_thread():
-                fresh = self._create_fresh_handler()
-                return asyncio.run(fresh.run_command(arguments, context))
-
-            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-                return pool.submit(run_in_thread).result()
-        else:
-            return asyncio.run(self.run_command(arguments, context))
+        Always creates a fresh handler to avoid event loop issues with cached
+        HTTP sessions. Each call gets a fresh RemoteRuntime/aiohttp session.
+        """
+        fresh = self._create_fresh_handler()
+        return asyncio.run(fresh.run_command(arguments, context))
 
     def read_file_sync(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """Synchronous wrapper for read_file."""
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            loop = None
-
-        if loop and loop.is_running():
-            import concurrent.futures
-
-            def run_in_thread():
-                fresh = self._create_fresh_handler()
-                return asyncio.run(fresh.read_file(arguments))
-
-            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-                return pool.submit(run_in_thread).result()
-        else:
-            return asyncio.run(self.read_file(arguments))
+        fresh = self._create_fresh_handler()
+        return asyncio.run(fresh.read_file(arguments))
 
     def write_file_sync(
         self, arguments: dict[str, Any], context: Any = None
     ) -> dict[str, Any]:
         """Synchronous wrapper for write_file."""
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            loop = None
-
-        if loop and loop.is_running():
-            import concurrent.futures
-
-            def run_in_thread():
-                fresh = self._create_fresh_handler()
-                return asyncio.run(fresh.write_file(arguments, context))
-
-            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-                return pool.submit(run_in_thread).result()
-        else:
-            return asyncio.run(self.write_file(arguments, context))
+        fresh = self._create_fresh_handler()
+        return asyncio.run(fresh.write_file(arguments, context))
 
     def edit_file_sync(
         self, arguments: dict[str, Any], context: Any = None
     ) -> dict[str, Any]:
         """Synchronous wrapper for edit_file."""
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            loop = None
-
-        if loop and loop.is_running():
-            import concurrent.futures
-
-            def run_in_thread():
-                fresh = self._create_fresh_handler()
-                return asyncio.run(fresh.edit_file(arguments, context))
-
-            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-                return pool.submit(run_in_thread).result()
-        else:
-            return asyncio.run(self.edit_file(arguments, context))
+        fresh = self._create_fresh_handler()
+        return asyncio.run(fresh.edit_file(arguments, context))
 
     def list_files_sync(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """Synchronous wrapper for list_files."""
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            loop = None
-
-        if loop and loop.is_running():
-            import concurrent.futures
-
-            def run_in_thread():
-                fresh = self._create_fresh_handler()
-                return asyncio.run(fresh.list_files(arguments))
-
-            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-                return pool.submit(run_in_thread).result()
-        else:
-            return asyncio.run(self.list_files(arguments))
+        fresh = self._create_fresh_handler()
+        return asyncio.run(fresh.list_files(arguments))
 
     def search_sync(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """Synchronous wrapper for search."""
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            loop = None
-
-        if loop and loop.is_running():
-            import concurrent.futures
-
-            def run_in_thread():
-                fresh = self._create_fresh_handler()
-                return asyncio.run(fresh.search(arguments))
-
-            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-                return pool.submit(run_in_thread).result()
-        else:
-            return asyncio.run(self.search(arguments))
+        fresh = self._create_fresh_handler()
+        return asyncio.run(fresh.search(arguments))
 
 
 class DockerToolRegistry:
@@ -512,15 +431,24 @@ class DockerToolRegistry:
     This wraps the Docker tool handler to provide a compatible interface
     with the standard ToolRegistry. Uses synchronous wrappers for compatibility
     with SwecliAgent.
+
+    For tools not supported in Docker (like read_pdf), falls back to the
+    local tool registry if provided.
     """
 
-    def __init__(self, docker_handler: DockerToolHandler):
-        """Initialize with a Docker tool handler.
+    def __init__(
+        self,
+        docker_handler: DockerToolHandler,
+        local_registry: Any = None,
+    ):
+        """Initialize with a Docker tool handler and optional local fallback.
 
         Args:
             docker_handler: DockerToolHandler instance
+            local_registry: Optional local ToolRegistry for fallback on unsupported tools
         """
         self.handler = docker_handler
+        self._local_registry = local_registry
         # Use sync handlers for compatibility with SwecliAgent
         self._sync_handlers = {
             "run_command": self.handler.run_command_sync,
@@ -530,6 +458,8 @@ class DockerToolRegistry:
             "list_files": self.handler.list_files_sync,
             "search": self.handler.search_sync,
         }
+        # Tools that should always run locally (not in Docker)
+        self._local_only_tools = {"read_pdf", "analyze_image", "capture_screenshot"}
 
     def execute_tool(
         self,
@@ -563,7 +493,42 @@ class DockerToolRegistry:
         Returns:
             Tool execution result
         """
+        # Check if tool should run locally (not in Docker)
+        if tool_name in self._local_only_tools:
+            if self._local_registry is not None:
+                # Fall back to local registry for this tool
+                return self._local_registry.execute_tool(
+                    tool_name,
+                    arguments,
+                    mode_manager=mode_manager,
+                    approval_manager=approval_manager,
+                    undo_manager=undo_manager,
+                    task_monitor=task_monitor,
+                    session_manager=session_manager,
+                    ui_callback=ui_callback,
+                    is_subagent=is_subagent,
+                )
+            else:
+                return {
+                    "success": False,
+                    "error": f"Tool '{tool_name}' requires local execution but no local registry available",
+                    "output": None,
+                }
+
         if tool_name not in self._sync_handlers:
+            # Try local fallback for unknown tools
+            if self._local_registry is not None:
+                return self._local_registry.execute_tool(
+                    tool_name,
+                    arguments,
+                    mode_manager=mode_manager,
+                    approval_manager=approval_manager,
+                    undo_manager=undo_manager,
+                    task_monitor=task_monitor,
+                    session_manager=session_manager,
+                    ui_callback=ui_callback,
+                    is_subagent=is_subagent,
+                )
             return {
                 "success": False,
                 "error": f"Tool '{tool_name}' not supported in Docker mode",
