@@ -5,7 +5,6 @@ from __future__ import annotations
 import shlex
 import threading
 import time
-from concurrent.futures import Future
 from typing import TYPE_CHECKING
 
 from rich.text import Text
@@ -35,6 +34,8 @@ class MCPCommandController:
         Args:
             command: The full command (e.g., "/mcp connect github")
         """
+        from swecli.ui_textual.ui_callback import TextualUICallback
+
         try:
             parts = shlex.split(command)
         except ValueError:
@@ -51,99 +52,51 @@ class MCPCommandController:
             self.app.conversation.add_error("MCP manager not available")
             return
 
+        # Use app.conversation directly - it's already the mounted widget
+        # Avoid query_one from background thread as it can be slow
+        conversation_widget = getattr(self.app, 'conversation', None)
+        if conversation_widget is None:
+            return
+
         # Check if already connected
         if mcp_manager.is_connected(server_name):
             tools = mcp_manager.get_server_tools(server_name)
-            # Create tool call display with green bullet
-            display = Text()
-            display.append("⏺", style="green bold")
-            display.append(f" MCP ({server_name}) (0s)")
-            self.app.conversation.add_tool_call(display)
-            self.app.conversation.stop_tool_execution()
-            self.app.conversation.add_tool_result(
-                f"Already connected to {server_name} ({len(tools)} tools available)"
-            )
+            ui_callback = TextualUICallback(conversation_widget, self.app)
+            ui_callback.on_progress_start(f"MCP ({server_name})")
+            ui_callback.on_progress_complete(f"Already connected ({len(tools)} tools)")
             return
 
-        # Add tool call and start spinner (must block to ensure timer is set up)
-        future = Future()
+        # Create TextualUICallback with the CORRECT widget from DOM query
+        ui_callback = TextualUICallback(conversation_widget, self.app)
 
-        def start_tool_call():
-            display = Text(f"MCP ({server_name})")
-            self.app.conversation.add_tool_call(display)
-            self.app.conversation.start_tool_execution()
+        # Start spinner
+        ui_callback.on_progress_start(f"MCP ({server_name})")
 
-        # Use blocking call to ensure spinner timer is fully set up before continuing
-        def wrapper():
-            try:
-                start_tool_call()
-                future.set_result(None)
-            except Exception as e:
-                future.set_exception(e)
-
-        if hasattr(self.app, 'call_from_thread'):
-            self.app.call_from_thread(wrapper)
-            try:
-                future.result(timeout=5.0)
-            except Exception:
-                pass
-        else:
-            start_tool_call()
-
-        # Run connection in background thread
+        # Run connection (we're already in a background thread from runner's processor)
         start_time = time.monotonic()
+        try:
+            success = mcp_manager.connect_sync(server_name)
+            error_msg = None
+        except Exception as e:
+            success = False
+            error_msg = f"{type(e).__name__}: {e}"
 
-        def handle_result(success: bool):
-            """Handle connection result in main thread."""
-            def finalize():
-                # Stop spinner first
-                if hasattr(self.app.conversation, 'stop_tool_execution'):
-                    self.app.conversation.stop_tool_execution()
+        # Ensure spinner is visible for at least 500ms
+        elapsed = time.monotonic() - start_time
+        if elapsed < 0.5:
+            time.sleep(0.5 - elapsed)
 
-                # Then show result
-                elapsed = int(time.monotonic() - start_time)
-                if success:
-                    tools = mcp_manager.get_server_tools(server_name)
-                    # Green checkmark for success
-                    result_text = f"✓ Connected to {server_name} ({len(tools)} tools available)"
-                    self.app.conversation.add_tool_result(result_text)
-                else:
-                    # Red X for failure
-                    result_text = f"❌ Failed to connect to {server_name}"
-                    self.app.conversation.add_tool_result(result_text)
+        # Complete progress with result
+        if error_msg:
+            ui_callback.on_progress_complete(error_msg, success=False)
+        elif success:
+            tools = mcp_manager.get_server_tools(server_name)
+            ui_callback.on_progress_complete(f"Connected ({len(tools)} tools)")
+        else:
+            ui_callback.on_progress_complete("Connection failed", success=False)
 
-            # Stop spinner and show result
-            if hasattr(self.app, 'call_from_thread'):
-                self.app.call_from_thread(finalize)
-            elif self._loop:
-                self._loop.call_soon_threadsafe(finalize)
-            else:
-                finalize()
-
-            # Refresh runtime tooling AFTER showing result (don't block spinner)
-            if success and hasattr(self.repl, '_refresh_runtime_tooling'):
-                self.repl._refresh_runtime_tooling()
-
-        def connect_thread():
-            try:
-                success = mcp_manager.connect_sync(server_name)
-                handle_result(success)
-            except Exception as e:
-                # Stop spinner on error
-                def stop_and_error():
-                    if hasattr(self.app.conversation, 'stop_tool_execution'):
-                        self.app.conversation.stop_tool_execution()
-                    elapsed = int(time.monotonic() - start_time)
-                    result_text = f"❌ Error: {str(e)}"
-                    self.app.conversation.add_tool_result(result_text)
-
-                if hasattr(self.app, 'call_from_thread'):
-                    self.app.call_from_thread(stop_and_error)
-                else:
-                    stop_and_error()
-
-        thread = threading.Thread(target=connect_thread, daemon=True)
-        thread.start()
+        if success and hasattr(self.repl, '_refresh_runtime_tooling'):
+            self.repl._refresh_runtime_tooling()
 
     def handle_view(self, command: str) -> None:
         """Handle /mcp view command to show MCP server modal.
@@ -252,7 +205,7 @@ class MCPCommandController:
                 tools = mcp_manager.get_server_tools(server_name)
                 message = f"[green]⏺[/green] MCP ({server_name}) ({elapsed}s)\n  ⎿  Connected ({len(tools)} tools)"
             else:
-                message = f"[red]⏺[/red] MCP ({server_name}) ({elapsed}s)\n  ⎿  ❌ Connection failed"
+                message = f"[red]⏺[/red] MCP ({server_name}) ({elapsed}s)\n  ⎿  Connection failed"
 
             # Use _enqueue_console_text from runner if available
             if hasattr(self, "_enqueue_console_text_callback"):

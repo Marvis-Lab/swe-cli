@@ -79,10 +79,11 @@ class TextualUICallback:
         from rich.text import Text
 
         display_text = Text(message, style="white")
-        if hasattr(self.conversation, 'add_tool_call'):
-            self._run_on_ui(self.conversation.add_tool_call, display_text)
-        if hasattr(self.conversation, 'start_tool_execution'):
-            self._run_on_ui(self.conversation.start_tool_execution)
+        # Use blocking calls here to ensure spinner is visible before operation starts
+        if hasattr(self.conversation, 'add_tool_call') and self._app is not None:
+            self._app.call_from_thread(self.conversation.add_tool_call, display_text)
+        if hasattr(self.conversation, 'start_tool_execution') and self._app is not None:
+            self._app.call_from_thread(self.conversation.start_tool_execution)
 
     def on_progress_update(self, message: str) -> None:
         """Update progress text in-place (same line, keeps spinner running).
@@ -206,14 +207,14 @@ class TextualUICallback:
 
         normalized_args = self._normalize_arguments(tool_args)
 
-        # Display tool call (BLOCKING - ensure line is added)
-        if hasattr(self.conversation, 'add_tool_call'):
+        # Display tool call (BLOCKING - ensure line is added before tool executes)
+        if hasattr(self.conversation, 'add_tool_call') and self._app is not None:
             display_text = build_tool_call_text(tool_name, normalized_args)
-            self._run_on_ui(self.conversation.add_tool_call, display_text)
+            self._app.call_from_thread(self.conversation.add_tool_call, display_text)
 
         # Start spinner animation (BLOCKING - ensure timer is created before tool executes)
-        if hasattr(self.conversation, 'start_tool_execution'):
-            self._run_on_ui(self.conversation.start_tool_execution)
+        if hasattr(self.conversation, 'start_tool_execution') and self._app is not None:
+            self._app.call_from_thread(self.conversation.start_tool_execution)
 
         # For bash commands, start streaming box with command info
         if tool_name in ("bash_execute", "run_command"):
@@ -290,17 +291,30 @@ class TextualUICallback:
                     self._run_on_ui(self.chat_app.resume_reasoning_spinner)
                 return
 
-            # Fallback: show simple summary if no streaming was happening (no output case)
-            # Show summary like: ⎿ ✓ Done (exit 0) or ⎿ ✖ Failed (exit 1)
-            from rich.text import Text
-            grey = "#a0a4ad"
-            if is_error:
-                summary = Text("  ⎿ ", style=grey)
-                summary.append(f"✖ Failed (exit {exit_code})", style="red bold")
-            else:
-                summary = Text("  ⎿ ", style=grey)
-                summary.append(f"✓ Done (exit {exit_code})", style="green")
-            self._run_on_ui(self.conversation.write, summary)
+            # Fallback: show terminal box if no streaming was happening (no output case)
+            if hasattr(self.conversation, 'add_bash_output_box'):
+                import os
+                command = self._normalize_arguments(tool_args).get("command", "")
+                working_dir = os.getcwd()
+                # Combine stdout, stderr, output, and error for display
+                output_parts = []
+                if result.get("stdout"):
+                    output_parts.append(result["stdout"])
+                if result.get("stderr"):
+                    output_parts.append(result["stderr"])
+                if result.get("output"):
+                    output_parts.append(result["output"])
+                if result.get("error"):
+                    output_parts.append(result["error"])
+                combined_output = "\n".join(output_parts).strip()
+                self._run_on_ui(
+                    self.conversation.add_bash_output_box,
+                    combined_output,
+                    is_error,
+                    command,
+                    working_dir,
+                    0,  # depth
+                )
 
             if self.chat_app and hasattr(self.chat_app, "resume_reasoning_spinner"):
                 self._run_on_ui(self.chat_app.resume_reasoning_spinner)
@@ -630,13 +644,17 @@ class TextualUICallback:
     def _run_on_ui(self, func, *args, **kwargs) -> None:
         """Execute a function on the Textual UI thread WITHOUT waiting.
 
-        Note: This was previously blocking with a 5-second timeout, causing
-        severe UI responsiveness issues. Now uses non-blocking calls for
-        better performance.
+        Uses call_soon_threadsafe to schedule work on the event loop
+        without blocking the calling thread.
         """
         if self._app is not None:
-            # Schedule on UI thread but don't wait - much faster
-            self._app.call_from_thread(func, *args, **kwargs)
+            # Use call_soon_threadsafe for truly non-blocking UI updates
+            loop = getattr(self._app, '_loop', None)
+            if loop is not None:
+                loop.call_soon_threadsafe(lambda: func(*args, **kwargs))
+            else:
+                # Fallback to blocking call_from_thread if no loop available
+                self._app.call_from_thread(func, *args, **kwargs)
         else:
             func(*args, **kwargs)
 
@@ -645,11 +663,7 @@ class TextualUICallback:
 
         Note: This is now identical to _run_on_ui. Kept for API compatibility.
         """
-        if self._app is not None:
-            # Schedule on UI thread but don't wait
-            self._app.call_from_thread(func, *args, **kwargs)
-        else:
-            func(*args, **kwargs)
+        self._run_on_ui(func, *args, **kwargs)
 
     def _should_skip_due_to_interrupt(self) -> bool:
         """Check if we should skip UI operations due to interrupt.

@@ -17,6 +17,10 @@ from textual.widgets import RichLog
 
 from swecli.ui_textual.renderers import render_markdown_text_segment
 from swecli.ui_textual.constants import TOOL_ERROR_SENTINEL
+from swecli.ui_textual.widgets.terminal_box_renderer import (
+    TerminalBoxConfig,
+    TerminalBoxRenderer,
+)
 
 
 class ConversationLog(RichLog):
@@ -66,8 +70,11 @@ class ConversationLog(RichLog):
         self._streaming_box_command: str = ""
         self._streaming_box_working_dir: str = "."
         self._streaming_box_content_lines: list[tuple[str, bool]] = []  # (line, is_stderr)
+        self._streaming_box_config: TerminalBoxConfig | None = None  # Config for streaming box
         # Mouse drag detection for selection tip
         self._mouse_down_pos: tuple[int, int] | None = None
+        # Terminal box renderer (unified rendering for main/subagent output)
+        self._box_renderer = TerminalBoxRenderer(self._get_box_width)
 
     def write(self, content, *args, **kwargs) -> None:
         """Override write to track content state for spacing logic."""
@@ -677,71 +684,15 @@ class ConversationLog(RichLog):
             depth: Nesting depth for subagent display
         """
         lines = output.rstrip("\n").splitlines()
-        border = "#f85149" if is_error else "#3a3f4b"
-        pointer = "#a0a4ad"
-        path_style = "#58a6ff"
-        prompt_style = "#7ee787"
-        cmd_style = "#c9d1d9"
-        error_style = "#f85149"
-        box_width = self._get_box_width()  # Dynamic width!
-        content_width = box_width - 5  # Space for "│  " (3) + " │" (2)
-        indent = "  " * depth
-
-        # Top border: ⎿ ╭────────────────────────────────╮
-        top = Text(f"{indent}  ⎿ ", style=pointer)
-        top.append("╭" + "─" * (box_width - 2) + "╮", style=border)
-        self.write(top)
-
-        # Empty padding line
-        padding_line = Text(f"{indent}    ")
-        padding_line.append("│" + " " * (box_width - 2) + "│", style=border)
-        self.write(padding_line)
-
-        # Prompt line: │  ~/path $ command                                  │
-        formatted_path = self._format_path(working_dir)
-        prompt_prefix_len = len(formatted_path) + 3  # path + " $ "
-        max_cmd_len = content_width - prompt_prefix_len
-        # Normalize command - replace newlines with spaces for single-line display
-        cmd_normalized = command.replace("\n", " ").replace("  ", " ").strip()
-        cmd_display = cmd_normalized[:max_cmd_len] if max_cmd_len > 0 else ""
-
-        prompt_line = Text(f"{indent}    ")
-        prompt_line.append("│  ", style=border)
-        prompt_line.append(formatted_path, style=path_style)
-        prompt_line.append(" $ ", style=prompt_style)
-        prompt_line.append(cmd_display, style=cmd_style)
-
-        # Pad to EXACT content_width for aligned right border
-        total_content = prompt_prefix_len + len(cmd_display)
-        padding_needed = content_width - total_content
-        prompt_line.append(" " * max(0, padding_needed))
-        prompt_line.append(" │", style=border)
-        self.write(prompt_line)
-
-        # Content lines: │  output                                          │
-        for line in lines:
-            normalized = self._normalize_streaming_line(line)
-            display = normalized[:content_width]
-
-            content_line = Text(f"{indent}    ")
-            content_line.append("│  ", style=border)
-            content_line.append(display, style=error_style if is_error else "")
-
-            # Pad to EXACT content_width for aligned right border
-            padding_needed = content_width - len(display)
-            content_line.append(" " * max(0, padding_needed))
-            content_line.append(" │", style=border)
-            self.write(content_line)
-
-        # Empty padding line before bottom
-        padding_line = Text(f"{indent}    ")
-        padding_line.append("│" + " " * (box_width - 2) + "│", style=border)
-        self.write(padding_line)
-
-        # Bottom border: ╰───────────────────────────╯
-        bottom = Text(f"{indent}    ")
-        bottom.append("╰" + "─" * (box_width - 2) + "╯", style=border)
-        self.write(bottom)
+        config = TerminalBoxConfig(
+            command=command,
+            working_dir=working_dir,
+            depth=depth,
+            is_error=is_error,
+            box_width=self._get_box_width(),
+        )
+        for text_line in self._box_renderer.render_complete_box(lines, config):
+            self.write(text_line)
 
     # --- Streaming bash box methods -------------------------------------------
 
@@ -752,59 +703,30 @@ class ConversationLog(RichLog):
         # Clamp between reasonable min/max
         return max(60, min(available, 120))
 
-    def _format_path(self, path: str) -> str:
-        """Shorten path by replacing home directory with ~."""
-        import os
-        home = os.path.expanduser("~")
-        if path.startswith(home):
-            return "~" + path[len(home):]
-        return path
-
     def start_streaming_bash_box(self, command: str = "", working_dir: str = ".") -> None:
         """Start a VS Code-style terminal box with TERMINAL label and prompt line."""
-        border = "#3a3f4b"  # Very dim borders
-        pointer = "#a0a4ad"  # Slightly brighter for ⎿
-        path_style = "#58a6ff"  # Blue for directory
-        prompt_style = "#7ee787"  # Green for $ prompt
-        cmd_style = "#c9d1d9"  # Light gray for command
-        box_width = self._get_box_width()  # Dynamic width!
-        content_width = box_width - 5  # Space for "│  " (3) + " │" (2)
-
-        # Top border: ⎿ ╭────────────────────────────────╮
+        config = TerminalBoxConfig(
+            command=command,
+            working_dir=working_dir,
+            depth=0,
+            is_error=False,  # Unknown during streaming, always use default border
+            box_width=self._get_box_width(),
+        )
+        
+        # Store config for use in append and close
+        self._streaming_box_config = config
         self._streaming_box_top_line = len(self.lines)
-        top = Text("  ⎿ ", style=pointer)
-        top.append("╭" + "─" * (box_width - 2) + "╮", style=border)
-        self.write(top)
-
-        # Empty padding line: │                                              │
-        padding = Text("    ")
-        padding.append("│" + " " * (box_width - 2) + "│", style=border)
-        self.write(padding)
-
-        # Prompt line: │  ~/path $ command                                  │
+        
+        # Render top border
+        self.write(self._box_renderer.render_top_border(config))
+        
+        # Render padding line
+        self.write(self._box_renderer.render_padding_line(config))
+        
+        # Render prompt line
         self._streaming_box_header_line = len(self.lines)
-        formatted_path = self._format_path(working_dir)
-
-        # Calculate how much space the prompt takes
-        prompt_prefix_len = len(formatted_path) + 3  # path + " $ "
-        max_cmd_len = content_width - prompt_prefix_len
-        # Normalize command - replace newlines with spaces for single-line display
-        cmd_normalized = command.replace("\n", " ").replace("  ", " ").strip()
-        cmd_display = cmd_normalized[:max_cmd_len] if max_cmd_len > 0 else ""
-
-        prompt_line = Text("    ")
-        prompt_line.append("│  ", style=border)
-        prompt_line.append(formatted_path, style=path_style)
-        prompt_line.append(" $ ", style=prompt_style)
-        prompt_line.append(cmd_display, style=cmd_style)
-
-        # Pad to EXACT content_width for aligned right border
-        total_content = prompt_prefix_len + len(cmd_display)
-        padding_needed = content_width - total_content
-        prompt_line.append(" " * max(0, padding_needed))
-        prompt_line.append(" │", style=border)
-        self.write(prompt_line)
-
+        self.write(self._box_renderer.render_prompt_line(config))
+        
         # Store data for rebuild on close
         self._streaming_box_command = command
         self._streaming_box_working_dir = working_dir
@@ -812,129 +734,35 @@ class ConversationLog(RichLog):
 
     def append_to_streaming_box(self, line: str, is_stderr: bool = False) -> None:
         """Append a content line to the streaming box."""
-        border = "#3a3f4b"  # Very dim borders
-        box_width = self._get_box_width()  # Dynamic width!
-        content_width = box_width - 5  # Space for "│  " (3) + " │" (2)
-
-        normalized = self._normalize_streaming_line(line)
-        display = normalized[:content_width]  # Truncate if needed
-
-        content_line = Text("    ")
-        content_line.append("│  ", style=border)
-        content_line.append(display)  # Neutral color - we don't know success/failure yet
-
-        # Pad to EXACT content_width for aligned right border
-        padding_needed = content_width - len(display)
-        content_line.append(" " * max(0, padding_needed))
-        content_line.append(" │", style=border)
-        self.write(content_line)
-
+        config = getattr(self, '_streaming_box_config', None)
+        if config is None:
+            # Fallback if config not set (shouldn't happen in normal flow)
+            config = TerminalBoxConfig(box_width=self._get_box_width())
+        
+        # Render content line (no error styling during streaming)
+        self.write(self._box_renderer.render_content_line(line, config, apply_error_style=False))
+        
         # Store for rebuild on close
         self._streaming_box_content_lines.append((line, is_stderr))
 
-    def _render_complete_bash_box(
-        self,
-        command: str,
-        working_dir: str,
-        content_lines: list[tuple[str, bool]],
-        border_color: str,
-        is_error: bool,
-    ) -> None:
-        """Render a complete bash box with consistent styling.
-
-        Args:
-            command: The command that was executed
-            working_dir: The working directory
-            content_lines: List of (line, is_stderr) tuples
-            border_color: Color for all border characters
-            is_error: Whether to style content as error
-        """
-        pointer = "#a0a4ad"
-        path_style = "#58a6ff"
-        prompt_style = "#7ee787"
-        cmd_style = "#c9d1d9"
-        error_style = "#f85149" if is_error else ""
-        box_width = self._get_box_width()
-        content_width = box_width - 5
-
-        # Top border
-        top = Text("  ⎿ ", style=pointer)
-        top.append("╭" + "─" * (box_width - 2) + "╮", style=border_color)
-        self.write(top)
-
-        # Padding line
-        padding = Text("    ")
-        padding.append("│" + " " * (box_width - 2) + "│", style=border_color)
-        self.write(padding)
-
-        # Prompt line
-        formatted_path = self._format_path(working_dir)
-        prompt_prefix_len = len(formatted_path) + 3
-        max_cmd_len = content_width - prompt_prefix_len
-        cmd_normalized = command.replace("\n", " ").replace("  ", " ").strip()
-        cmd_display = cmd_normalized[:max_cmd_len] if max_cmd_len > 0 else ""
-
-        prompt_line = Text("    ")
-        prompt_line.append("│  ", style=border_color)
-        prompt_line.append(formatted_path, style=path_style)
-        prompt_line.append(" $ ", style=prompt_style)
-        prompt_line.append(cmd_display, style=cmd_style)
-        total_content = prompt_prefix_len + len(cmd_display)
-        padding_needed = content_width - total_content
-        prompt_line.append(" " * max(0, padding_needed))
-        prompt_line.append(" │", style=border_color)
-        self.write(prompt_line)
-
-        # Content lines
-        for line, _ in content_lines:  # Ignore is_stderr, use is_error for all
-            normalized = self._normalize_streaming_line(line)
-            display = normalized[:content_width]
-
-            content_line = Text("    ")
-            content_line.append("│  ", style=border_color)
-            content_line.append(display, style=error_style)
-            padding_needed = content_width - len(display)
-            content_line.append(" " * max(0, padding_needed))
-            content_line.append(" │", style=border_color)
-            self.write(content_line)
-
-        # Bottom padding
-        padding = Text("    ")
-        padding.append("│" + " " * (box_width - 2) + "│", style=border_color)
-        self.write(padding)
-
-        # Bottom border
-        bottom = Text("    ")
-        bottom.append("╰" + "─" * (box_width - 2) + "╯", style=border_color)
-        self.write(bottom)
-
     def close_streaming_bash_box(self, is_error: bool, exit_code: int) -> None:
         """Close box with padding and bottom border."""
-        border = "#3a3f4b"  # Always gray - no transition
-        box_width = self._get_box_width()
-
-        # Empty padding line before bottom border
-        padding = Text("    ")
-        padding.append("│" + " " * (box_width - 2) + "│", style=border)
-        self.write(padding)
-
-        # Bottom border
-        bottom = Text("    ")
-        bottom.append("╰" + "─" * (box_width - 2) + "╯", style=border)
-        self.write(bottom)
-
+        config = getattr(self, '_streaming_box_config', None)
+        if config is None:
+            # Fallback if config not set
+            config = TerminalBoxConfig(box_width=self._get_box_width())
+        
+        # Render bottom padding and border (always gray - no transition)
+        self.write(self._box_renderer.render_padding_line(config))
+        self.write(self._box_renderer.render_bottom_border(config))
+        
         # Reset state
         self._streaming_box_header_line = None
         self._streaming_box_top_line = None
+        self._streaming_box_config = None
         self._streaming_box_command = ""
         self._streaming_box_working_dir = "."
         self._streaming_box_content_lines = []
-
-    def _normalize_streaming_line(self, line: str) -> str:
-        """Normalize: expand tabs, strip ANSI codes."""
-        line = line.expandtabs(4)
-        line = re.sub(r'\x1b\[[0-9;]*m', '', line)
-        return line
 
     def add_nested_bash_output_box(
         self,
@@ -957,72 +785,14 @@ class ConversationLog(RichLog):
             working_dir: The working directory
             depth: Nesting depth for indentation
         """
-        lines = output.rstrip("\n").splitlines()
-        border = "#f85149" if is_error else "#3a3f4b"
-        pointer = "#a0a4ad"
-        path_style = "#58a6ff"
-        prompt_style = "#7ee787"
-        cmd_style = "#c9d1d9"
-        error_style = "#f85149"
-        box_width = self._get_box_width()  # Dynamic width!
-        content_width = box_width - 5  # Space for "│  " (3) + " │" (2)
-        indent = "  " * depth
-
-        # Top border: ⎿ ╭────────────────────────────────╮
-        top = Text(f"{indent}  ⎿ ", style=pointer)
-        top.append("╭" + "─" * (box_width - 2) + "╮", style=border)
-        self.write(top)
-
-        # Empty padding line
-        padding_line = Text(f"{indent}    ")
-        padding_line.append("│" + " " * (box_width - 2) + "│", style=border)
-        self.write(padding_line)
-
-        # Prompt line: │  ~/path $ command                                  │
-        formatted_path = self._format_path(working_dir)
-        prompt_prefix_len = len(formatted_path) + 3  # path + " $ "
-        max_cmd_len = content_width - prompt_prefix_len
-        # Normalize command - replace newlines with spaces for single-line display
-        cmd_normalized = command.replace("\n", " ").replace("  ", " ").strip()
-        cmd_display = cmd_normalized[:max_cmd_len] if max_cmd_len > 0 else ""
-
-        prompt_line = Text(f"{indent}    ")
-        prompt_line.append("│  ", style=border)
-        prompt_line.append(formatted_path, style=path_style)
-        prompt_line.append(" $ ", style=prompt_style)
-        prompt_line.append(cmd_display, style=cmd_style)
-
-        # Pad to EXACT content_width for aligned right border
-        total_content = prompt_prefix_len + len(cmd_display)
-        padding_needed = content_width - total_content
-        prompt_line.append(" " * max(0, padding_needed))
-        prompt_line.append(" │", style=border)
-        self.write(prompt_line)
-
-        # Content lines: │  output                                          │
-        for line in lines:
-            normalized = self._normalize_streaming_line(line)
-            display = normalized[:content_width]
-
-            content_line = Text(f"{indent}    ")
-            content_line.append("│  ", style=border)
-            content_line.append(display, style=error_style if is_error else "")
-
-            # Pad to EXACT content_width for aligned right border
-            padding_needed = content_width - len(display)
-            content_line.append(" " * max(0, padding_needed))
-            content_line.append(" │", style=border)
-            self.write(content_line)
-
-        # Empty padding line before bottom
-        padding_line = Text(f"{indent}    ")
-        padding_line.append("│" + " " * (box_width - 2) + "│", style=border)
-        self.write(padding_line)
-
-        # Bottom border: ╰───────────────────────────╯
-        bottom = Text(f"{indent}    ")
-        bottom.append("╰" + "─" * (box_width - 2) + "╯", style=border)
-        self.write(bottom)
+        # Delegate to add_bash_output_box - they're now identical
+        self.add_bash_output_box(
+            output=output,
+            is_error=is_error,
+            command=command,
+            working_dir=working_dir,
+            depth=depth,
+        )
 
     def _write_edit_result(self, header: str, diff_lines: list[str]) -> None:
         if not diff_lines:
@@ -1237,9 +1007,15 @@ class ConversationLog(RichLog):
         # Update the line at the original position (in-place)
         self.lines[self._tool_call_start] = strip
 
-        # Clear cache and refresh display
+        # Clear line cache for this line
         self._line_cache.clear()
-        self.refresh()
+
+        # Use RichLog's built-in refresh_line to update just this line
+        self.refresh_line(self._tool_call_start)
+
+        # Force screen compositor to update immediately
+        if hasattr(self, 'app') and self.app is not None:
+            self.app.refresh()
 
     def _write_tool_call_line(self, prefix: str) -> None:
         formatted = Text()
