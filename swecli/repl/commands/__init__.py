@@ -10,6 +10,7 @@ from swecli.repl.commands.mode_commands import ModeCommands
 from swecli.repl.commands.mcp_commands import MCPCommands
 from swecli.repl.commands.help_command import HelpCommand
 from swecli.repl.commands.config_commands import ConfigCommands
+from swecli.repl.commands.tool_commands import ToolCommands
 
 __all__ = [
     "CommandHandler",
@@ -19,4 +20,5 @@ __all__ = [
     "MCPCommands",
     "HelpCommand",
     "ConfigCommands",
+    "ToolCommands",
 ]
