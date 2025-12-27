@@ -161,6 +161,143 @@ class SubAgentManager:
         from .agents import ALL_SUBAGENTS
         return next((s for s in ALL_SUBAGENTS if s["name"] == name), None)
 
+    def _extract_input_files(self, task: str, local_working_dir: Path) -> list[Path]:
+        """Extract file paths referenced in the task.
+
+        Looks for:
+        - @filename patterns (e.g., @2303.11366v4.pdf)
+        - Quoted file paths
+        - Absolute paths that exist
+
+        Args:
+            task: The task description string
+            local_working_dir: Local working directory to resolve relative paths
+
+        Returns:
+            List of existing file paths to copy into Docker
+        """
+        import re
+        files: list[Path] = []
+        seen: set[str] = set()
+
+        # Pattern 1: @filename (common for PDF/file references)
+        at_mentions = re.findall(r'@([\w\-\.]+\.[a-zA-Z0-9]+)', task)
+        for filename in at_mentions:
+            if filename in seen:
+                continue
+            path = local_working_dir / filename
+            if path.exists() and path.is_file():
+                files.append(path)
+                seen.add(filename)
+
+        # Pattern 2: Quoted file paths with common extensions
+        quoted_paths = re.findall(
+            r'["\']([^"\']+\.(?:pdf|png|jpg|jpeg|svg|csv|json|yaml|yml))["\']',
+            task,
+            re.I
+        )
+        for p in quoted_paths:
+            if p in seen:
+                continue
+            path = Path(p) if Path(p).is_absolute() else local_working_dir / p
+            if path.exists() and path.is_file():
+                files.append(path)
+                seen.add(p)
+
+        return files
+
+    def _copy_files_to_docker(
+        self,
+        docker_handler: Any,
+        files: list[Path],
+        workspace_dir: str,
+        ui_callback: Any = None,
+    ) -> None:
+        """Copy local files into Docker container.
+
+        Args:
+            docker_handler: DockerToolHandler for executing commands
+            files: List of local file paths to copy
+            workspace_dir: Target directory in Docker container
+            ui_callback: Optional UI callback for progress display
+        """
+        import base64
+
+        for local_file in files:
+            # Show copy progress
+            if ui_callback and hasattr(ui_callback, 'on_tool_call'):
+                ui_callback.on_tool_call("docker_copy", {"file": local_file.name})
+
+            try:
+                # Read file content locally
+                content = local_file.read_bytes()
+
+                # For binary files, use base64 encoding
+                encoded = base64.b64encode(content).decode('ascii')
+
+                # Write to Docker via base64 decode
+                docker_path = f"{workspace_dir}/{local_file.name}"
+
+                # Use printf for large content to avoid shell argument limits
+                # Split into chunks if needed
+                chunk_size = 50000  # Safe size for shell
+                if len(encoded) > chunk_size:
+                    # Write in chunks
+                    docker_handler.run_command_sync({
+                        "command": f"rm -f {docker_path}"
+                    })
+                    for i in range(0, len(encoded), chunk_size):
+                        chunk = encoded[i:i + chunk_size]
+                        docker_handler.run_command_sync({
+                            "command": f"printf '%s' '{chunk}' >> {docker_path}.b64"
+                        })
+                    docker_handler.run_command_sync({
+                        "command": f"base64 -d {docker_path}.b64 > {docker_path} && rm {docker_path}.b64"
+                    })
+                else:
+                    docker_handler.run_command_sync({
+                        "command": f"printf '%s' '{encoded}' | base64 -d > {docker_path}"
+                    })
+
+                # Show completion
+                if ui_callback and hasattr(ui_callback, 'on_tool_result'):
+                    ui_callback.on_tool_result("docker_copy", {"file": local_file.name}, {
+                        "success": True,
+                        "output": f"Copied to {docker_path}",
+                    })
+
+            except Exception as e:
+                if ui_callback and hasattr(ui_callback, 'on_tool_result'):
+                    ui_callback.on_tool_result("docker_copy", {"file": local_file.name}, {
+                        "success": False,
+                        "error": str(e),
+                    })
+
+    def _rewrite_task_for_docker(
+        self,
+        task: str,
+        input_files: list[Path],
+        workspace_dir: str,
+    ) -> str:
+        """Rewrite task to reference Docker paths instead of local paths.
+
+        Args:
+            task: Original task description
+            input_files: List of files that were copied to Docker
+            workspace_dir: Docker workspace directory
+
+        Returns:
+            Task with paths rewritten to Docker paths
+        """
+        new_task = task
+        for local_file in input_files:
+            docker_path = f"{workspace_dir}/{local_file.name}"
+            # Replace @filename with Docker path
+            new_task = new_task.replace(f"@{local_file.name}", docker_path)
+            # Also replace any absolute local paths
+            new_task = new_task.replace(str(local_file), docker_path)
+        return new_task
+
     def _execute_with_docker(
         self,
         name: str,
@@ -208,6 +345,10 @@ class SubAgentManager:
         deployment = None
         loop = None
         try:
+            # Show Docker start as a tool call with spinner
+            if ui_callback and hasattr(ui_callback, 'on_tool_call'):
+                ui_callback.on_tool_call("docker_start", {"image": docker_config.image})
+
             # Create and start Docker deployment
             deployment = DockerDeployment(config=docker_config)
 
@@ -216,9 +357,12 @@ class SubAgentManager:
             asyncio.set_event_loop(loop)
             loop.run_until_complete(deployment.start())
 
-            # Notify UI that Docker container started
-            if ui_callback and hasattr(ui_callback, 'on_docker_started'):
-                ui_callback.on_docker_started(docker_config.image)
+            # Show Docker start completion
+            if ui_callback and hasattr(ui_callback, 'on_tool_result'):
+                ui_callback.on_tool_result("docker_start", {"image": docker_config.image}, {
+                    "success": True,
+                    "output": docker_config.image,
+                })
 
             # Create Docker tool handler with local registry fallback for tools like read_pdf
             runtime = deployment.runtime
@@ -229,10 +373,20 @@ class SubAgentManager:
                 shell_init=shell_init,
             )
 
+            # Extract input files from task (PDFs, images, etc.)
+            input_files = self._extract_input_files(task, local_working_dir)
+
+            # Copy input files into Docker container
+            if input_files:
+                self._copy_files_to_docker(docker_handler, input_files, workspace_dir, ui_callback)
+
+            # Rewrite task to use Docker paths
+            docker_task = self._rewrite_task_for_docker(task, input_files, workspace_dir)
+
             # Execute subagent with Docker tools (local_registry passed for fallback)
             result = self.execute_subagent(
                 name=name,
-                task=task,
+                task=docker_task,  # Use rewritten task with Docker paths
                 deps=deps,
                 ui_callback=ui_callback,
                 task_monitor=task_monitor,

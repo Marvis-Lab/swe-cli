@@ -277,15 +277,24 @@ class DockerToolHandler:
 
             obs = await self.runtime.run(cmd, timeout=30.0)
 
+            if obs.exit_code != 0:
+                # Provide informative error message
+                error_msg = obs.failure_reason or obs.output or f"Directory not found: {container_path}"
+                return {
+                    "success": False,
+                    "output": None,
+                    "error": error_msg,
+                }
+
             return {
-                "success": obs.exit_code == 0,
-                "output": obs.output,
-                "error": obs.failure_reason if obs.exit_code != 0 else None,
+                "success": True,
+                "output": obs.output or "(empty directory)",
+                "error": None,
             }
         except Exception as e:
             return {
                 "success": False,
-                "error": str(e),
+                "error": f"Failed to list files in {container_path}: {str(e)}",
                 "output": None,
             }
 

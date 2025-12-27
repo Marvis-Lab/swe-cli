@@ -39,6 +39,8 @@ _TOOL_DISPLAY_PARTS: dict[str, tuple[str, str]] = {
     "complete_todo": ("Complete", "todo"),
     "list_todos": ("List", "todos"),
     "spawn_subagent": ("Spawn", "subagent"),
+    "docker_start": ("Starting", "Docker container"),
+    "docker_copy": ("Copying", "file to Docker"),
 }
 
 _PATH_HINT_KEYS = {"file_path", "path", "directory", "dir", "image_path", "working_dir", "target"}
@@ -272,26 +274,20 @@ def format_tool_call(tool_name: str, tool_args: Mapping[str, Any]) -> str:
     elif tool_name == "spawn_subagent" and tool_args:
         subagent_type = tool_args.get("subagent_type", "general-purpose")
         description = tool_args.get("description", "")
-
-        # Check if this subagent runs in Docker (known Docker-enabled subagents)
-        # This is determined by checking if docker_config is set in the subagent spec
-        docker_suffix = ""
-        try:
-            from swecli.core.agents.subagents.agents import ALL_SUBAGENTS
-            import shutil
-            for spec in ALL_SUBAGENTS:
-                if spec["name"] == subagent_type and spec.get("docker_config"):
-                    # Only show [Docker] if Docker is actually available
-                    if shutil.which("docker"):
-                        docker_suffix = " [Docker]"
-                    break
-        except ImportError:
-            pass
-
-        # Show full description without truncation
+        # Show full description without truncation, no [Docker] suffix
+        # Docker is shown as a separate step with spinner
         if description:
-            return f"Spawn[{subagent_type}]({description}){docker_suffix}"
-        return f"Spawn[{subagent_type}]{docker_suffix}"
+            return f"Spawn[{subagent_type}]({description})"
+        return f"Spawn[{subagent_type}]"
+
+    # Docker container startup
+    elif tool_name == "docker_start" and tool_args:
+        return "Starting Docker container"
+
+    # Docker file copy
+    elif tool_name == "docker_copy" and tool_args:
+        filename = tool_args.get("file", "file")
+        return f"Copying {filename} to Docker"
 
     # Enhanced formatting for update_todo tool - show todo-N format
     elif tool_name == "update_todo" and tool_args:

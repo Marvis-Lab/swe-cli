@@ -142,21 +142,6 @@ class TextualUICallback:
                 result_line.append(message, style="#a0a4ad")
                 self._run_on_ui(self.conversation.write, result_line)
 
-    def on_docker_started(self, image: str) -> None:
-        """Called when a Docker container starts for a subagent.
-
-        Args:
-            image: The Docker image being used (e.g., 'ghcr.io/astral-sh/uv:python3.11-bookworm')
-        """
-        from rich.text import Text
-
-        # Format: "🐳 Docker: ghcr.io/astral-sh/uv:python3.11-bookworm"
-        docker_text = Text("🐳 Docker: ", style="bold cyan")
-        docker_text.append(image, style="dim cyan")
-
-        if hasattr(self.conversation, 'write'):
-            self._run_on_ui(self.conversation.write, docker_text)
-
     def on_interrupt(self) -> None:
         """Called when execution is interrupted by user.
 
