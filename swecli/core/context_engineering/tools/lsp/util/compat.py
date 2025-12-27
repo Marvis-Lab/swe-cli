@@ -36,11 +36,26 @@ def dump_pickle(obj: Any, path: str) -> None:
         pickle.dump(obj, f)
 
 
-def getstate(obj: Any) -> Any:
-    """Get state of an object for pickling."""
-    if hasattr(obj, "__getstate__"):
-        return obj.__getstate__()
-    return obj.__dict__.copy() if hasattr(obj, "__dict__") else None
+def getstate(obj: Any, instance: Any, transient_properties: list[str] = None) -> Any:
+    """
+    Get state of an object for pickling.
+    This version supports the signature used in ls_cache.py:
+    getstate(DocumentSymbols, self, transient_properties=["_all_symbols"])
+
+    :param obj: The class or object
+    :param instance: The instance (if obj is class)
+    :param transient_properties: List of properties to exclude from state
+    """
+    if transient_properties is None:
+        transient_properties = []
+
+    state = instance.__dict__.copy() if hasattr(instance, "__dict__") else {}
+
+    for prop in transient_properties:
+        if prop in state:
+            del state[prop]
+
+    return state
 
 
 # ============================================================================
