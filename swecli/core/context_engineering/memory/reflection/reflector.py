@@ -264,8 +264,6 @@ class ExecutionReflector:
         - Build before test
         - Check status before git operations
         """
-        tool_names = [tc.name for tc in tool_calls]
-
         # Get all run_command calls
         commands = [
             tc.parameters.get("command", "")

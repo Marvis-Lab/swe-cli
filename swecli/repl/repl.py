@@ -789,7 +789,7 @@ class REPL:
             result = None
             try:
                 # Try to get existing event loop
-                loop = asyncio.get_running_loop()
+                asyncio.get_running_loop()
                 # We're in an async context - skip approval, assume pre-approved
                 operation.approved = True
             except RuntimeError:

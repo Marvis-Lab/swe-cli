@@ -191,7 +191,7 @@ class SubAgentManager:
         """
         import asyncio
         from swecli.core.docker.deployment import DockerDeployment
-        from swecli.core.docker.tool_handler import DockerToolHandler, DockerToolRegistry
+        from swecli.core.docker.tool_handler import DockerToolHandler
 
         docker_config = spec.get("docker_config")
         if docker_config is None:

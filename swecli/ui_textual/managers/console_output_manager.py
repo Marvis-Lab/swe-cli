@@ -144,7 +144,6 @@ class ConsoleOutputManager:
                 self.app.render_console_output(renderable)
             else:
                 self.app.conversation.write(renderable)
-            has_rendered_content = True
 
         if not isinstance(renderables[-1], Text):
             self._last_console_line = None

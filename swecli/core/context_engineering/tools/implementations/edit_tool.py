@@ -315,7 +315,6 @@ class EditTool(BaseTool):
                 )
 
             # Build old and new content
-            original = "".join(lines)
             old_lines = lines[line_start - 1 : line_end]
             old_content = "".join(old_lines)
 
@@ -328,8 +327,6 @@ class EditTool(BaseTool):
 
             if not new_content.endswith("\n") and line_end < len(lines):
                 new_lines[line_start - 1] += "\n"
-
-            modified = "".join(new_lines)
 
             # Use the main edit_file method
             return self.edit_file(

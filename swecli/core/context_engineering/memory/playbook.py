@@ -201,12 +201,8 @@ class Playbook:
     # ------------------------------------------------------------------ #
     def apply_delta(self, delta: DeltaBatch) -> None:
         """Apply a batch of delta operations."""
-        bullets_before = len(self._bullets)
-
         for operation in delta.operations:
             self._apply_operation(operation)
-
-        bullets_after = len(self._bullets)
 
     def _apply_operation(self, operation: DeltaOperation) -> None:
         """Apply a single delta operation."""
@@ -346,8 +342,3 @@ class Playbook:
         self._next_id += 1
         section_prefix = section.split()[0].lower()
         return f"{section_prefix}-{self._next_id:05d}"
-
-
-# Backward compatibility aliases
-Strategy = Bullet
-SessionPlaybook = Playbook

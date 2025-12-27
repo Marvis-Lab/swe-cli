@@ -27,7 +27,6 @@ from swecli.core.context_engineering.memory.roles import (
 )
 
 # Legacy imports for backwards compatibility (deprecated)
-from swecli.core.context_engineering.memory.playbook import SessionPlaybook, Strategy
 from swecli.core.context_engineering.memory.reflection import ExecutionReflector, ReflectionResult
 
 __all__ = [
@@ -42,8 +41,6 @@ __all__ = [
     "DeltaOperation",
     "DeltaBatch",
     # Legacy (deprecated, for backwards compatibility)
-    "SessionPlaybook",
-    "Strategy",
     "ExecutionReflector",
     "ReflectionResult",
 ]

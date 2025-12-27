@@ -196,8 +196,7 @@ class ConfigCommands(CommandHandler):
 
         # Check API key for new provider (silently - user will get error when they try to use it)
         if provider_id != config.model_provider:
-            provider_info = registry.get_provider(provider_id)
-            env_var = provider_info.api_key_env
+            registry.get_provider(provider_id)
             # Skip warning - let them discover missing API key when they try to use it
 
         # Update configuration based on mode

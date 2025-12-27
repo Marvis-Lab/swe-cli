@@ -66,7 +66,6 @@ class ResponseRenderer:
                         self.app._last_rendered_assistant = content
                     self._last_assistant_message = content
                     self._suppress_console_duplicate = True
-                    assistant_text_rendered = True
 
                 # Skip rendering messages with tool calls - already shown in real-time
             elif msg.role == Role.SYSTEM:

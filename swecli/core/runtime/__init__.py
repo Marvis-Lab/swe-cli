@@ -10,9 +10,12 @@ This package manages runtime/operational concerns:
 
 from swecli.core.runtime.config import ConfigManager
 from swecli.core.runtime.mode_manager import ModeManager, OperationMode
+from swecli.core.context_engineering.history import SessionManager, UndoManager
 
 __all__ = [
     "ConfigManager",
     "ModeManager",
     "OperationMode",
+    "SessionManager",
+    "UndoManager",
 ]

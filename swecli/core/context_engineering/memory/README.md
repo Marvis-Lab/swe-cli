@@ -17,7 +17,7 @@ This module solves these problems using structured strategy storage inspired by 
 ```
 context_management/
 ├── __init__.py           # Module exports
-├── playbook.py           # Strategy storage (Playbook + Strategy classes)
+├── playbook.py           # Strategy storage (Playbook + Bullet classes)
 ├── reflection/           # Pattern extraction
 │   ├── __init__.py
 │   └── reflector.py     # ExecutionReflector for learning from tool calls
@@ -26,21 +26,21 @@ context_management/
 
 ## Core Concepts
 
-### 1. Strategy (Distilled Learning)
+### 1. Bullet (Distilled Learning)
 
 Instead of storing raw messages like:
 ```python
 {"role": "assistant", "content": "I'll delete the file. First let me list the directory..."}
 ```
 
-We store distilled strategies:
+We store distilled strategies (bullets):
 ```python
-Strategy(
+Bullet(
     id="fil-00042",
-    category="file_operations",
+    section="file_operations",
     content="List directory before file deletion to confirm file exists",
-    helpful_count=5,
-    harmful_count=0
+    helpful=5,
+    harmful=0
 )
 ```
 
@@ -50,26 +50,26 @@ Strategy(
 - Effectiveness tracking
 - Structured and searchable
 
-### 2. SessionPlaybook (Strategy Store)
+### 2. Playbook (Strategy Store)
 
 Container for learned strategies with operations:
-- `add_strategy()` - Add new learning
-- `tag_strategy()` - Mark as helpful/harmful/neutral
-- `prune_harmful_strategies()` - Remove low-value patterns
+- `add_bullet()` - Add new learning
+- `tag_bullet()` - Mark as helpful/harmful/neutral
+- `remove_bullet()` - Remove low-value patterns
 - `as_context()` - Format for system prompt inclusion
 
 **Example usage**:
 ```python
-from swecli.core.context_management import SessionPlaybook
+from swecli.core.context_management import Playbook
 
-playbook = SessionPlaybook()
-strategy = playbook.add_strategy(
-    category="file_operations",
+playbook = Playbook()
+bullet = playbook.add_bullet(
+    section="file_operations",
     content="List directory before reading files"
 )
 
 # Later, after successful execution:
-playbook.tag_strategy(strategy.id, "helpful")
+playbook.tag_bullet(bullet.id, "helpful")
 
 # Include in system prompt:
 context = playbook.as_context()
@@ -189,7 +189,7 @@ def _prepare_messages(self, query: str) -> list:
 @dataclass
 class Session:
     # ... existing fields ...
-    playbook: SessionPlaybook = field(default_factory=SessionPlaybook)
+    playbook: Playbook = field(default_factory=Playbook)
 
     def to_dict(self) -> dict:
         return {
@@ -200,7 +200,7 @@ class Session:
     @classmethod
     def from_dict(cls, data: dict) -> "Session":
         session = cls(...)
-        session.playbook = SessionPlaybook.from_dict(data.get("playbook", {}))
+        session.playbook = Playbook.from_dict(data.get("playbook", {}))
         return session
 ```
 
@@ -209,20 +209,13 @@ class Session:
 Strategies track their usefulness over time:
 
 ```python
-strategy = playbook.strategies["fil-00042"]
+bullet = playbook.get_bullet("fil-00042")
 
 # After successful use:
-strategy.tag("helpful")  # helpful_count += 1
+bullet.tag("helpful")  # helpful += 1
 
 # After causing issues:
-strategy.tag("harmful")  # harmful_count += 1
-
-# Calculate effectiveness (-1 to 1):
-score = strategy.effectiveness_score
-# score = (helpful - harmful) / total
-
-# Auto-prune harmful strategies:
-removed = playbook.prune_harmful_strategies(threshold=-0.3)
+bullet.tag("harmful")  # harmful += 1
 ```
 
 ## Playbook Context Format
@@ -254,16 +247,14 @@ When included in system prompts:
 
 ```python
 # Initialize with custom settings
-playbook = SessionPlaybook()
+playbook = Playbook()
 reflector = ExecutionReflector(
     min_tool_calls=2,     # Minimum tools to trigger reflection
     min_confidence=0.6    # Minimum confidence to save strategy
 )
 
 # Playbook operations
-playbook.add_strategy(category, content)
-playbook.get_strategies_by_category("file_operations")
-playbook.prune_harmful_strategies(threshold=-0.3)
+playbook.add_bullet(section, content)
 playbook.stats()  # Get statistics
 
 # Format for prompt (max strategies)
@@ -273,25 +264,26 @@ context = playbook.as_context(max_strategies=50)
 ## Testing
 
 ```python
-# Test strategy creation
-strategy = Strategy(
+# Test bullet creation
+bullet = Bullet(
     id="test-001",
-    category="testing",
+    section="testing",
     content="Run tests after changes"
 )
-assert strategy.effectiveness_score == 0.0
+assert bullet.helpful == 0
 
 # Test effectiveness tracking
-strategy.tag("helpful")
-strategy.tag("helpful")
-strategy.tag("harmful")
-assert strategy.effectiveness_score == (2-1)/3  # 0.33
+bullet.tag("helpful")
+bullet.tag("helpful")
+bullet.tag("harmful")
+assert bullet.helpful == 2
+assert bullet.harmful == 1
 
 # Test playbook operations
-playbook = SessionPlaybook()
-s1 = playbook.add_strategy("file_ops", "List before read")
-assert len(playbook) == 1
-assert playbook.get_strategy(s1.id) == s1
+playbook = Playbook()
+s1 = playbook.add_bullet("file_ops", "List before read")
+assert len(playbook.bullets()) == 1
+assert playbook.get_bullet(s1.id) == s1
 
 # Test reflection
 reflector = ExecutionReflector()

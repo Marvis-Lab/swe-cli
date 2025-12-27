@@ -144,9 +144,9 @@ def _insert_symbol(
         insert_line = symbol.end_line + 1
         # Use same indentation as symbol start
         if symbol.start_line < len(lines):
-            indent = _get_indentation(lines[symbol.start_line])
+            _get_indentation(lines[symbol.start_line])
         else:
-            indent = ""
+            pass
 
     # Prepare content with proper indentation
     content_lines = content.splitlines(keepends=True)

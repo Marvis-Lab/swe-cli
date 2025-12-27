@@ -1002,8 +1002,6 @@ Work through each implementation step in order. Mark each todo item as 'in_progr
         Args:
             command: The full command (e.g., "/resolve-issue https://github.com/owner/repo/issues/123")
         """
-        from io import StringIO
-        from rich.console import Console as RichConsole
 
         # Create UI callback for real-time tool display
         conversation_widget = None
@@ -1121,7 +1119,6 @@ Work through each implementation step in order. Mark each todo item as 'in_progr
                         self.app._last_rendered_assistant = content
                     self._last_assistant_message = content
                     self._suppress_console_duplicate = True
-                    assistant_text_rendered = True
 
                 # Skip rendering messages with tool calls - already shown in real-time
             elif msg.role == Role.SYSTEM:

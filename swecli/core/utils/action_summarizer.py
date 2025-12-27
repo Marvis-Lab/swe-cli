@@ -74,7 +74,7 @@ Return ONLY the concise action phrase, nothing else."""
 
             return summary
 
-        except Exception as e:
+        except Exception:
             # Fallback: extract first sentence and truncate
             first_sentence = llm_response.split('.')[0].strip()
             if len(first_sentence) > max_length:

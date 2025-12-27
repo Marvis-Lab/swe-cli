@@ -9,7 +9,6 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, Self
 
-import pathspec
 from pathspec import PathSpec
 
 log = logging.getLogger(__name__)

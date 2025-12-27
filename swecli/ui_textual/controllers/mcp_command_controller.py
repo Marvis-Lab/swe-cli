@@ -7,7 +7,6 @@ import threading
 import time
 from typing import TYPE_CHECKING
 
-from rich.text import Text
 
 if TYPE_CHECKING:  # pragma: no cover
     from swecli.ui_textual.chat_app import SWECLIChatApp
