@@ -279,48 +279,6 @@ class TextualRunner:
         if hasattr(self.app, "update_model_slots"):
             self.app.update_model_slots(self._build_model_slots())
 
-    def _hydrate_conversation_history(self) -> None:
-        """Replay the persisted session transcript into the Textual conversation log."""
-
-        if self._history_restored:
-            return
-
-        if not self._initial_messages:
-            self._history_restored = True
-            return
-
-        conversation = getattr(self.app, "conversation", None)
-        if conversation is None:
-            return
-
-        conversation.clear()
-        history = getattr(self.app, "_history", None)
-        record_assistant = getattr(self.app, "record_assistant_message", None)
-
-        for message in self._initial_messages:
-            content = (message.content or "").strip()
-            if message.role == Role.USER:
-                if not content:
-                    continue
-                conversation.add_user_message(content)
-                if history is not None and hasattr(history, "record"):
-                    history.record(content)
-            elif message.role == Role.ASSISTANT:
-                if content:
-                    conversation.add_assistant_message(content)
-                    if callable(record_assistant):
-                        record_assistant(content)
-                if getattr(message, "tool_calls", None):
-                    self._render_stored_tool_calls(conversation, message.tool_calls)
-                elif not content:
-                    continue
-            elif message.role == Role.SYSTEM:
-                if not content:
-                    continue
-                conversation.add_system_message(content)
-
-        self._history_restored = True
-
     def _render_stored_tool_calls(self, conversation, tool_calls: list[Any]) -> None:
         """Replay historical tool calls and results."""
 
@@ -818,11 +776,11 @@ Work through each implementation step in order. Mark each todo item as 'in_progr
             command: The full command (e.g., "/mcp view server_name")
         """
         import shlex
-        from io import StringIO
         from rich.console import Console as RichConsole
 
         def _emit_error(message: str) -> None:
             """Render a Rich-styled error message into the conversation."""
+            from io import StringIO
             string_io = StringIO()
             temp_console = RichConsole(file=string_io, force_terminal=True)
             temp_console.print(message)
@@ -965,6 +923,7 @@ Work through each implementation step in order. Mark each todo item as 'in_progr
 
         self._enqueue_console_text("\n")
 
+        from io import StringIO
         string_io = StringIO()
         temp_console = RichConsole(file=string_io, force_terminal=True, width=100)
         temp_console.print(main_panel)
@@ -1002,8 +961,6 @@ Work through each implementation step in order. Mark each todo item as 'in_progr
         Args:
             command: The full command (e.g., "/resolve-issue https://github.com/owner/repo/issues/123")
         """
-        from io import StringIO
-        from rich.console import Console as RichConsole
 
         # Create UI callback for real-time tool display
         conversation_widget = None
@@ -1089,7 +1046,6 @@ Work through each implementation step in order. Mark each todo item as 'in_progr
         """Render new session messages inside the Textual conversation log."""
 
         buffer_started = False
-        assistant_text_rendered = False
 
         for msg in messages:
             if msg.role == Role.ASSISTANT:
@@ -1121,7 +1077,6 @@ Work through each implementation step in order. Mark each todo item as 'in_progr
                         self.app._last_rendered_assistant = content
                     self._last_assistant_message = content
                     self._suppress_console_duplicate = True
-                    assistant_text_rendered = True
 
                 # Skip rendering messages with tool calls - already shown in real-time
             elif msg.role == Role.SYSTEM:
@@ -1183,22 +1138,6 @@ Work through each implementation step in order. Mark each todo item as 'in_progr
             if "\r" in line:
                 lines[index] = line.split("\r")[-1]
         return "\n".join(lines)
-
-    @staticmethod
-    def _clean_tool_summary(summary: str) -> str:
-        """Normalize tool summary text for assistant follow-up."""
-
-        cleaned = summary.strip()
-        if not cleaned:
-            return ""
-
-        if cleaned.lower().startswith("found") and ":" in cleaned:
-            cleaned = cleaned.split(":", 1)[1].strip()
-
-        cleaned = cleaned.strip(". ")
-        if cleaned:
-            return cleaned
-        return summary.strip()
 
     @staticmethod
     def _is_spinner_text(plain: str) -> bool:
