@@ -1402,8 +1402,6 @@ class ConversationLog(RichLog):
         # The actual display will handle truncation at render time
         console = Console(width=1000, force_terminal=True, no_color=False)
         # Render with explicit options to avoid wrapping
-        with console.capture() as capture:
-            console.print(formatted, end="", overflow="ignore", no_wrap=True)
         # Get segments directly from the Text object instead of console render
         segments = list(formatted.render(console))
         strip = Strip(segments)
