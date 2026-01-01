@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -17,6 +18,7 @@ class CodebaseIndexer:
         self.working_dir = Path(working_dir or Path.cwd())
         self.token_monitor = ContextTokenMonitor()
         self.target_tokens = 3000
+        self._file_cache: Optional[List[Path]] = None
 
     def generate_index(self, max_tokens: int = 3000) -> str:
         sections = []
@@ -35,21 +37,55 @@ class CodebaseIndexer:
             content = self._compress_content(content, max_tokens)
         return content
 
+    def _get_all_files(self) -> List[Path]:
+        """
+        Walks the directory tree once to collect all files, excluding common ignored directories.
+        Results are cached for subsequent calls.
+        """
+        if self._file_cache is not None:
+            return self._file_cache
+
+        ignored_dirs = {
+            "node_modules",
+            "__pycache__",
+            ".git",
+            "venv",
+            ".venv",
+            "env",
+            "build",
+            "dist",
+            ".idea",
+            ".vscode",
+            ".pytest_cache",
+            "target",  # Rust/Java
+            "bin",     # Java/others
+            "obj",     # C#
+        }
+        all_paths = []
+
+        try:
+            for root, dirs, files in os.walk(self.working_dir):
+                # Modify dirs in-place to skip ignored directories
+                dirs[:] = [d for d in dirs if d not in ignored_dirs]
+
+                for d in dirs:
+                    all_paths.append(Path(root) / d)
+                for f in files:
+                    all_paths.append(Path(root) / f)
+        except Exception:
+            # Fallback in case of permission errors
+            pass
+
+        self._file_cache = all_paths
+        return all_paths
+
     def _generate_overview(self) -> str:
         lines = ["## Overview\n"]
-        try:
-            result = subprocess.run(
-                ["find", ".", "-type", "f"],
-                capture_output=True,
-                text=True,
-                cwd=self.working_dir,
-                timeout=5,
-            )
-            if result.returncode == 0:
-                file_count = len(result.stdout.strip().split("\n"))
-                lines.append(f"**Total Files:** {file_count}")
-        except Exception:
-            pass
+
+        # Optimized file counting using cached walker
+        files = [p for p in self._get_all_files() if p.is_file()]
+        if files:
+            lines.append(f"**Total Files:** {len(files)}")
 
         readme_path = self._find_readme()
         if readme_path:
@@ -179,28 +215,38 @@ class CodebaseIndexer:
         return None
 
     def _find_files(self, patterns: List[str]) -> List[Path]:
-        matches: List[Path] = []
+        all_files = self._get_all_files()
+        matches = []
         for pattern in patterns:
-            matches.extend(self.working_dir.glob(f"**/{pattern}"))
-        return matches
+            # Using Path.match with **/pattern covers most glob cases
+            # pattern e.g. "main.py" -> "**/main.py" matches src/main.py
+            glob_pattern = f"**/{pattern}"
+            for path in all_files:
+                if path.match(glob_pattern):
+                    matches.append(path)
+        return list(set(matches))
 
     def _basic_structure(self) -> str:
+        # Optimized fallback structure generation
         try:
-            result = subprocess.run(
-                ["ls", "-R"],
-                capture_output=True,
-                text=True,
-                cwd=self.working_dir,
-                timeout=5,
-            )
-            if result.returncode == 0:
-                output = result.stdout.strip()
-                if len(output) > 1200:
-                    output = "\n".join(output.split("\n")[:40]) + "\n... (truncated)"
-                return output
+            all_files = self._get_all_files()
+            # Filter to show only file paths relative to root
+            rel_paths = []
+            for p in all_files:
+                try:
+                    rel_paths.append(str(p.relative_to(self.working_dir)))
+                except ValueError:
+                    pass
+
+            rel_paths.sort()
+
+            if len(rel_paths) > 40:
+                output = "\n".join(rel_paths[:40]) + "\n... (truncated)"
+            else:
+                output = "\n".join(rel_paths)
+            return output
         except Exception:
-            pass
-        return "(Unable to generate structure)"
+            return "(Unable to generate structure)"
 
     def _compress_content(self, content: str, max_tokens: int) -> str:
         paragraphs = content.split("\n\n")
