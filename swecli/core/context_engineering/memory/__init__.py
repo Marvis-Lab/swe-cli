@@ -24,6 +24,7 @@ from swecli.core.context_engineering.memory.roles import (
     Curator,
     ReflectorOutput,
     CuratorOutput,
+    BulletTag,
 )
 
 # Legacy imports for backwards compatibility (deprecated)
@@ -39,6 +40,7 @@ __all__ = [
     "Curator",
     "ReflectorOutput",
     "CuratorOutput",
+    "BulletTag",
     "DeltaOperation",
     "DeltaBatch",
     # Legacy (deprecated, for backwards compatibility)
