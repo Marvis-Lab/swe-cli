@@ -88,7 +88,7 @@ class ListDirectoryFormatter(BaseToolFormatter):
                         title_align="left",
                         border_style="green",
                     )
-            except:
+            except Exception:
                 pass
 
             # Fallback to text display

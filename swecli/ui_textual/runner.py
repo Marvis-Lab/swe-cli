@@ -708,7 +708,7 @@ class TextualRunner:
             return False
 
         # Get the pending plan
-        plan_text, plan_steps, plan_goal = self.repl.mode_manager.get_pending_plan()
+        plan_text, plan_steps, _ = self.repl.mode_manager.get_pending_plan()
         if not plan_text or not plan_steps:
             return False
 
@@ -1002,8 +1002,6 @@ Work through each implementation step in order. Mark each todo item as 'in_progr
         Args:
             command: The full command (e.g., "/resolve-issue https://github.com/owner/repo/issues/123")
         """
-        from io import StringIO
-        from rich.console import Console as RichConsole
 
         # Create UI callback for real-time tool display
         conversation_widget = None
@@ -1089,7 +1087,6 @@ Work through each implementation step in order. Mark each todo item as 'in_progr
         """Render new session messages inside the Textual conversation log."""
 
         buffer_started = False
-        assistant_text_rendered = False
 
         for msg in messages:
             if msg.role == Role.ASSISTANT:
@@ -1119,9 +1116,7 @@ Work through each implementation step in order. Mark each todo item as 'in_progr
                         self.app.record_assistant_message(msg.content)
                     if hasattr(self.app, "_last_rendered_assistant"):
                         self.app._last_rendered_assistant = content
-                    self._last_assistant_message = content
                     self._suppress_console_duplicate = True
-                    assistant_text_rendered = True
 
                 # Skip rendering messages with tool calls - already shown in real-time
             elif msg.role == Role.SYSTEM:
@@ -1183,22 +1178,6 @@ Work through each implementation step in order. Mark each todo item as 'in_progr
             if "\r" in line:
                 lines[index] = line.split("\r")[-1]
         return "\n".join(lines)
-
-    @staticmethod
-    def _clean_tool_summary(summary: str) -> str:
-        """Normalize tool summary text for assistant follow-up."""
-
-        cleaned = summary.strip()
-        if not cleaned:
-            return ""
-
-        if cleaned.lower().startswith("found") and ":" in cleaned:
-            cleaned = cleaned.split(":", 1)[1].strip()
-
-        cleaned = cleaned.strip(". ")
-        if cleaned:
-            return cleaned
-        return summary.strip()
 
     @staticmethod
     def _is_spinner_text(plain: str) -> bool:

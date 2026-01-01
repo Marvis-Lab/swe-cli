@@ -1,9 +1,6 @@
 """Visual test to see the improved approval dialog design."""
 
-from pathlib import Path
 from rich.console import Console
-from rich.panel import Panel
-from rich.text import Text
 
 console = Console()
 
@@ -64,7 +61,7 @@ console.print("[bold cyan]══════════════════
 from swecli.ui.autocomplete import SLASH_COMMANDS
 
 console.print(f"[bold]Total commands:[/bold] [green]{len(SLASH_COMMANDS)}[/green] (down from 17)")
-console.print(f"[bold]Removed:[/bold] [red]7[/red] unimplemented commands\n")
+console.print("[bold]Removed:[/bold] [red]7[/red] unimplemented commands\n")
 
 console.print("[dim]Removed commands:[/dim]")
 removed = ["model", "approvals", "review", "new", "compact", "diff", "mention"]

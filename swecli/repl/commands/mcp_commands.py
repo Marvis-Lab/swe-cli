@@ -126,11 +126,11 @@ class MCPCommands(CommandHandler):
         """Connect to a specific MCP server."""
         if self.mcp_manager.is_connected(server_name):
             self.console.print(f"[cyan]⏺[/cyan] MCP ({server_name})")
-            self.console.print(f"  ⎿  [yellow]Already connected[/yellow]")
+            self.console.print("  ⎿  [yellow]Already connected[/yellow]")
             return CommandResult(success=True, message="Already connected")
 
         self.console.print(f"[cyan]⏺[/cyan] MCP ({server_name})")
-        self.console.print(f"  ⎿  Connecting...")
+        self.console.print("  ⎿  Connecting...")
         try:
             success = self.mcp_manager.connect_sync(server_name)
             if success:
@@ -143,7 +143,7 @@ class MCPCommands(CommandHandler):
 
                 return CommandResult(success=True, message=f"Connected to {server_name}")
             else:
-                self.console.print(f"  ⎿  [red]❌ Connection failed[/red]")
+                self.console.print("  ⎿  [red]❌ Connection failed[/red]")
                 return CommandResult(success=False, message="Connection failed")
         except Exception as e:
             self.console.print(f"  ⎿  [red]❌ Error: {e}[/red]")
@@ -153,12 +153,12 @@ class MCPCommands(CommandHandler):
         """Disconnect from a specific MCP server."""
         self.console.print(f"[cyan]⏺[/cyan] MCP ({server_name})")
         if not self.mcp_manager.is_connected(server_name):
-            self.console.print(f"  ⎿  [yellow]Not connected[/yellow]")
+            self.console.print("  ⎿  [yellow]Not connected[/yellow]")
             return CommandResult(success=True, message="Not connected")
 
         try:
             self.mcp_manager.disconnect_sync(server_name)
-            self.console.print(f"  ⎿  [green]Disconnected[/green]")
+            self.console.print("  ⎿  [green]Disconnected[/green]")
 
             # Refresh runtime tooling
             if self.refresh_runtime:
@@ -303,7 +303,7 @@ class MCPCommands(CommandHandler):
         connected = [name for name in servers if self.mcp_manager.is_connected(name)]
         enabled = [name for name, cfg in servers.items() if cfg.enabled]
 
-        self.console.print(f"\n[bold cyan]MCP Status[/bold cyan]")
+        self.console.print("\n[bold cyan]MCP Status[/bold cyan]")
         self.console.print(f"  Servers: {len(servers)} configured, {len(connected)} connected, {len(enabled)} enabled")
 
         if connected:
@@ -436,7 +436,7 @@ class MCPCommands(CommandHandler):
             self.console.print("  ⎿  Reloading configuration...")
 
             # Reload configuration
-            config = self.mcp_manager.load_configuration()
+            self.mcp_manager.load_configuration()
 
             # Show summary
             servers = self.mcp_manager.list_servers()

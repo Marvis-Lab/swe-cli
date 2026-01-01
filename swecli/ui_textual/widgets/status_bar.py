@@ -301,7 +301,7 @@ class ModelFooter(Footer):
         def format_model_display(model_str: str, style: str) -> None:
             """Format a model with provider and name in a compact way."""
             if not model_str:
-                text.append("Not set", style=f"italic #5a5a5a")
+                text.append("Not set", style="italic #5a5a5a")
                 return
 
             # Extract provider and model name

@@ -1,6 +1,5 @@
 """Test approval menu structure without interaction."""
 
-from pathlib import Path
 from rich.console import Console
 
 from swecli.core.approval import ApprovalManager, ApprovalChoice

@@ -118,7 +118,6 @@ class ConsoleOutputManager:
             if hasattr(last_line, 'plain') and not last_line.plain.strip():
                 self.app.conversation.lines.pop()
 
-        has_rendered_content = False
         for renderable in renderables:
             if isinstance(renderable, Text):
                 plain = renderable.plain.strip()
@@ -144,7 +143,6 @@ class ConsoleOutputManager:
                 self.app.render_console_output(renderable)
             else:
                 self.app.conversation.write(renderable)
-            has_rendered_content = True
 
         if not isinstance(renderables[-1], Text):
             self._last_console_line = None

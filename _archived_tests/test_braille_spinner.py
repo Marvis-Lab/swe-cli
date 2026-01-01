@@ -19,7 +19,7 @@ print("=" * 50)
 from swecli.ui.animations import Spinner as S
 print(f"\nSpinner frames: {' '.join(S.FRAMES)}")
 print(f"Total frames: {len(S.FRAMES)}")
-print(f"Pattern: ⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏")
+print("Pattern: ⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏")
 
 # Test the spinner animation
 print("\n" + "=" * 50)

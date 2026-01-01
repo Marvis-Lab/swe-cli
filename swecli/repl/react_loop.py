@@ -19,7 +19,7 @@ class ReActController:
             agent: Agent to use
             messages: Message history
         """
-        self.console.print(f"\n[yellow]⚠ Safety limit reached. Requesting summary...[/yellow]")
+        self.console.print("\n[yellow]⚠ Safety limit reached. Requesting summary...[/yellow]")
         messages.append({
             "role": "user",
             "content": "Please provide a summary of what you've found and what needs to be done."

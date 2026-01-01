@@ -94,7 +94,7 @@ class DirectoryFormatter(BaseFormatter):
                 tree_panel = self._create_tree_view(files, directory)
                 if tree_panel:
                     return tree_panel
-        except:
+        except Exception:
             pass
 
         # Fallback to text display

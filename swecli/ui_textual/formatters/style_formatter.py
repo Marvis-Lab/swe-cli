@@ -5,7 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Dict, List
 
-from swecli.ui_textual.formatters_internal.formatter_base import STATUS_ICONS
 from swecli.ui_textual.utils.tool_display import get_tool_display_parts
 from swecli.ui_textual.constants import TOOL_ERROR_SENTINEL
 from swecli.ui_textual.utils.interrupt_utils import create_interrupt_message, STANDARD_INTERRUPT_MESSAGE

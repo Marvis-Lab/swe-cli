@@ -104,17 +104,6 @@ class CodebaseAnalyzer:
         Returns:
             Detected language or None
         """
-        extension_counts = {
-            ".py": "python",
-            ".js": "javascript",
-            ".ts": "typescript",
-            ".go": "go",
-            ".rs": "rust",
-            ".rb": "ruby",
-            ".php": "php",
-            ".java": "java",
-            ".cs": "csharp",
-        }
 
         # This is just a helper - the agent should use bash commands
         # to count files more efficiently

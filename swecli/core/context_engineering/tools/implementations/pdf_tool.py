@@ -199,7 +199,7 @@ class PDFTool(BaseTool):
         ]
 
         # Combined pattern
-        combined_pattern = "|".join(f"({p})" for p in section_patterns)
+        "|".join(f"({p})" for p in section_patterns)
 
         sections = []
         lines = content.split("\n")

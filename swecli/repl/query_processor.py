@@ -4,15 +4,12 @@ import json
 import os
 import random
 from datetime import datetime
-from typing import TYPE_CHECKING, Iterable
+from typing import TYPE_CHECKING, Any, Iterable, Optional
 
 from swecli.core.context_engineering.memory import (
-    Playbook,
     AgentResponse,
     Reflector,
     Curator,
-    ReflectorOutput,
-    CuratorOutput,
 )
 from swecli.ui_textual.utils.tool_display import format_tool_call
 
@@ -686,7 +683,7 @@ class QueryProcessor:
                     # Check if this is an interruption
                     if "interrupted" in error_text.lower():
                         # For interruptions, just print directly (no UI callback in non-callback mode)
-                        self.console.print(f"  ⎿  [bold red]Interrupted · What should I do instead?[/bold red]")
+                        self.console.print("  ⎿  [bold red]Interrupted · What should I do instead?[/bold red]")
                         self._last_error = error_text
                         # Don't save to session
                     else:

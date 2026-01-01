@@ -620,7 +620,7 @@ class RustAnalyzer(SolidLanguageServer):
             return
 
         def check_experimental_status(params: dict) -> None:
-            if params["quiescent"] == True:
+            if params["quiescent"]:
                 self.server_ready.set()
 
         def window_log_message(msg: dict) -> None:

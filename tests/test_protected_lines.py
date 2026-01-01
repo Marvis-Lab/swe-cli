@@ -283,7 +283,6 @@ class TestApprovalPanelWithProtectedLines:
 
         # First approval render
         conversation_log.render_approval_prompt([Text("Approval 1")])
-        first_start = conversation_log._approval_start
 
         # Second approval render (should replace first)
         conversation_log.render_approval_prompt([Text("Approval 2"), Text("Approval 2b")])

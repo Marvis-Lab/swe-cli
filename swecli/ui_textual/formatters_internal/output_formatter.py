@@ -10,6 +10,7 @@ from .file_formatters import FileFormatter
 from .directory_formatter import DirectoryFormatter
 from .bash_formatter import BashFormatter
 from .generic_formatter import GenericFormatter
+# from .plan_formatter import PlanFormatter  # Assuming it exists or removed if not needed
 
 
 class OutputFormatter:
@@ -32,7 +33,7 @@ class OutputFormatter:
             # Initialize legacy formatters (old style)
             self.file_formatter = FileFormatter(console)
             self.directory_formatter = DirectoryFormatter(console)
-            self.plan_formatter = PlanFormatter(console)
+            # self.plan_formatter = PlanFormatter(console)  # Disabled until implemented
             self.bash_formatter = BashFormatter(console)
             self.generic_formatter = GenericFormatter(console)
 

@@ -3,14 +3,13 @@
 import asyncio
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from rich.console import Console
 
 from swecli.core.runtime.approval import ApprovalManager
 from swecli.core.runtime import ModeManager
 from swecli.core.context_engineering.history import SessionManager, UndoManager
-from swecli.core.runtime.services import RuntimeService
 from swecli.models.operation import Operation, OperationType
 from swecli.models.agent_deps import AgentDependencies
 from swecli.repl.commands.base import CommandHandler, CommandResult
@@ -286,7 +285,7 @@ class ToolCommands(CommandHandler):
             result = None
             try:
                 # Try to get existing event loop
-                loop = asyncio.get_running_loop()
+                asyncio.get_running_loop()
                 # We're in an async context - skip approval, assume pre-approved
                 operation.approved = True
             except RuntimeError:

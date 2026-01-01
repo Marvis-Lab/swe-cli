@@ -5,7 +5,6 @@ import pytest
 from rich.console import Console
 
 from swecli.repl.commands.tool_commands import ToolCommands
-from swecli.models.operation import Operation, OperationType
 
 
 @pytest.fixture

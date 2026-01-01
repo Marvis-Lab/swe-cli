@@ -1,7 +1,7 @@
 """Unit tests for DockerToolHandler argument name handling."""
 
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 
 class TestDockerToolHandlerArgumentNames:
@@ -296,7 +296,6 @@ class TestDockerToolHandlerArgumentNames:
     @pytest.mark.asyncio
     async def test_run_command_basic(self, handler, mock_runtime):
         """Test run_command executes commands."""
-        from swecli.core.docker.models import BashObservation
 
         mock_obs = MagicMock()
         mock_obs.output = "hello world"

@@ -1,7 +1,6 @@
 import pytest
 from unittest.mock import MagicMock, patch
 import sys
-import importlib
 
 # We do NOT import ToolRegistry at top level because we need to mock its dependencies first.
 # We also do NOT mock sys.modules at top level to avoid polluting other tests.

@@ -33,7 +33,7 @@ def test_bash_output_triggers_lazy_start():
     # 2. append_to_streaming_box
     calls = mock_app.call_from_thread.call_args_list
 
-    has_start = any(c.args[0] == mock_conversation.start_streaming_bash_box for c in calls)
+    any(c.args[0] == mock_conversation.start_streaming_bash_box for c in calls)
 
     # Check if update_ui wrapper called append_to_streaming_box
     # Since _run_on_ui wraps the call, we need to inspect what was passed to call_from_thread

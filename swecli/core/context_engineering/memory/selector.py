@@ -140,7 +140,7 @@ class BulletSelector:
 
         # Batch generate embeddings
         try:
-            embeddings = self.embedding_cache.batch_get_or_generate(
+            self.embedding_cache.batch_get_or_generate(
                 texts=texts_to_generate,
                 generator=generate_embeddings,
             )

@@ -212,7 +212,7 @@ class TypeScriptLanguageServer(SolidLanguageServer):
             """
             Also listen for experimental/serverStatus as a backup signal
             """
-            if params.get("quiescent") == True:
+            if params.get("quiescent"):
                 self.server_ready.set()
                 self.completions_available.set()
 

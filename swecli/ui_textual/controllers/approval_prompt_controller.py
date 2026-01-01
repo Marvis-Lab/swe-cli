@@ -9,6 +9,9 @@ from rich.console import Group
 from rich.panel import Panel
 from rich.text import Text
 
+if TYPE_CHECKING:
+    from swecli.ui_textual.app import SWECLIChatApp
+
 
 class ApprovalPromptController:
     """Encapsulates the inline approval prompt state machine."""

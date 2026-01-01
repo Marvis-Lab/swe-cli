@@ -191,7 +191,7 @@ class ModelPickerController:
             index = max(0, min(state.get("model_index", 0), len(models) - 1))
             model_info = models[index]
             # Save immediately and go back to slot menu
-            success = await self._commit_single_model(slot, provider_info, model_info)
+            await self._commit_single_model(slot, provider_info, model_info)
             state["stage"] = "slot"
             state["provider"] = None
             state["providers"] = []

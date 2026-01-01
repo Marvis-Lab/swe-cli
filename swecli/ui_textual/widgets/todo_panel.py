@@ -1,8 +1,6 @@
 """Todo panel widget for displaying persistent todo list."""
 
 from textual.widgets import Static
-from rich.table import Table
-from rich.text import Text
 
 
 class TodoPanel(Static):

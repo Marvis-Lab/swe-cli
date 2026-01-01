@@ -269,7 +269,7 @@ class FileFormatter(BaseFormatter):
             # Show truncated content
             if len(output) > 500:
                 lines.append("")
-                lines.append(f"[dim](Content too long, showing first 500 chars)[/dim]")
+                lines.append("[dim](Content too long, showing first 500 chars)[/dim]")
                 preview = output[:500] + "..."
                 lines.append(f"[dim]{preview}[/dim]")
             else:
