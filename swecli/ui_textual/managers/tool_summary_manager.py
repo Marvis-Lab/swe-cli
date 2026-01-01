@@ -6,13 +6,14 @@ from typing import TYPE_CHECKING
 
 from swecli.ui_textual.utils.tool_display import get_tool_display_parts, summarize_tool_arguments
 
+if TYPE_CHECKING:
+    from swecli.ui_textual.app import SWECLIChatApp
+
 
 class ToolSummaryManager:
     """Handles tool summary recording and inline follow-up messages."""
 
     def __init__(self, app: "SWECLIChatApp") -> None:
-        if TYPE_CHECKING:  # pragma: no cover
-            pass
         self.app = app
         self.reset()
 

@@ -638,7 +638,7 @@ class TestSemanticSimilarity:
 
     def test_embedding_cache_persistence(self):
         """Test embedding cache can be saved and loaded."""
-        cache = selector = BulletSelector().embedding_cache
+        cache = BulletSelector().embedding_cache
 
         # Add some embeddings
         cache.set("text1", [1.0, 0.0, 0.0])
@@ -657,7 +657,6 @@ class TestSemanticSimilarity:
 
     def test_embedding_cache_file_persistence(self, tmp_path):
         """Test embedding cache can be saved to and loaded from file."""
-        import tempfile
         cache_file = tmp_path / "test_cache.json"
 
         # Create cache and add embeddings
@@ -705,7 +704,7 @@ class TestSemanticSimilarity:
 
         # Select bullets (this should trigger save)
         bullets = [bullet]
-        selected = selector.select(bullets, max_count=1, query=query)
+        selector.select(bullets, max_count=1, query=query)
 
         # Verify cache file was created
         assert cache_file.exists()

@@ -409,7 +409,7 @@ class ReActExecutor:
                 ui_callback.on_interrupt()
             else:
                 # Non-callback mode
-                self.console.print(f"  ⎿  [bold red]Interrupted · What should I do instead?[/bold red]")
+                self.console.print("  ⎿  [bold red]Interrupted · What should I do instead?[/bold red]")
             # Don't save to session
         else:
             self.console.print(f"[red]Error: {error_text}[/red]")

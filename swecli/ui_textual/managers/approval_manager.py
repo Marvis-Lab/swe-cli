@@ -229,7 +229,7 @@ class ChatApprovalManager:
         import traceback
 
         print(f"\n\033[31mModal error: {error}\033[0m")
-        print(f"\033[31mTraceback:\033[0m")
+        print("\033[31mTraceback:\033[0m")
         traceback.print_exc()
         print("Falling back to simple prompt...\n")
         print("\n\033[1;33m╭─ Bash Command Approval ─╮\033[0m")

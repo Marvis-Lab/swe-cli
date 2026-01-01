@@ -3,7 +3,6 @@
 
 import sys
 import time
-import threading
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -52,7 +51,7 @@ def test_spinner_update():
     first_sentence = llm_description.split('.')[0].strip()
 
     console.print(f"[dim]LLM responded with: '{first_sentence}'[/dim]")
-    console.print(f"[dim]Updating spinner to show actual task...[/dim]\n")
+    console.print("[dim]Updating spinner to show actual task...[/dim]\n")
 
     # Update the task description (this is what we added)
     task_monitor.update_task_description(first_sentence)

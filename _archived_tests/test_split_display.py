@@ -6,12 +6,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from swecli.models.config import AppConfig
 from swecli.ui.conversation_buffer import ConversationBuffer
 from swecli.ui.dual_console import DualConsole
 from rich.panel import Panel
 from rich.text import Text
-import time
 
 
 def test_split_display():
@@ -23,7 +21,7 @@ def test_split_display():
     console = DualConsole(buffer=buffer, split_mode=True)
 
     # Verify split mode is enabled
-    assert console._split_mode == True, "Split mode should be enabled"
+    assert console._split_mode, "Split mode should be enabled"
     print("✓ Split mode enabled")
 
     # Add some messages to buffer

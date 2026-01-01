@@ -141,13 +141,13 @@ class NavigationMixin:
             return True
         return False
 
-    def set_max_items(self, max_items: int) -> None:
-        """Update maximum items count.
-
-        Args:
-            max_items: New maximum items count
-        """
-        self.max_items = max_items
-        # Adjust current index if needed
-        if self.current_index >= self.max_items:
-            self.current_index = max(0, self.max_items - 1)
+    # def set_max_items(self, max_items: int) -> None:  # Unused
+    #     """Update maximum items count.
+    #
+    #     Args:
+    #         max_items: New maximum items count
+    #     """
+    #     self.max_items = max_items
+    #     # Adjust current index if needed
+    #     if self.current_index >= self.max_items:
+    #         self.current_index = max(0, self.max_items - 1)

@@ -12,7 +12,7 @@ def test_find_latest_session(tmp_path):
 
     repo = tmp_path / "repo"
 
-    first = manager.create_session(str(repo))
+    manager.create_session(str(repo))
     manager.add_message(ChatMessage(role=Role.USER, content="first"))
     manager.save_session()
 

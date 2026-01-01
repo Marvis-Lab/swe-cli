@@ -2,9 +2,7 @@
 
 import pytest
 from pathlib import Path
-from unittest.mock import Mock, patch, MagicMock
 import tempfile
-import os
 
 from swecli.core.context_engineering.tools.handlers import FileToolHandler
 from swecli.core.context_engineering.tools.implementations import FileOperations

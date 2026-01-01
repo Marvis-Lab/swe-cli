@@ -20,7 +20,7 @@ def test_split_layout_disabled():
     config = config_manager.get_config()
 
     # Verify flag is False by default
-    assert config.use_split_layout == False, "use_split_layout should be False by default"
+    assert not config.use_split_layout, "use_split_layout should be False by default"
     print("✓ Config flag is False by default")
 
     # Initialize session manager
@@ -60,7 +60,7 @@ def test_split_layout_enabled():
     config_manager._config = config  # Override config
 
     # Verify flag is True
-    assert config.use_split_layout == True, "use_split_layout should be True"
+    assert config.use_split_layout, "use_split_layout should be True"
     print("✓ Config flag is True")
 
     # Initialize session manager

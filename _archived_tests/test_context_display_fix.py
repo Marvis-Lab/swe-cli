@@ -22,7 +22,7 @@ def test_context_display_updates():
         session_manager = SessionManager(session_dir)
         session = session_manager.create_session()
 
-        print(f"\nInitial state:")
+        print("\nInitial state:")
         print(f"  total_tokens_cached: {session.total_tokens_cached}")
         print(f"  Messages: {len(session.messages)}")
 
@@ -58,7 +58,7 @@ def test_context_display_updates():
         final_remaining = 100.0 - (final_tokens / 256000 * 100)
 
         print(f"\n{'=' * 70}")
-        print(f"Final state:")
+        print("Final state:")
         print(f"  Total tokens: {final_tokens:,}")
         print(f"  Context left: {final_remaining:.0f}%")
         print(f"  Messages: {len(session.messages)}")
@@ -67,10 +67,10 @@ def test_context_display_updates():
         assert final_remaining < 100, "Remaining should be less than 100%"
         assert final_remaining > 99, "Should still have >99% remaining with just a few messages"
 
-        print(f"\n✅ Context display updates correctly!")
-        print(f"   • Starts at 100% remaining")
-        print(f"   • Decreases as messages are added")
-        print(f"   • Shows accurate token usage")
+        print("\n✅ Context display updates correctly!")
+        print("   • Starts at 100% remaining")
+        print("   • Decreases as messages are added")
+        print("   • Shows accurate token usage")
 
 
 def test_toolbar_calculation():
@@ -110,7 +110,7 @@ def test_toolbar_calculation():
 
         print(f"  Display: '{status}'")
 
-    print(f"\n✅ Toolbar calculation is correct!")
+    print("\n✅ Toolbar calculation is correct!")
 
 
 if __name__ == "__main__":

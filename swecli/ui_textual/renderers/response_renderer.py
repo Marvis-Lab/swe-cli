@@ -23,7 +23,6 @@ class ResponseRenderer:
             app: The Textual chat application
         """
         self.app = app
-        self._last_assistant_message: str | None = None
         self._last_assistant_message_normalized: str | None = None
         self._suppress_console_duplicate = False
 
@@ -34,7 +33,6 @@ class ResponseRenderer:
             messages: List of chat messages to render
         """
         buffer_started = False
-        assistant_text_rendered = False
 
         for msg in messages:
             if msg.role == Role.ASSISTANT:
@@ -64,9 +62,7 @@ class ResponseRenderer:
                         self.app.record_assistant_message(msg.content)
                     if hasattr(self.app, "_last_rendered_assistant"):
                         self.app._last_rendered_assistant = content
-                    self._last_assistant_message = content
                     self._suppress_console_duplicate = True
-                    assistant_text_rendered = True
 
                 # Skip rendering messages with tool calls - already shown in real-time
             elif msg.role == Role.SYSTEM:

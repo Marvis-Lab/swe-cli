@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Test script to verify runner integration without launching interactive UI."""
 
-import os
 import sys
 from pathlib import Path
 
@@ -9,7 +8,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 from swecli.ui_textual.runner import TextualRunner
-from swecli.core.runtime import ConfigManager, SessionManager
 
 def test_runner_initialization():
     """Test that the runner initializes properly."""
@@ -36,20 +34,20 @@ def test_runner_initialization():
 
         # Check agent
         if hasattr(runner.repl, 'agent') and runner.repl.agent:
-            print(f"\n🤖 Agent:")
+            print("\n🤖 Agent:")
             print(f"   Type: {type(runner.repl.agent).__name__}")
             print(f"   Has call_llm method: {hasattr(runner.repl.agent, 'call_llm')}")
 
         # Check query processor
         if hasattr(runner.repl, 'query_processor') and runner.repl.query_processor:
-            print(f"\n🔄 Query Processor:")
+            print("\n🔄 Query Processor:")
             print(f"   Type: {type(runner.repl.query_processor).__name__}")
             print(f"   Has process_query method: {hasattr(runner.repl.query_processor, 'process_query')}")
 
         # Check session
         session = runner.session_manager.get_current_session()
         if session:
-            print(f"\n💾 Session:")
+            print("\n💾 Session:")
             print(f"   Session ID: {session.id}")
             print(f"   Message count: {len(session.messages)}")
             print(f"   Working directory: {session.working_directory}")

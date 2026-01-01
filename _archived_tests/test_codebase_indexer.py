@@ -8,7 +8,6 @@ import tempfile
 sys.path.insert(0, str(Path(__file__).parent))
 
 from swecli.core.context import CodebaseIndexer
-from swecli.core.context import ContextTokenMonitor
 
 
 def test_generate_index():
@@ -21,7 +20,7 @@ def test_generate_index():
     indexer = CodebaseIndexer(working_dir=Path.cwd())
     content = indexer.generate_index()
 
-    print(f"Generated OPENCLI.md preview:")
+    print("Generated OPENCLI.md preview:")
     print("=" * 60)
     print(content[:500])
     if len(content) > 500:
@@ -85,7 +84,7 @@ def test_with_temp_project():
         indexer = CodebaseIndexer(working_dir=tmppath)
         content = indexer.generate_index()
 
-        print(f"Generated content:")
+        print("Generated content:")
         print(content)
 
         assert "# " + tmppath.name in content, "Should have project name"
@@ -221,7 +220,7 @@ def test_real_opencli_index():
 
     stats = indexer.get_stats(content)
 
-    print(f"\nSWE-CLI Index Statistics:")
+    print("\nSWE-CLI Index Statistics:")
     print(f"  Tokens: {stats['tokens']:,}")
     print(f"  Characters: {stats['characters']:,}")
     print(f"  Lines: {stats['lines']}")
@@ -236,7 +235,7 @@ def test_real_opencli_index():
     assert stats["tokens"] > 100, "Should have substantial content"
 
     if stats["under_limit"]:
-        print(f"✓ Successfully under 3k tokens!")
+        print("✓ Successfully under 3k tokens!")
     else:
         print(f"⚠️  Note: {stats['tokens']} tokens (over 3k)")
         print("   (SWE-CLI is a large project, compression may be needed)")
@@ -251,7 +250,7 @@ def main():
     print("╚══════════════════════════════════════════════════════════════╝")
 
     try:
-        content = test_generate_index()
+        test_generate_index()
         test_token_count()
         test_with_temp_project()
         test_structure_generation()

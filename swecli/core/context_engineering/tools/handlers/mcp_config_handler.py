@@ -103,7 +103,7 @@ class MCPConfigHandler:
                                 "already_configured": True,
                                 "connected": True,
                             }
-                    except Exception as e:
+                    except Exception:
                         pass  # Will show env setup instructions below
 
         # Check required environment variables

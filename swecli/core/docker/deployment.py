@@ -6,20 +6,17 @@ that run the FastAPI runtime server.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import shutil
 import socket
 import subprocess
 import uuid
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Callable
 
 from .exceptions import (
     DeploymentNotStartedError,
     DeploymentStartupError,
-    DockerContainerError,
     DockerPullError,
 )
 from .remote_runtime import RemoteRuntime

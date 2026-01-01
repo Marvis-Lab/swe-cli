@@ -64,9 +64,9 @@ def test_summarizer_fast():
 
         # Check it's actionable (starts with verb-ing or action word)
         if summary[0].isupper() and any(word in summary for word in ["ing", "check", "analyz", "read", "search", "examin"]):
-            print(f"   ✓ Actionable format")
+            print("   ✓ Actionable format")
         else:
-            print(f"   ⚠️  May not be optimally actionable")
+            print("   ⚠️  May not be optimally actionable")
 
     if all_passed:
         print("\n✅ All tests passed!")
@@ -95,7 +95,7 @@ def test_edge_cases():
         print(f"\n{description}:")
         print(f"  Input: '{input_text[:60]}...' (len={len(input_text)})")
         print(f"  Summary: '{summary}' (len={len(summary)})")
-        print(f"  ✓ Handled gracefully")
+        print("  ✓ Handled gracefully")
 
 
 def test_verb_conversion():
@@ -119,7 +119,7 @@ def test_verb_conversion():
         summary = summarizer.summarize_fast(text, max_length=60)
         print(f"  {text:40} → {summary}")
         if summary.endswith("ing") or "ing " in summary:
-            print(f"    ✓ Converted to present continuous")
+            print("    ✓ Converted to present continuous")
 
 
 if __name__ == "__main__":
