@@ -472,6 +472,12 @@ Do NOT use local paths like /Users/... - they don't exist in this container.
 
         except Exception as e:
             import traceback
+            # Stop the docker_start spinner by reporting failure
+            if nested_callback and hasattr(nested_callback, 'on_tool_result'):
+                nested_callback.on_tool_result("docker_start", {"image": docker_config.image}, {
+                    "success": False,
+                    "error": str(e),
+                })
             return {
                 "success": False,
                 "error": f"Docker execution failed: {str(e)}\n{traceback.format_exc()}",

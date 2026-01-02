@@ -332,6 +332,12 @@ class TextualUICallback:
         if isinstance(result, dict) and result.get("interrupted"):
             return
 
+        # Skip displaying spawn_subagent errors - nested tool already showed the error
+        if tool_name == "spawn_subagent" and not result.get("success", True):
+            if self.chat_app and hasattr(self.chat_app, "resume_reasoning_spinner"):
+                self._run_on_ui(self.chat_app.resume_reasoning_spinner)
+            return
+
         # Special handling for bash commands - close streaming box or show summary
         if tool_name in ("bash_execute", "run_command") and isinstance(result, dict):
             is_error = not result.get("success", True)

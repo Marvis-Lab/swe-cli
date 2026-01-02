@@ -47,6 +47,7 @@ class ConversationLog(RichLog):
         self._tool_display: Text | None = None
         self._spinner_active = False
         self._spinner_chars = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+        self._nested_spinner_chars = ("⏺", "○")  # Flashing bullet for nested/subagent tools
         self._spinner_index = 0
         self._tool_call_start: int | None = None
         self._approval_start: int | None = None
@@ -446,11 +447,11 @@ class ConversationLog(RichLog):
         else:
             tool_text = Text(str(display), style="white")
 
-        # Build indented line with spinner - START with first spinner char
+        # Build indented line with spinner - START with first spinner char (flashing bullet)
         formatted = Text()
         indent = "  " * depth
         formatted.append(indent)
-        formatted.append(f"{self._spinner_chars[0]} ", style="bright_cyan")
+        formatted.append(f"{self._nested_spinner_chars[0]} ", style="bright_cyan")
         formatted.append_text(tool_text)
         formatted.append(" (0s)", style="#7a8594")  # Initial elapsed time
 
@@ -479,8 +480,8 @@ class ConversationLog(RichLog):
         if self._nested_tool_line is None or self._nested_tool_text is None:
             return
 
-        # Update spinner frame
-        self._nested_spinner_index = (self._nested_spinner_index + 1) % len(self._spinner_chars)
+        # Update spinner frame (flashing bullet for nested tools)
+        self._nested_spinner_index = (self._nested_spinner_index + 1) % len(self._nested_spinner_chars)
 
         # Render the updated line
         self._render_nested_tool_line()
@@ -501,11 +502,11 @@ class ConversationLog(RichLog):
         if self._nested_tool_timer_start is not None:
             elapsed = int(time.monotonic() - self._nested_tool_timer_start)
 
-        # Build the animated line
+        # Build the animated line (flashing bullet for nested tools)
         formatted = Text()
         indent = "  " * self._nested_tool_depth
         formatted.append(indent)
-        spinner_char = self._spinner_chars[self._nested_spinner_index]
+        spinner_char = self._nested_spinner_chars[self._nested_spinner_index]
         formatted.append(f"{spinner_char} ", style="bright_cyan")
         formatted.append_text(self._nested_tool_text.copy())
         formatted.append(f" ({elapsed}s)", style="#7a8594")
