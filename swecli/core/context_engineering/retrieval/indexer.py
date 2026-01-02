@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -13,10 +14,13 @@ from .token_monitor import ContextTokenMonitor
 class CodebaseIndexer:
     """Generate concise codebase summaries for context."""
 
+    IGNORED_DIRS = {"node_modules", "__pycache__", ".git", "venv", "build", "dist"}
+
     def __init__(self, working_dir: Optional[Path] = None) -> None:
         self.working_dir = Path(working_dir or Path.cwd())
         self.token_monitor = ContextTokenMonitor()
         self.target_tokens = 3000
+        self._file_cache: Optional[List[Path]] = None
 
     def generate_index(self, max_tokens: int = 3000) -> str:
         sections = []
@@ -35,21 +39,30 @@ class CodebaseIndexer:
             content = self._compress_content(content, max_tokens)
         return content
 
+    def _refresh_file_cache(self) -> None:
+        """Populate the file cache using os.walk."""
+        self._file_cache = []
+        for root, dirs, files in os.walk(self.working_dir):
+            # Modify dirs in-place to skip ignored directories
+            dirs[:] = [d for d in dirs if d not in self.IGNORED_DIRS]
+
+            root_path = Path(root)
+            # Add directories to cache so we can find 'tests/'
+            for d in dirs:
+                self._file_cache.append(root_path / d)
+
+            for file in files:
+                self._file_cache.append(root_path / file)
+
     def _generate_overview(self) -> str:
         lines = ["## Overview\n"]
-        try:
-            result = subprocess.run(
-                ["find", ".", "-type", "f"],
-                capture_output=True,
-                text=True,
-                cwd=self.working_dir,
-                timeout=5,
-            )
-            if result.returncode == 0:
-                file_count = len(result.stdout.strip().split("\n"))
-                lines.append(f"**Total Files:** {file_count}")
-        except Exception:
-            pass
+
+        if self._file_cache is None:
+            self._refresh_file_cache()
+
+        if self._file_cache is not None:
+             file_count = len([p for p in self._file_cache if p.is_file()])
+             lines.append(f"**Total Files:** {file_count}")
 
         readme_path = self._find_readme()
         if readme_path:
@@ -73,7 +86,7 @@ class CodebaseIndexer:
                     "-L",
                     "2",
                     "-I",
-                    "node_modules|__pycache__|.git|venv|build|dist",
+                    "|".join(self.IGNORED_DIRS),
                 ],
                 capture_output=True,
                 text=True,
@@ -179,9 +192,31 @@ class CodebaseIndexer:
         return None
 
     def _find_files(self, patterns: List[str]) -> List[Path]:
+        if self._file_cache is None:
+            self._refresh_file_cache()
+
         matches: List[Path] = []
+        # Ensure cache is not None
+        if self._file_cache is None:
+            return matches
+
         for pattern in patterns:
-            matches.extend(self.working_dir.glob(f"**/{pattern}"))
+            # strip trailing slash for glob matching, as we added dirs to cache without slash
+            # but we need to know if we only want dirs.
+            # glob("**/*.py") -> matches file
+            # glob("**/tests/") -> matches directory "tests"
+
+            clean_pattern = pattern.rstrip("/")
+            glob_pattern = f"**/{clean_pattern}"
+
+            for path in self._file_cache:
+                if path.match(glob_pattern):
+                    # If the pattern had a slash, we should check if it is a directory?
+                    # But the cache has both.
+                    # 'tests' dir matches '**/tests'
+                    # 'test_foo.py' matches '**/test_*.py'
+                    matches.append(path)
+
         return matches
 
     def _basic_structure(self) -> str:
