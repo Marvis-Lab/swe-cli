@@ -9,11 +9,10 @@ from typing import TYPE_CHECKING, Iterable
 from swecli.core.context_engineering.memory import (
     Playbook,
     AgentResponse,
-    Reflector,
-    Curator,
-    ReflectorOutput,
-    CuratorOutput,
 )
+from swecli.repl.processors.ace_processor import ACEProcessor
+from swecli.repl.processors.context_preparer import ContextPreparer
+from swecli.repl.constants import THINKING_VERBS
 from swecli.ui_textual.utils.tool_display import format_tool_call
 
 if TYPE_CHECKING:
@@ -33,115 +32,8 @@ if TYPE_CHECKING:
 class QueryProcessor:
     """Processes user queries using ReAct pattern."""
 
-    # Fancy verbs for the thinking spinner - randomly selected for variety (100 verbs!)
-    THINKING_VERBS = [
-        "Thinking",
-        "Processing",
-        "Analyzing",
-        "Computing",
-        "Synthesizing",
-        "Orchestrating",
-        "Crafting",
-        "Brewing",
-        "Composing",
-        "Contemplating",
-        "Formulating",
-        "Strategizing",
-        "Architecting",
-        "Designing",
-        "Manifesting",
-        "Conjuring",
-        "Weaving",
-        "Pondering",
-        "Calculating",
-        "Deliberating",
-        "Ruminating",
-        "Meditating",
-        "Scheming",
-        "Envisioning",
-        "Imagining",
-        "Conceptualizing",
-        "Ideating",
-        "Brainstorming",
-        "Innovating",
-        "Engineering",
-        "Assembling",
-        "Constructing",
-        "Building",
-        "Forging",
-        "Molding",
-        "Sculpting",
-        "Fashioning",
-        "Shaping",
-        "Rendering",
-        "Materializing",
-        "Realizing",
-        "Actualizing",
-        "Executing",
-        "Implementing",
-        "Deploying",
-        "Launching",
-        "Initiating",
-        "Activating",
-        "Energizing",
-        "Catalyzing",
-        "Accelerating",
-        "Optimizing",
-        "Refining",
-        "Polishing",
-        "Perfecting",
-        "Enhancing",
-        "Augmenting",
-        "Amplifying",
-        "Boosting",
-        "Elevating",
-        "Transcending",
-        "Transforming",
-        "Evolving",
-        "Adapting",
-        "Morphing",
-        "Mutating",
-        "Iterating",
-        "Recursing",
-        "Traversing",
-        "Navigating",
-        "Exploring",
-        "Discovering",
-        "Uncovering",
-        "Revealing",
-        "Illuminating",
-        "Deciphering",
-        "Decoding",
-        "Parsing",
-        "Interpreting",
-        "Translating",
-        "Compiling",
-        "Rendering",
-        "Generating",
-        "Producing",
-        "Yielding",
-        "Outputting",
-        "Emitting",
-        "Transmitting",
-        "Broadcasting",
-        "Propagating",
-        "Disseminating",
-        "Distributing",
-        "Allocating",
-        "Assigning",
-        "Delegating",
-        "Coordinating",
-        "Synchronizing",
-        "Harmonizing",
-        "Balancing",
-        "Calibrating",
-        "Tuning",
-        "Adjusting",
-    ]
-
     REFLECTION_WINDOW_SIZE = 10
     MAX_PLAYBOOK_STRATEGIES = 30
-    PLAYBOOK_DEBUG_PATH = "/tmp/swecli_debug/playbook_evolution.log"
 
     def __init__(
         self,
@@ -187,11 +79,25 @@ class QueryProcessor:
         # Interrupt support - track current task monitor
         self._current_task_monitor: Optional[Any] = None
 
-        # ACE Components - Initialize on first use (lazy loading)
-        self._ace_reflector: Optional[Reflector] = None
-        self._ace_curator: Optional[Curator] = None
-        self._last_agent_response: Optional[AgentResponse] = None
-        self._execution_count = 0
+        # ACE Processor
+        self.ace_processor = ACEProcessor(session_manager)
+
+        # Context Preparer
+        self.context_preparer = ContextPreparer(
+            session_manager=session_manager,
+            config=config,
+            file_ops=file_ops,
+            console=console,
+            reflection_window_size=self.REFLECTION_WINDOW_SIZE
+        )
+
+        # Execution Manager
+        self.execution_manager = ExecutionManager(
+            console=console,
+            mode_manager=mode_manager,
+            output_formatter=output_formatter,
+            session_manager=session_manager
+        )
 
     def set_notification_center(self, notification_center):
         """Set notification center for status line rendering.
@@ -207,23 +113,11 @@ class QueryProcessor:
         Returns:
             True if interrupt was requested, False if no task is running
         """
-        if self._current_task_monitor is not None:
-            self._current_task_monitor.request_interrupt()
+        monitor = self.execution_manager.current_task_monitor
+        if monitor is not None:
+            monitor.request_interrupt()
             return True
         return False
-
-    def _init_ace_components(self, agent):
-        """Initialize ACE components lazily on first use.
-
-        Args:
-            agent: Agent with LLM client
-        """
-        if self._ace_reflector is None:
-            # Initialize ACE roles with native implementation
-            # The native components use swecli's LLM client directly
-            self._ace_reflector = Reflector(agent.client)
-
-            self._ace_curator = Curator(agent.client)
 
     def enhance_query(self, query: str) -> str:
         """Enhance query with file contents if referenced.
@@ -234,27 +128,7 @@ class QueryProcessor:
         Returns:
             Enhanced query with file contents or @ references stripped
         """
-        import re
-
-        # Handle @file references - strip @ prefix so agent understands
-        # Pattern: @filename or @path/to/filename (with or without extension)
-        # This makes "@app.py" become "app.py" in the query
-        enhanced = re.sub(r'@([a-zA-Z0-9_./\-]+)', r'\1', query)
-
-        # Simple heuristic: look for file references and include content
-        lower_query = enhanced.lower()
-        if any(keyword in lower_query for keyword in ["explain", "what does", "show me"]):
-            # Try to extract file paths
-            words = enhanced.split()
-            for word in words:
-                if any(word.endswith(ext) for ext in [".py", ".js", ".ts", ".java", ".go", ".rs"]):
-                    try:
-                        content = self.file_ops.read_file(word)
-                        return f"{enhanced}\n\nFile contents of {word}:\n```\n{content}\n```"
-                    except Exception:
-                        pass
-
-        return enhanced
+        return self.context_preparer.enhance_query(query)
 
     def _prepare_messages(self, query: str, enhanced_query: str, agent) -> list:
         """Prepare messages for LLM API call.
@@ -267,73 +141,7 @@ class QueryProcessor:
         Returns:
             List of API messages
         """
-        session = self.session_manager.current_session
-        messages: list[dict] = []
-
-        if session:
-            messages = session.to_api_messages(window_size=self.REFLECTION_WINDOW_SIZE)
-            if enhanced_query != query:
-                for entry in reversed(messages):
-                    if entry.get("role") == "user":
-                        entry["content"] = enhanced_query
-                        break
-        else:
-            messages = []
-
-        system_content = agent.system_prompt
-        if session:
-            try:
-                playbook = session.get_playbook()
-                # Use ACE's as_context() method for intelligent bullet selection
-                # Configuration from config.playbook section
-                playbook_config = getattr(self.config, 'playbook', None)
-                if playbook_config:
-                    max_strategies = playbook_config.max_strategies
-                    use_selection = playbook_config.use_selection
-                    weights = playbook_config.scoring_weights.to_dict()
-                    embedding_model = playbook_config.embedding_model
-                    cache_file = playbook_config.cache_file
-                    # If cache_file not specified but cache enabled, use session-based default
-                    if cache_file is None and playbook_config.cache_embeddings and session:
-                        import os
-                        swecli_dir = os.path.expanduser(self.config.swecli_dir)
-                        cache_file = os.path.join(swecli_dir, "sessions", f"{session.session_id}_embeddings.json")
-                else:
-                    # Fallback to defaults if config not available
-                    max_strategies = 30
-                    use_selection = True
-                    weights = None
-                    embedding_model = "text-embedding-3-small"
-                    cache_file = None
-
-                playbook_context = playbook.as_context(
-                    query=query,  # Enables semantic matching (Phase 2)
-                    max_strategies=max_strategies,
-                    use_selection=use_selection,
-                    weights=weights,
-                    embedding_model=embedding_model,
-                    cache_file=cache_file,
-                )
-                if playbook_context:
-                    system_content = f"{system_content.rstrip()}\n\n## Learned Strategies\n{playbook_context}"
-            except Exception:  # pragma: no cover
-                pass
-
-        if not messages or messages[0].get("role") != "system":
-            messages.insert(0, {"role": "system", "content": system_content})
-        else:
-            messages[0]["content"] = system_content
-
-        # Debug: Log message count and estimated size
-        total_chars = sum(len(str(m.get("content", ""))) for m in messages)
-        estimated_tokens = total_chars // 4  # Rough estimate: 4 chars per token
-        if self.console and hasattr(self.console, "print"):
-            if estimated_tokens > 100000:  # Warn if > 100k tokens
-                self.console.print(
-                    f"[yellow]⚠ Large context: {len(messages)} messages, ~{estimated_tokens:,} tokens[/yellow]"
-                )
-
-        return messages
+        return self.context_preparer.prepare_messages(query, enhanced_query, agent)
 
     def _call_llm_with_progress(self, agent, messages, task_monitor) -> tuple:
         """Call LLM with progress display.
@@ -346,173 +154,10 @@ class QueryProcessor:
         Returns:
             Tuple of (response, latency_ms)
         """
-        from swecli.ui_textual.components.task_progress import TaskProgressDisplay
-        import time
+        # Note: task_monitor argument is deprecated in favor of internal management in execution manager
+        # but kept for compatibility with call sites if needed, though we rely on execution manager now.
+        return self.execution_manager.call_llm_with_progress(agent, messages)
 
-        # Get random thinking verb
-        thinking_verb = random.choice(self.THINKING_VERBS)
-        task_monitor.start(thinking_verb, initial_tokens=0)
-
-        # Track current monitor for interrupt support
-        self._current_task_monitor = task_monitor
-
-        # Create progress display with live updates
-        progress = TaskProgressDisplay(self.console, task_monitor)
-        progress.start()
-
-        # Give display a moment to render before HTTP call
-        time.sleep(0.05)
-
-        try:
-            # Call LLM
-            started = time.perf_counter()
-            response = agent.call_llm(messages, task_monitor=task_monitor)
-            latency_ms = int((time.perf_counter() - started) * 1000)
-
-            # Get LLM description
-            message_payload = response.get("message", {}) or {}
-            llm_description = response.get("content", message_payload.get("content", ""))
-
-            # Stop progress and show final status
-            progress.stop()
-            progress.print_final_status(replacement_message=llm_description)
-
-            return response, latency_ms
-        finally:
-            # Clear current monitor
-            self._current_task_monitor = None
-
-    def _record_tool_learnings(
-        self,
-        query: str,
-        tool_call_objects: Iterable["ToolCall"],
-        outcome: str,
-        agent,
-    ) -> None:
-        """Use ACE Reflector and Curator to evolve playbook from tool execution.
-
-        This implements the full ACE workflow:
-        1. Reflector analyzes what happened (LLM-powered)
-        2. Curator decides playbook changes (delta operations)
-        3. Apply deltas to evolve playbook
-
-        Args:
-            query: User's query
-            tool_call_objects: Tool calls that were executed
-            outcome: "success", "error", or "partial"
-            agent: Agent with LLM client (for ACE initialization)
-        """
-        session = self.session_manager.current_session
-        if not session:
-            return
-
-        tool_calls = list(tool_call_objects)
-        if not tool_calls:
-            return
-
-        # Skip if no agent response (ACE workflow needs it)
-        if not self._last_agent_response:
-            return
-
-        try:
-            # Initialize ACE components if needed
-            self._init_ace_components(agent)
-
-            playbook = session.get_playbook()
-
-            # Format tool feedback for reflector
-            feedback = self._format_tool_feedback(tool_calls, outcome)
-
-            # STEP 1: Reflect on execution using ACE Reflector
-            reflection = self._ace_reflector.reflect(
-                question=query,
-                agent_response=self._last_agent_response,
-                playbook=playbook,
-                ground_truth=None,
-                feedback=feedback
-            )
-
-            # STEP 2: Apply bullet tags from reflection
-            for bullet_tag in reflection.bullet_tags:
-                try:
-                    playbook.tag_bullet(bullet_tag.id, bullet_tag.tag)
-                except (ValueError, KeyError):
-                    continue
-
-            # STEP 3: Curate playbook updates using ACE Curator
-            self._execution_count += 1
-            curator_output = self._ace_curator.curate(
-                reflection=reflection,
-                playbook=playbook,
-                question_context=query,
-                progress=f"Query #{self._execution_count}"
-            )
-
-            # STEP 4: Apply delta operations
-            bullets_before = len(playbook.bullets())
-            playbook.apply_delta(curator_output.delta)
-            bullets_after = len(playbook.bullets())
-
-            # Save updated playbook
-            session.update_playbook(playbook)
-
-            # Debug logging
-            if bullets_after != bullets_before or curator_output.delta.operations:
-                debug_dir = os.path.dirname(self.PLAYBOOK_DEBUG_PATH)
-                os.makedirs(debug_dir, exist_ok=True)
-                with open(self.PLAYBOOK_DEBUG_PATH, "a", encoding="utf-8") as log:
-                    timestamp = datetime.now().isoformat()
-                    log.write(f"\n{'=' * 60}\n")
-                    log.write(f"🧠 ACE PLAYBOOK EVOLUTION - {timestamp}\n")
-                    log.write(f"{'=' * 60}\n")
-                    log.write(f"Query: {query}\n")
-                    log.write(f"Outcome: {outcome}\n")
-                    log.write(f"Bullets: {bullets_before} -> {bullets_after}\n")
-                    log.write(f"Delta Operations: {len(curator_output.delta.operations)}\n")
-                    for op in curator_output.delta.operations:
-                        log.write(f"  - {op.type}: {op.section} - {op.content[:80] if op.content else op.bullet_id}\n")
-                    log.write(f"Reflection Key Insight: {reflection.key_insight}\n")
-                    log.write(f"Curator Reasoning: {curator_output.delta.reasoning[:200]}\n")
-
-        except Exception as e:  # pragma: no cover
-            # Log error but don't break query processing
-            import traceback
-            debug_dir = os.path.dirname(self.PLAYBOOK_DEBUG_PATH)
-            os.makedirs(debug_dir, exist_ok=True)
-            with open(self.PLAYBOOK_DEBUG_PATH, "a", encoding="utf-8") as log:
-                log.write(f"\n{'!' * 60}\n")
-                log.write(f"❌ ACE ERROR: {str(e)}\n")
-                log.write(traceback.format_exc())
-
-    def _format_tool_feedback(self, tool_calls: list, outcome: str) -> str:
-        """Format tool execution results as feedback string for ACE Reflector.
-
-        Args:
-            tool_calls: List of ToolCall objects with results
-            outcome: "success", "error", or "partial"
-
-        Returns:
-            Formatted feedback string
-        """
-        lines = [f"Outcome: {outcome}"]
-        lines.append(f"Tools executed: {len(tool_calls)}")
-
-        if outcome == "success":
-            lines.append("All tools completed successfully")
-            # Add brief summary of what was done
-            tool_names = [tc.name for tc in tool_calls]
-            lines.append(f"Tools: {', '.join(tool_names)}")
-        elif outcome == "error":
-            # List errors
-            errors = [f"{tc.name}: {tc.error}" for tc in tool_calls if tc.error]
-            lines.append(f"Errors ({len(errors)}):")
-            for error in errors[:3]:  # First 3 errors
-                lines.append(f"  - {error[:200]}")
-        else:  # partial
-            successes = sum(1 for tc in tool_calls if not tc.error)
-            lines.append(f"Partial success: {successes}/{len(tool_calls)} tools succeeded")
-
-        return "\n".join(lines)
 
     def _execute_tool_call(
         self,
@@ -534,67 +179,17 @@ class QueryProcessor:
         Returns:
             Tool execution result
         """
-        from swecli.core.runtime.monitoring import TaskMonitor
-        from swecli.ui_textual.components.task_progress import TaskProgressDisplay
-        from swecli.core.runtime import OperationMode
-        import json
-
-        tool_name = tool_call["function"]["name"]
-        tool_args = json.loads(tool_call["function"]["arguments"])
-
-        # Format tool call display
-        tool_call_display = format_tool_call(tool_name, tool_args)
-
-        # Create task monitor for interrupt support
-        tool_monitor = TaskMonitor()
-        tool_monitor.start(tool_call_display, initial_tokens=0)
-
-        # Track current monitor for interrupt support
-        self._current_task_monitor = tool_monitor
-
-        # Show progress in PLAN mode
-        if self.mode_manager.current_mode == OperationMode.PLAN:
-            tool_progress = TaskProgressDisplay(self.console, tool_monitor)
-            tool_progress.start()
-        else:
-            # In NORMAL mode, show static symbol before approval
-            self.console.print(f"\n⏺ [cyan]{tool_call_display}[/cyan]")
-            tool_progress = TaskProgressDisplay(self.console, tool_monitor)
-            tool_progress.start()
-
-        try:
-            # Execute tool with interrupt support and ui_callback for nested display
-            result = tool_registry.execute_tool(
-                tool_name,
-                tool_args,
-                mode_manager=self.mode_manager,
-                approval_manager=approval_manager,
-                undo_manager=undo_manager,
-                task_monitor=tool_monitor,
-                session_manager=self.session_manager,
-                ui_callback=ui_callback,
-            )
-
-            # Update state
-            self._last_operation_summary = tool_call_display
-            if result.get("success"):
-                self._last_error = None
-            else:
-                self._last_error = result.get("error", "Tool execution failed")
-
-            # Stop progress if it was started
-            if tool_progress:
-                tool_progress.stop()
-
-            # Display result (skip for spawn_subagent since it shows separate_response)
-            if not result.get("separate_response"):
-                panel = self.output_formatter.format_tool_result(tool_name, tool_args, result)
-                self.console.print(panel)
-
-            return result
-        finally:
-            # Clear current monitor
-            self._current_task_monitor = None
+        result = self.execution_manager.execute_tool_call(
+            tool_call,
+            tool_registry,
+            approval_manager,
+            undo_manager,
+            ui_callback
+        )
+        # Update local state copies if needed (though we should start using execution manager's state)
+        self._last_operation_summary = self.execution_manager.last_operation_summary
+        self._last_error = self.execution_manager.last_error
+        return result
 
     def _should_nudge_agent(self, consecutive_reads: int, messages: list) -> bool:
         """Check if agent should be nudged to conclude.
@@ -710,10 +305,10 @@ class QueryProcessor:
                 normalized_description = (llm_description or "").strip()
 
                 # Store agent response for ACE learning
-                self._last_agent_response = AgentResponse(
+                self.ace_processor.set_last_agent_response(AgentResponse(
                     content=normalized_description,
                     tool_calls=tool_calls or []
-                )
+                ))
 
                 # If no tool calls, task is complete
                 if not has_tool_calls:
@@ -802,7 +397,7 @@ class QueryProcessor:
 
                 if tool_call_objects:
                     outcome = "error" if any(tc.error for tc in tool_call_objects) else "success"
-                    self._record_tool_learnings(query, tool_call_objects, outcome, agent)
+                    self.ace_processor.record_tool_learnings(query, tool_call_objects, outcome, agent)
 
                 # Check if agent needs nudge
                 if self._should_nudge_agent(consecutive_reads, messages):
@@ -1063,7 +658,7 @@ class QueryProcessor:
 
                 if tool_call_objects:
                     outcome = "error" if any(tc.error for tc in tool_call_objects) else "success"
-                    self._record_tool_learnings(query, tool_call_objects, outcome, agent)
+                    self.ace_processor.record_tool_learnings(query, tool_call_objects, outcome, agent)
 
                 # Nudge agent if too many consecutive reads
                 if self._should_nudge_agent(consecutive_reads, messages):
