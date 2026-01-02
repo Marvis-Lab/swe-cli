@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
@@ -11,6 +12,8 @@ from typing import Any
 from swecli.models.config import AppConfig
 
 from .specs import CompiledSubAgent, SubAgentSpec
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -162,66 +165,101 @@ class SubAgentManager:
         return next((s for s in ALL_SUBAGENTS if s["name"] == name), None)
 
     def _extract_input_files(self, task: str, local_working_dir: Path) -> list[Path]:
-        """Extract file paths referenced in the task.
+        """Extract DOCUMENT file paths referenced in the task.
+
+        Only extracts PDF, DOC, DOCX - formats that can contain research papers.
+        Images (PNG, JPEG, SVG) and data files (CSV) are NOT extracted.
 
         Looks for:
-        - @filename patterns (e.g., @2303.11366v4.pdf)
-        - Quoted file paths
-        - Absolute paths that exist
+        - @filename patterns (e.g., @paper.pdf)
+        - Quoted file paths (e.g., "paper.pdf")
+        - Unquoted document filenames (e.g., PDF paper.pdf)
 
         Args:
             task: The task description string
             local_working_dir: Local working directory to resolve relative paths
 
         Returns:
-            List of existing file paths to copy into Docker
+            List of existing document file paths to copy into Docker
         """
         import re
         files: list[Path] = []
-        seen: set[str] = set()
+        seen: set[str] = set()  # Track by resolved filename to avoid duplicates
 
-        # Pattern 1: @filename (common for PDF/file references)
-        at_mentions = re.findall(r'@([\w\-\.]+\.[a-zA-Z0-9]+)', task)
+        # Only document formats (PDF, DOC, DOCX)
+        doc_pattern = r'pdf|docx?'
+
+        # Pattern 1: @filename (e.g., @paper.pdf)
+        at_mentions = re.findall(rf'@([\w\-\.]+\.(?:{doc_pattern}))\b', task, re.I)
         for filename in at_mentions:
-            if filename in seen:
-                continue
             path = local_working_dir / filename
-            if path.exists() and path.is_file():
+            if path.exists() and path.is_file() and path.name not in seen:
                 files.append(path)
-                seen.add(filename)
+                seen.add(path.name)
 
-        # Pattern 2: Quoted file paths with common extensions
+        # Pattern 2: Quoted file paths (e.g., "paper.pdf")
         quoted_paths = re.findall(
-            r'["\']([^"\']+\.(?:pdf|png|jpg|jpeg|svg|csv|json|yaml|yml))["\']',
+            rf'["\']([^"\']+\.(?:{doc_pattern}))["\']',
             task,
             re.I
         )
         for p in quoted_paths:
-            if p in seen:
-                continue
             path = Path(p) if Path(p).is_absolute() else local_working_dir / p
-            if path.exists() and path.is_file():
+            if path.exists() and path.is_file() and path.name not in seen:
                 files.append(path)
-                seen.add(p)
+                seen.add(path.name)
+
+        # Pattern 3: Unquoted document filenames (e.g., "PDF paper.pdf")
+        unquoted_docs = re.findall(
+            rf'(?:^|[\s(,])([^\s"\'()<>]+\.(?:{doc_pattern}))\b',
+            task,
+            re.I
+        )
+        for filename in unquoted_docs:
+            path = Path(filename) if Path(filename).is_absolute() else local_working_dir / filename
+            if path.exists() and path.is_file() and path.name not in seen:
+                files.append(path)
+                seen.add(path.name)
+
+        # Pattern 4: Stems without extension (e.g., "paper 2303.11366v4" without .pdf)
+        # Match alphanumeric+dots patterns that could be paper IDs (e.g., arXiv IDs)
+        # Then check if a corresponding .pdf/.doc/.docx exists
+        stem_pattern = r'(?:^|[\s(,])(\d[\w\.\-]+v\d+|\d{4}\.\d+(?:v\d+)?)\b'
+        stems = re.findall(stem_pattern, task, re.I)
+        for stem in stems:
+            # Try adding document extensions
+            for ext in ['pdf', 'PDF', 'docx', 'DOCX', 'doc', 'DOC']:
+                candidate = local_working_dir / f"{stem}.{ext}"
+                if candidate.exists() and candidate.is_file():
+                    # Check if this file was already found (use resolved name)
+                    if candidate.name not in seen:
+                        files.append(candidate)
+                        seen.add(candidate.name)
+                    break
 
         return files
 
     def _copy_files_to_docker(
         self,
-        docker_handler: Any,
+        container_name: str,
         files: list[Path],
         workspace_dir: str,
         ui_callback: Any = None,
-    ) -> None:
-        """Copy local files into Docker container.
+    ) -> dict[str, str]:
+        """Copy local files into Docker container using docker cp.
 
         Args:
-            docker_handler: DockerToolHandler for executing commands
+            container_name: Docker container name or ID
             files: List of local file paths to copy
             workspace_dir: Target directory in Docker container
             ui_callback: Optional UI callback for progress display
+
+        Returns:
+            Mapping of Docker paths to local paths (for local-only tool remapping)
         """
-        import base64
+        import subprocess
+
+        path_mapping: dict[str, str] = {}
 
         for local_file in files:
             # Show copy progress
@@ -229,41 +267,28 @@ class SubAgentManager:
                 ui_callback.on_tool_call("docker_copy", {"file": local_file.name})
 
             try:
-                # Read file content locally
-                content = local_file.read_bytes()
+                docker_target = f"{workspace_dir}/{local_file.name}"
+                docker_path = f"{container_name}:{docker_target}"
 
-                # For binary files, use base64 encoding
-                encoded = base64.b64encode(content).decode('ascii')
+                # Use docker cp for reliable file transfer (handles any size/binary)
+                result = subprocess.run(
+                    ["docker", "cp", str(local_file), docker_path],
+                    capture_output=True,
+                    text=True,
+                    timeout=60.0,
+                )
 
-                # Write to Docker via base64 decode
-                docker_path = f"{workspace_dir}/{local_file.name}"
+                if result.returncode != 0:
+                    raise RuntimeError(f"docker cp failed: {result.stderr}")
 
-                # Use printf for large content to avoid shell argument limits
-                # Split into chunks if needed
-                chunk_size = 50000  # Safe size for shell
-                if len(encoded) > chunk_size:
-                    # Write in chunks
-                    docker_handler.run_command_sync({
-                        "command": f"rm -f {docker_path}"
-                    })
-                    for i in range(0, len(encoded), chunk_size):
-                        chunk = encoded[i:i + chunk_size]
-                        docker_handler.run_command_sync({
-                            "command": f"printf '%s' '{chunk}' >> {docker_path}.b64"
-                        })
-                    docker_handler.run_command_sync({
-                        "command": f"base64 -d {docker_path}.b64 > {docker_path} && rm {docker_path}.b64"
-                    })
-                else:
-                    docker_handler.run_command_sync({
-                        "command": f"printf '%s' '{encoded}' | base64 -d > {docker_path}"
-                    })
+                # Store mapping: Docker path → local path
+                path_mapping[docker_target] = str(local_file)
 
                 # Show completion
                 if ui_callback and hasattr(ui_callback, 'on_tool_result'):
                     ui_callback.on_tool_result("docker_copy", {"file": local_file.name}, {
                         "success": True,
-                        "output": f"Copied to {docker_path}",
+                        "output": f"Copied to {docker_target}",
                     })
 
             except Exception as e:
@@ -272,6 +297,8 @@ class SubAgentManager:
                         "success": False,
                         "error": str(e),
                     })
+
+        return path_mapping
 
     def _rewrite_task_for_docker(
         self,
@@ -287,7 +314,7 @@ class SubAgentManager:
             workspace_dir: Docker workspace directory
 
         Returns:
-            Task with paths rewritten to Docker paths
+            Task with paths rewritten to Docker paths, including Docker context
         """
         new_task = task
         for local_file in input_files:
@@ -296,7 +323,16 @@ class SubAgentManager:
             new_task = new_task.replace(f"@{local_file.name}", docker_path)
             # Also replace any absolute local paths
             new_task = new_task.replace(str(local_file), docker_path)
-        return new_task
+
+        # Prepend Docker context so the agent knows it's running in Docker
+        docker_context = f"""IMPORTANT: You are running inside a Docker container.
+Your working directory is: {workspace_dir}
+All file operations (read_file, write_file, edit_file, list_files, run_command) execute inside the container.
+Use paths relative to {workspace_dir}/ or absolute paths starting with {workspace_dir}/.
+Do NOT use local paths like /Users/... - they don't exist in this container.
+
+"""
+        return docker_context + new_task
 
     def _execute_with_docker(
         self,
@@ -344,10 +380,23 @@ class SubAgentManager:
 
         deployment = None
         loop = None
+
+        # Create nested callback wrapper FIRST - before any tool calls
+        # This ensures docker_start, docker_copy, and all subagent tool calls
+        # appear properly nested under the Spawn[subagent_name] parent
+        nested_callback = None
+        if ui_callback is not None:
+            from swecli.ui_textual.nested_callback import NestedUICallback
+            nested_callback = NestedUICallback(
+                parent_callback=ui_callback,
+                parent_context=name,
+                depth=1,
+            )
+
         try:
-            # Show Docker start as a tool call with spinner
-            if ui_callback and hasattr(ui_callback, 'on_tool_call'):
-                ui_callback.on_tool_call("docker_start", {"image": docker_config.image})
+            # Show Docker start as a tool call with spinner (using nested callback)
+            if nested_callback and hasattr(nested_callback, 'on_tool_call'):
+                nested_callback.on_tool_call("docker_start", {"image": docker_config.image})
 
             # Create and start Docker deployment
             deployment = DockerDeployment(config=docker_config)
@@ -357,12 +406,18 @@ class SubAgentManager:
             asyncio.set_event_loop(loop)
             loop.run_until_complete(deployment.start())
 
-            # Show Docker start completion
-            if ui_callback and hasattr(ui_callback, 'on_tool_result'):
-                ui_callback.on_tool_result("docker_start", {"image": docker_config.image}, {
+            # Show Docker start completion (using nested callback)
+            if nested_callback and hasattr(nested_callback, 'on_tool_result'):
+                nested_callback.on_tool_result("docker_start", {"image": docker_config.image}, {
                     "success": True,
                     "output": docker_config.image,
                 })
+
+            # Create workspace directory in Docker container
+            # (some images like uv don't have /workspace by default)
+            loop.run_until_complete(
+                deployment.runtime.run(f"mkdir -p {workspace_dir}")
+            )
 
             # Create Docker tool handler with local registry fallback for tools like read_pdf
             runtime = deployment.runtime
@@ -376,30 +431,41 @@ class SubAgentManager:
             # Extract input files from task (PDFs, images, etc.)
             input_files = self._extract_input_files(task, local_working_dir)
 
-            # Copy input files into Docker container
+            # Copy input files into Docker container using docker cp
+            # Returns mapping of Docker paths to local paths for local-only tools
+            path_mapping: dict[str, str] = {}
             if input_files:
-                self._copy_files_to_docker(docker_handler, input_files, workspace_dir, ui_callback)
+                path_mapping = self._copy_files_to_docker(
+                    deployment._container_name,
+                    input_files,
+                    workspace_dir,
+                    nested_callback,  # Use nested callback for proper nesting
+                )
 
             # Rewrite task to use Docker paths
             docker_task = self._rewrite_task_for_docker(task, input_files, workspace_dir)
 
             # Execute subagent with Docker tools (local_registry passed for fallback)
+            # Pass nested_callback - execute_subagent will detect it's already nested
             result = self.execute_subagent(
                 name=name,
                 task=docker_task,  # Use rewritten task with Docker paths
                 deps=deps,
-                ui_callback=ui_callback,
+                ui_callback=nested_callback,  # Already nested, will be used directly
                 task_monitor=task_monitor,
                 working_dir=workspace_dir,
                 docker_handler=docker_handler,
+                path_mapping=path_mapping,  # For local-only tool path remapping
             )
 
             # Copy generated files from Docker to local working directory
             if result.get("success"):
                 self._copy_files_from_docker(
-                    docker_handler=docker_handler,
+                    container_name=deployment._container_name,
                     workspace_dir=workspace_dir,
                     local_dir=local_working_dir,
+                    spec=spec,
+                    ui_callback=nested_callback,
                 )
 
             return result
@@ -427,55 +493,67 @@ class SubAgentManager:
 
     def _copy_files_from_docker(
         self,
-        docker_handler: Any,
+        container_name: str,
         workspace_dir: str,
         local_dir: Path,
+        spec: SubAgentSpec | None = None,
+        ui_callback: Any = None,
     ) -> None:
-        """Copy generated files from Docker container to local directory.
+        """Copy generated files from Docker container to local directory using docker cp.
 
-        Copies common code files: .py, .yaml, .toml, .txt, .json, .md
+        Uses docker cp for recursive directory copy, which is more reliable and
+        handles nested directories properly (e.g., reflexion_minimal/*.py).
+
+        Args:
+            container_name: Docker container name/ID
+            workspace_dir: Path inside container (e.g., /workspace)
+            local_dir: Local directory to copy files to
+            spec: SubAgentSpec for copy configuration
+            ui_callback: UI callback for progress display
         """
+        import subprocess
+
+        recursive = spec.get("copy_back_recursive", True) if spec else True
+
+        if not recursive:
+            return  # Skip copy if not configured
+
         try:
-            # List files in workspace
-            result = docker_handler.list_files_sync({"path": workspace_dir})
-            if not result.get("success"):
-                return
+            # Show copy operation in UI
+            if ui_callback and hasattr(ui_callback, 'on_tool_call'):
+                ui_callback.on_tool_call("docker_copy_back", {
+                    "from": f"{container_name}:{workspace_dir}",
+                    "to": str(local_dir),
+                })
 
-            files = result.get("output", "").strip().split("\n")
+            # Use docker cp to copy entire workspace recursively
+            # The "/." at the end copies contents without creating workspace folder
+            result = subprocess.run(
+                ["docker", "cp", f"{container_name}:{workspace_dir}/.", str(local_dir)],
+                capture_output=True,
+                text=True,
+                timeout=120.0,
+            )
 
-            # File extensions to copy
-            copy_extensions = {".py", ".yaml", ".yml", ".toml", ".txt", ".json", ".md", ".cfg"}
+            if result.returncode == 0:
+                logger.info(f"Copied workspace from Docker to {local_dir}")
+                if ui_callback and hasattr(ui_callback, 'on_tool_result'):
+                    ui_callback.on_tool_result("docker_copy_back", {}, {
+                        "success": True,
+                        "output": f"Copied to {local_dir}",
+                    })
+            else:
+                logger.warning(f"docker cp failed: {result.stderr}")
+                if ui_callback and hasattr(ui_callback, 'on_tool_result'):
+                    ui_callback.on_tool_result("docker_copy_back", {}, {
+                        "success": False,
+                        "error": result.stderr,
+                    })
 
-            for file_entry in files:
-                file_entry = file_entry.strip()
-                if not file_entry:
-                    continue
-
-                # Extract filename from listing (handle various formats)
-                filename = file_entry.split()[-1] if file_entry else ""
-                if not filename or filename.startswith("."):
-                    continue
-
-                # Check extension
-                file_path = Path(filename)
-                if file_path.suffix.lower() not in copy_extensions:
-                    continue
-
-                # Read file from Docker
-                docker_path = f"{workspace_dir}/{filename}"
-                read_result = docker_handler.read_file_sync({"file_path": docker_path})
-                if not read_result.get("success"):
-                    continue
-
-                content = read_result.get("output", "")
-
-                # Write to local directory
-                local_path = local_dir / filename
-                local_path.parent.mkdir(parents=True, exist_ok=True)
-                local_path.write_text(content)
-
-        except Exception:
-            pass  # Ignore copy errors, files may not exist
+        except subprocess.TimeoutExpired:
+            logger.error("docker cp timed out after 120 seconds")
+        except Exception as e:
+            logger.error(f"Failed to copy from Docker: {e}")
 
     def execute_subagent(
         self,
@@ -486,6 +564,7 @@ class SubAgentManager:
         task_monitor: Any = None,
         working_dir: Any = None,
         docker_handler: Any = None,
+        path_mapping: dict[str, str] | None = None,
     ) -> dict[str, Any]:
         """Execute a subagent synchronously with the given task.
 
@@ -499,6 +578,8 @@ class SubAgentManager:
             docker_handler: Optional DockerToolHandler for Docker-based execution.
                            When provided, all tool calls are routed through Docker
                            instead of local execution.
+            path_mapping: Mapping of Docker paths to local paths for local-only tools.
+                         Used to remap paths when tools like read_pdf run locally.
 
         Returns:
             Result dict with content, success, and messages
@@ -534,8 +615,13 @@ class SubAgentManager:
         if docker_handler is not None:
             # Use Docker-based tool registry for Docker execution
             # Pass local registry for fallback on tools not supported in Docker (e.g., read_pdf)
+            # Pass path_mapping to remap Docker paths to local paths for local-only tools
             from swecli.core.docker.tool_handler import DockerToolRegistry
-            tool_registry = DockerToolRegistry(docker_handler, local_registry=self._tool_registry)
+            tool_registry = DockerToolRegistry(
+                docker_handler,
+                local_registry=self._tool_registry,
+                path_mapping=path_mapping,
+            )
         else:
             tool_registry = self._tool_registry
 
@@ -555,6 +641,12 @@ class SubAgentManager:
                 }
 
             # Create new agent with overridden tool_registry and/or working_dir
+            import logging
+            _logger = logging.getLogger(__name__)
+            _logger.info(f"Creating SwecliAgent with tool_registry type: {type(tool_registry).__name__}")
+            _logger.info(f"  docker_handler is None: {docker_handler is None}")
+            _logger.info(f"  working_dir: {working_dir}")
+
             agent = SwecliAgent(
                 config=self._get_subagent_config(spec),
                 tool_registry=tool_registry,
@@ -568,14 +660,20 @@ class SubAgentManager:
             agent = compiled["agent"]
 
         # Create nested callback wrapper if parent callback provided
+        # If ui_callback is already a NestedUICallback, use it directly (avoids double-wrapping)
         nested_callback = None
         if ui_callback is not None:
             from swecli.ui_textual.nested_callback import NestedUICallback
-            nested_callback = NestedUICallback(
-                parent_callback=ui_callback,
-                parent_context=name,
-                depth=1,
-            )
+            if isinstance(ui_callback, NestedUICallback):
+                # Already nested (e.g., from _execute_with_docker), use directly
+                nested_callback = ui_callback
+            else:
+                # Wrap in NestedUICallback for proper nesting display
+                nested_callback = NestedUICallback(
+                    parent_callback=ui_callback,
+                    parent_context=name,
+                    depth=1,
+                )
 
         # Execute with isolated context (fresh message history)
         # max_iterations=None allows unlimited iterations - subagent runs until natural completion
