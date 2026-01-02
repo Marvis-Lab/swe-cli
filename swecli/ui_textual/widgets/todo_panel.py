@@ -1,8 +1,13 @@
 """Todo panel widget for displaying persistent todo list."""
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Optional
+
 from textual.widgets import Static
-from rich.table import Table
-from rich.text import Text
+
+if TYPE_CHECKING:
+    from swecli.ui_textual.managers.spinner_service import SpinnerService, SpinnerFrame
 
 
 class TodoPanel(Static):
@@ -28,11 +33,17 @@ class TodoPanel(Static):
         self.border_title = "TODOS"
         self.is_expanded = False  # Track collapsed/expanded state
 
-        # Spinner animation for active tasks
-        self._spinner_chars = ["←", "↖", "↑", "↗", "→", "↘", "↓", "↙"]
-        self._spinner_index = 0
-        self._spinner_timer = None
-        self._spinner_active = False
+        # SpinnerService integration
+        self._spinner_service: Optional["SpinnerService"] = None
+        self._spinner_id: str = ""
+
+    def set_spinner_service(self, service: "SpinnerService") -> None:
+        """Inject the SpinnerService.
+
+        Args:
+            service: The centralized SpinnerService instance
+        """
+        self._spinner_service = service
 
     def on_mount(self) -> None:
         """Called when widget is mounted to the DOM."""
@@ -75,26 +86,29 @@ class TodoPanel(Static):
 
     def _render_collapsed(self, todos: list) -> None:
         """Render compact summary with animated spinner for active tasks."""
-        total = len(todos)
         active_text = self._get_active_todo_text(todos)
 
         if active_text:
-            # Show spinner + active task text
-            spinner = self._spinner_chars[self._spinner_index]
-            summary = f"[yellow]{spinner} {active_text}[/yellow] [dim](Press Ctrl+T to expand/hide)[/dim]"
-
             # Start spinner if not already running
-            if not self._spinner_active:
-                self._start_spinner()
+            if not self._spinner_id:
+                self._start_spinner(active_text)
+            else:
+                # Update the active text in case it changed
+                if self._spinner_service:
+                    self._spinner_service.update_metadata(
+                        self._spinner_id, active_text=active_text
+                    )
+            # Initial render will happen via callback
         else:
             # No active task - show completion progress
             completed = len([t for t in todos if t.status == "done"])
+            total = len(todos)
             summary = f"{completed}/{total} completed [dim](Press Ctrl+T to expand/hide)[/dim]"
+            self.update(summary)
 
             # Stop spinner
             self._stop_spinner()
 
-        self.update(summary)
         self.border_title = ""  # No border title in collapsed mode
 
     def _render_expanded(self, todos: list) -> None:
@@ -142,38 +156,47 @@ class TodoPanel(Static):
                 return todo.active_form if todo.active_form else todo.title
         return None
 
-    def _start_spinner(self) -> None:
-        """Start the spinner animation timer."""
-        if self._spinner_timer is not None:
-            return  # Already running
+    def _start_spinner(self, active_text: str) -> None:
+        """Start the spinner animation via SpinnerService.
 
-        self._spinner_active = True
-        self._spinner_index = 0
-        self._spinner_timer = self.set_timer(0.15, self._animate_spinner)
-
-    def _stop_spinner(self) -> None:
-        """Stop the spinner animation timer."""
-        self._spinner_active = False
-        if self._spinner_timer is not None:
-            self._spinner_timer.stop()
-            self._spinner_timer = None
-
-    def _animate_spinner(self) -> None:
-        """Advance spinner animation to next frame."""
-        if not self._spinner_active:
+        Args:
+            active_text: The text to display with the spinner
+        """
+        if self._spinner_service is None:
             return
 
-        # Advance to next frame
-        self._spinner_index = (self._spinner_index + 1) % len(self._spinner_chars)
+        # Stop any existing spinner
+        self._stop_spinner()
 
-        # Re-render collapsed view with new spinner frame
-        if self.todo_handler:
-            todos = list(self.todo_handler._todos.values())
-            if todos and self.has_class("collapsed"):
-                self._render_collapsed(todos)
+        # Import here to avoid circular import
+        from swecli.ui_textual.managers.spinner_service import SpinnerType
 
-        # Schedule next frame
-        self._spinner_timer = self.set_timer(0.15, self._animate_spinner)
+        # Register with SpinnerService
+        self._spinner_id = self._spinner_service.register(
+            spinner_type=SpinnerType.TODO,
+            render_callback=self._on_spinner_frame,
+            metadata={"active_text": active_text},
+        )
+
+    def _stop_spinner(self) -> None:
+        """Stop the spinner via SpinnerService."""
+        if self._spinner_id and self._spinner_service:
+            self._spinner_service.stop(self._spinner_id, immediate=True)
+        self._spinner_id = ""
+
+    def _on_spinner_frame(self, frame: "SpinnerFrame") -> None:
+        """Callback invoked by SpinnerService for each animation frame.
+
+        Args:
+            frame: SpinnerFrame containing animation data
+        """
+        # Only render if still in collapsed mode
+        if self.is_expanded:
+            return
+
+        active_text = frame.metadata.get("active_text", "")
+        summary = f"[yellow]{frame.char} {active_text}[/yellow] [dim](Press Ctrl+T to expand/hide)[/dim]"
+        self.update(summary)
 
     def toggle_expansion(self) -> None:
         """Toggle between collapsed and expanded states."""
@@ -194,5 +217,5 @@ class TodoPanel(Static):
         self.refresh_display()
 
     def on_unmount(self) -> None:
-        """Clean up timer when widget unmounts."""
+        """Clean up spinner when widget unmounts."""
         self._stop_spinner()

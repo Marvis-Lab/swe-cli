@@ -25,6 +25,7 @@ from swecli.ui_textual.controllers.spinner_controller import SpinnerController
 from swecli.ui_textual.managers.console_buffer_manager import ConsoleBufferManager
 from swecli.ui_textual.managers.message_history import MessageHistory
 from swecli.ui_textual.managers.tool_summary_manager import ToolSummaryManager
+from swecli.ui_textual.managers.spinner_service import SpinnerService
 from swecli.ui_textual.renderers.welcome_panel import render_welcome_panel
 
 
@@ -109,6 +110,7 @@ class SWECLIChatApp(App):
         self._model_picker: ModelPickerController = ModelPickerController(self)
         self._approval_controller = ApprovalPromptController(self)
         self._spinner = SpinnerController(self, self._tips_manager, todo_handler=self.todo_handler)
+        self.spinner_service = SpinnerService(self)
         self._console_buffer = ConsoleBufferManager(self)
         self._queued_console_renderables = self._console_buffer._queue
         self._tool_summary = ToolSummaryManager(self)
@@ -163,6 +165,14 @@ class SWECLIChatApp(App):
         input_container = self.query_one("#input-container")
         self.status_bar = self.query_one("#status-bar", StatusBar)
         self.footer = self.query_one("#model-footer", ModelFooter)
+
+        # Inject SpinnerService into TodoPanel (uses callback API for arrow spinner)
+        try:
+            todo_panel = self.query_one("#todo-panel", TodoPanel)
+            todo_panel.set_spinner_service(self.spinner_service)
+        except Exception:
+            pass  # TodoPanel might not exist
+
         self.input_field.set_completer(self.completer)
         self.autocomplete_popup = Static("", id="autocomplete-popup")
         self.autocomplete_popup.can_focus = False
@@ -500,6 +510,9 @@ class SWECLIChatApp(App):
 
     def action_quit(self) -> None:
         """Quit the application (Ctrl+C)."""
+        # Stop all spinners before exiting
+        if hasattr(self, 'spinner_service'):
+            self.spinner_service.stop_all(immediate=True)
         self.exit()
 
     def action_scroll_up(self) -> None:
