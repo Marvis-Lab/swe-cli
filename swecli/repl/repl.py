@@ -41,6 +41,7 @@ from swecli.repl.commands import (
     MCPCommands,
     HelpCommand,
     ConfigCommands,
+    ToolCommands,
 )
 
 # UI components
@@ -219,6 +220,21 @@ class REPL:
             self.console,
             self.mcp_manager,
             refresh_runtime_callback=self._refresh_runtime_tooling,
+            agent=self.agent,
+        )
+
+        self.tool_commands = ToolCommands(
+            console=self.console,
+            config=self.config,
+            config_manager=self.config_manager,
+            mode_manager=self.mode_manager,
+            approval_manager=self.approval_manager,
+            undo_manager=self.undo_manager,
+            session_manager=self.session_manager,
+            mcp_manager=self.mcp_manager,
+            runtime_suite=self.runtime_suite,
+            bash_tool=self.bash_tool,
+            error_handler=self.error_handler,
             agent=self.agent,
         )
 
@@ -515,312 +531,18 @@ class REPL:
         elif cmd == "/mcp":
             self.mcp_commands.handle(args)
         elif cmd == "/init":
-            self._init_codebase(command)
+            self.tool_commands.init_codebase(command)
         elif cmd == "/run":
-            self._run_command(args)
+            self.tool_commands.run_command(args)
         elif cmd == "/resolve-issue":
-            self._resolve_issue(command)
+            self.tool_commands.resolve_issue(command)
         elif cmd == "/paper2code":
-            self._paper2code(command)
+            self.tool_commands.paper2code(command)
         else:
             self.console.print(f"[cyan]⏺[/cyan] {cmd}")
             self.console.print(f"  ⎿  [red]Unknown command[/red]")
             self.console.print("  ⎿  Type /help for available commands")
 
-    def _init_codebase(self, command: str) -> None:
-        """Handle /init command to analyze codebase and generate AGENTS.md.
-
-        Args:
-            command: The full command string (e.g., "/init" or "/init /path/to/project")
-        """
-        from swecli.commands.init_command import InitCommandHandler
-
-        # Create handler
-        handler = InitCommandHandler(self.agent, self.console)
-
-        # Parse arguments
-        try:
-            args = handler.parse_args(command)
-        except Exception as e:
-            self.console.print("[cyan]⏺[/cyan] init")
-            self.console.print(f"  ⎿  [red]Error parsing command: {e}[/red]")
-            return
-
-        # Create dependencies
-        deps = AgentDependencies(
-            mode_manager=self.mode_manager,
-            approval_manager=self.approval_manager,
-            undo_manager=self.undo_manager,
-            session_manager=self.session_manager,
-            working_dir=Path.cwd(),
-            console=self.console,
-            config=self.config,
-        )
-
-        # Execute init command
-        try:
-            result = handler.execute(args, deps)
-
-            self.console.print("[cyan]⏺[/cyan] init")
-            if result["success"]:
-                self.console.print(f"  ⎿  [green]{result['message']}[/green]")
-
-                # Show summary of what was generated
-                if "content" in result:
-                    self.console.print(f"  ⎿  [dim]{result['content']}[/dim]")
-            else:
-                self.console.print(f"  ⎿  [red]{result['message']}[/red]")
-
-        except Exception as e:
-            self.console.print("[cyan]⏺[/cyan] init")
-            self.console.print(f"  ⎿  [red]Error during initialization: {e}[/red]")
-            import traceback
-            traceback.print_exc()
-
-    def _resolve_issue(self, command: str, ui_callback: Any = None) -> None:
-        """Handle /resolve-issue command to fix GitHub issues.
-
-        Args:
-            command: The full command string (e.g., "/resolve-issue https://github.com/owner/repo/issues/123")
-            ui_callback: Optional UI callback for real-time display. If None, uses console output.
-        """
-        # Catch FD errors early - these happen in Textual's event loop
-        try:
-            self._resolve_issue_inner(command, ui_callback)
-        except ValueError as e:
-            if "fds_to_keep" in str(e):
-                # This is the subprocess FD error - handle gracefully
-                self.console.print("[cyan]⏺[/cyan] resolve-issue")
-                self.console.print("  ⎿  [yellow]Subprocess error in Textual context - retrying...[/yellow]")
-                # Try again - sometimes it works on retry
-                try:
-                    self._resolve_issue_inner(command, ui_callback)
-                except Exception as retry_e:
-                    self.console.print(f"  ⎿  [red]Error: {retry_e}[/red]")
-            else:
-                raise
-
-    def _resolve_issue_inner(self, command: str, ui_callback: Any = None) -> None:
-        """Inner implementation of resolve-issue command."""
-        from swecli.commands.issue_resolver import IssueResolverCommand
-
-        # Get subagent manager from runtime suite
-        subagent_manager = getattr(self.runtime_suite.agents, "subagent_manager", None)
-        if subagent_manager is None:
-            self.console.print("[cyan]⏺[/cyan] resolve-issue")
-            self.console.print("  ⎿  [red]Subagent manager not available[/red]")
-            return
-
-        # Create a simple console callback if no ui_callback provided
-        if ui_callback is None:
-            class ConsoleUICallback:
-                """Simple console-based UI callback for progress display."""
-                def __init__(self, console):
-                    self.console = console
-                    self._depth = 0
-
-                def on_thinking_start(self):
-                    pass
-
-                def on_thinking_complete(self):
-                    pass
-
-                def on_tool_call(self, tool_name: str, tool_args: dict):
-                    indent = "  " * self._depth
-                    args_str = ", ".join(f"{k}={v!r}" for k, v in list(tool_args.items())[:2])
-                    self.console.print(f"{indent}[cyan]⏺[/cyan] {tool_name}({args_str})")
-                    self._depth += 1
-
-                def on_tool_result(self, tool_name: str, tool_args: dict, result: str):
-                    self._depth = max(0, self._depth - 1)
-                    indent = "  " * self._depth
-                    # Show truncated result
-                    result_preview = str(result)[:100] + "..." if len(str(result)) > 100 else str(result)
-                    self.console.print(f"{indent}[dim]⎿[/dim]  {result_preview}")
-
-            ui_callback = ConsoleUICallback(self.console)
-
-        # Create handler
-        handler = IssueResolverCommand(
-            subagent_manager=subagent_manager,
-            mcp_manager=self.mcp_manager,
-            working_dir=self.config_manager.working_dir,
-            mode_manager=self.mode_manager,
-            approval_manager=self.approval_manager,
-            undo_manager=self.undo_manager,
-            ui_callback=ui_callback,
-        )
-
-        # Parse arguments
-        try:
-            args = handler.parse_args(command)
-        except ValueError as e:
-            self.console.print("[cyan]⏺[/cyan] resolve-issue")
-            self.console.print(f"  ⎿  [red]{e}[/red]")
-            return
-
-        # Execute issue resolution
-        try:
-            result = handler.execute(args)
-
-            if result.success:
-                self.console.print(f"  ⎿  [green]{result.message}[/green]")
-                if result.pr_url:
-                    self.console.print(f"  ⎿  Pull Request: {result.pr_url}")
-                if result.repo_path:
-                    self.console.print(f"  ⎿  [dim]Repository: {result.repo_path}[/dim]")
-            else:
-                self.console.print(f"  ⎿  [red]{result.message}[/red]")
-                if result.repo_path:
-                    self.console.print(f"  ⎿  [dim]Repository: {result.repo_path}[/dim]")
-
-        except Exception as e:
-            self.console.print(f"  ⎿  [red]Error: {e}[/red]")
-            import traceback
-            traceback.print_exc()
-
-    def _paper2code(self, command: str, ui_callback: Any = None) -> None:
-        """Handle /paper2code command.
-
-        Args:
-            command: Full command string
-            ui_callback: Optional UI callback
-        """
-        from swecli.commands.paper2code_command import Paper2CodeCommand
-
-        # Get subagent manager from runtime suite
-        subagent_manager = getattr(self.runtime_suite.agents, "subagent_manager", None)
-        if subagent_manager is None:
-            self.console.print("[cyan]⏺[/cyan] paper2code")
-            self.console.print("  ⎿  [red]Subagent manager not available[/red]")
-            return
-
-        # Create simple console callback if none provided
-        if ui_callback is None:
-            class ConsoleUICallback:
-                def __init__(self, console):
-                    self.console = console
-                    self._depth = 0
-                def on_thinking_start(self): pass
-                def on_thinking_complete(self): pass
-                def on_tool_call(self, tool_name: str, tool_args: dict):
-                    indent = "  " * self._depth
-                    args_str = ", ".join(f"{k}={v!r}" for k, v in list(tool_args.items())[:2])
-                    self.console.print(f"{indent}[cyan]⏺[/cyan] {tool_name}({args_str})")
-                    self._depth += 1
-                def on_tool_result(self, tool_name: str, tool_args: dict, result: str):
-                    self._depth = max(0, self._depth - 1)
-                    indent = "  " * self._depth
-                    result_preview = str(result)[:100] + "..." if len(str(result)) > 100 else str(result)
-                    self.console.print(f"{indent}[dim]⎿[/dim]  {result_preview}")
-
-            ui_callback = ConsoleUICallback(self.console)
-
-        # Create handler
-        handler = Paper2CodeCommand(
-            subagent_manager=subagent_manager,
-            working_dir=self.config_manager.working_dir,
-            mode_manager=self.mode_manager,
-            approval_manager=self.approval_manager,
-            undo_manager=self.undo_manager,
-            ui_callback=ui_callback,
-        )
-
-        try:
-            args = handler.parse_args(command)
-        except ValueError as e:
-            self.console.print("[cyan]⏺[/cyan] paper2code")
-            self.console.print(f"  ⎿  [red]{e}[/red]")
-            return
-
-        self.console.print(f"[cyan]⏺[/cyan] paper2code ({args.pdf_path})")
-
-        try:
-            result = handler.execute(args)
-            if result.success:
-                self.console.print(f"  ⎿  [green]{result.message}[/green]")
-                if result.output_path:
-                    self.console.print(f"  ⎿  Output: {result.output_path}")
-            else:
-                self.console.print(f"  ⎿  [red]{result.message}[/red]")
-
-        except Exception as e:
-            self.console.print(f"  ⎿  [red]Error: {e}[/red]")
-            import traceback
-            traceback.print_exc()
-
-    def _run_command(self, args: str) -> None:
-        """Handle /run command to execute a bash command.
-
-        Args:
-            args: Command to execute
-        """
-        if not args:
-            self.console.print("[cyan]⏺[/cyan] run")
-            self.console.print("  ⎿  [red]Please provide a command to run[/red]")
-            return
-
-        command = args.strip()
-
-        # Check if bash is enabled
-        if not self.config.enable_bash:
-            self.console.print("[cyan]⏺[/cyan] run")
-            self.console.print("  ⎿  [red]Bash execution is disabled[/red]")
-            self.console.print("  ⎿  [dim]Enable it in config with 'enable_bash: true'[/dim]")
-            return
-
-        # Create operation
-        operation = Operation(
-            id=str(hash(f"{command}{datetime.now()}")),
-            type=OperationType.BASH_EXECUTE,
-            target=command,
-            parameters={"command": command},
-            created_at=datetime.now(),
-        )
-
-        # Show preview
-        self.console.print(f"[cyan]⏺[/cyan] run ({command})")
-
-        # Check if approval is needed
-        if not self.mode_manager.needs_approval(operation):
-            operation.approved = True
-        else:
-            import asyncio
-            result = None
-            try:
-                # Try to get existing event loop
-                asyncio.get_running_loop()
-                # We're in an async context - skip approval, assume pre-approved
-                operation.approved = True
-            except RuntimeError:
-                # No running loop - we can run synchronously
-                result = asyncio.run(self.approval_manager.request_approval(
-                    operation=operation,
-                    preview=f"Execute: {command}"
-                ))
-
-                if not result.approved:
-                    self.console.print("  ⎿  [yellow]Operation cancelled[/yellow]")
-                    return
-
-        # Execute command
-        try:
-            bash_result = self.bash_tool.execute(command, operation=operation)
-
-            if bash_result.success:
-                self.console.print("  ⎿  [green]Success[/green]")
-                if bash_result.stdout:
-                    self.console.print(bash_result.stdout)
-                if bash_result.stderr:
-                    self.console.print(f"  ⎿  [yellow]Stderr:[/yellow] {bash_result.stderr}")
-                self.console.print(f"  ⎿  [dim]Exit code: {bash_result.exit_code}[/dim]")
-                # Record for history
-                self.undo_manager.record_operation(operation)
-            else:
-                self.console.print(f"  ⎿  [red]Command failed: {bash_result.error}[/red]")
-
-        except Exception as e:
-            self.error_handler.handle_error(e, operation)
 
     def _connect_mcp_servers(self) -> None:
         """Connect to enabled MCP servers on startup asynchronously."""

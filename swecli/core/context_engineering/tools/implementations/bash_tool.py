@@ -49,6 +49,11 @@ INTERACTIVE_COMMANDS = [
     r"\bpnpm\s+create\b",  # pnpm create
 ]
 
+# Timeout configuration for activity-based timeout
+# Only timeout if command produces no output for IDLE_TIMEOUT seconds
+IDLE_TIMEOUT = 60  # Timeout after 60 seconds of no output
+MAX_TIMEOUT = 600  # Absolute max runtime: 10 minutes (safety cap)
+
 
 class BashTool(BaseTool):
     """Tool for executing bash commands with safety checks."""
@@ -323,14 +328,18 @@ class BashTool(BaseTool):
                     pass
 
             # Poll process with interrupt checking and streaming output
+            # Activity-based timeout: only timeout if no output for IDLE_TIMEOUT seconds
             stdout_lines = []
             stderr_lines = []
             poll_interval = 0.1  # Check every 100ms
-            time_elapsed = 0.0
+            last_activity_time = start_time  # Track when we last received output
 
             while process.poll() is None:
-                # Stream output if callback is provided
-                if output_callback and capture_output:
+                had_activity = False
+
+                # Check for output to detect activity (for activity-based timeout)
+                # Also stream output if callback is provided
+                if capture_output:
                     # Use select to check if data is available (non-blocking)
                     try:
                         streams_to_check = []
@@ -344,20 +353,26 @@ class BashTool(BaseTool):
                             for stream in readable:
                                 line = stream.readline()
                                 if line:
+                                    had_activity = True  # Output received - reset idle timer
                                     is_stderr = (stream == process.stderr)
                                     line_text = line.rstrip('\n')
                                     if is_stderr:
                                         stderr_lines.append(line_text)
                                     else:
                                         stdout_lines.append(line_text)
-                                    # Call the callback with the line
-                                    try:
-                                        output_callback(line_text, is_stderr=is_stderr)
-                                    except Exception:
-                                        pass  # Don't let callback errors break execution
+                                    # Call the callback with the line if provided
+                                    if output_callback:
+                                        try:
+                                            output_callback(line_text, is_stderr=is_stderr)
+                                        except Exception:
+                                            pass  # Don't let callback errors break execution
                     except (ValueError, OSError):
                         # Stream may be closed or invalid
                         pass
+
+                # Reset activity timer if output was received
+                if had_activity:
+                    last_activity_time = time.time()
 
                 # Check for interrupt
                 if task_monitor is not None:
@@ -392,15 +407,22 @@ class BashTool(BaseTool):
                             operation_id=operation.id if operation else None,
                         )
 
-                # Check timeout
+                # Check activity-based timeout
                 time.sleep(poll_interval)
-                time_elapsed += poll_interval
-                if time_elapsed >= timeout:
-                    # Timeout - kill process
+                now = time.time()
+                idle_time = now - last_activity_time
+                total_time = now - start_time
+
+                # Timeout if idle too long OR absolute max exceeded
+                if idle_time >= IDLE_TIMEOUT or total_time >= MAX_TIMEOUT:
                     process.kill()
                     process.wait()
                     duration = time.time() - start_time
-                    error = f"Command timed out after {timeout} seconds"
+
+                    if total_time >= MAX_TIMEOUT:
+                        error = f"Command exceeded maximum runtime of {MAX_TIMEOUT} seconds"
+                    else:
+                        error = f"Command timed out after {int(idle_time)} seconds of no output"
 
                     if operation:
                         operation.mark_failed(error)
@@ -469,8 +491,9 @@ class BashTool(BaseTool):
             )
 
         except subprocess.TimeoutExpired as e:
+            # Fallback timeout handler (shouldn't normally be reached with activity-based timeout)
             duration = time.time() - start_time
-            error = f"Command timed out after {timeout} seconds"
+            error = f"Command timed out after {int(duration)} seconds"
 
             # Extract partial output from the exception
             partial_stdout = e.stdout if e.stdout else ""
