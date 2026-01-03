@@ -7,13 +7,48 @@ Supports two modes:
 
 from __future__ import annotations
 
+import asyncio
+import subprocess
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal, Optional
+from typing import TYPE_CHECKING, Any, Coroutine, Literal, Optional, TypeVar
+
+T = TypeVar("T")
+
+
+def _run_async(coro: Coroutine[Any, Any, T]) -> T:
+    """Run an async coroutine, handling both nested and standalone event loops.
+
+    When called from within a running event loop (e.g., Textual UI), we can't use
+    asyncio.run() directly. This helper detects that case and runs the coroutine
+    in a separate thread with its own event loop.
+
+    Args:
+        coro: The coroutine to execute
+
+    Returns:
+        The result of the coroutine
+    """
+    try:
+        # Check if there's already a running event loop
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        # No running loop - we can use asyncio.run() safely
+        return asyncio.run(coro)
+
+    # There's a running loop - run in a separate thread
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(asyncio.run, coro)
+        return future.result()
 
 if TYPE_CHECKING:
     from swecli.core.agents.subagents.manager import SubAgentManager
     from swecli.core.context_engineering.mcp.manager import MCPManager
+
+# Docker image configuration for GitHub mode
+GITHUB_RESOLVER_IMAGE = "swecli/resolver:latest"  # Pre-built template with git, python, etc.
+GITHUB_RESOLVER_FALLBACK = "python:3.11-slim"  # Fallback if template not available
 
 
 @dataclass
@@ -192,6 +227,27 @@ class IssueResolverCommand:
         else:  # github mode
             return self._execute_github_docker(args)
 
+    def _get_github_docker_image(self) -> tuple[str, bool]:
+        """Get Docker image for GitHub mode, with fallback.
+
+        Returns:
+            Tuple of (image_name, has_tools_preinstalled)
+        """
+        # Check if our template image exists locally
+        try:
+            result = subprocess.run(
+                ["docker", "images", "-q", GITHUB_RESOLVER_IMAGE],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if result.stdout.strip():
+                return GITHUB_RESOLVER_IMAGE, True
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            pass
+
+        return GITHUB_RESOLVER_FALLBACK, False
+
     def _execute_swebench_docker(self, args: IssueResolverArgs) -> ResolveResult:
         """Execute in SWE-bench mode using Docker container.
 
@@ -352,7 +408,7 @@ class IssueResolverCommand:
                     self.ui_callback.on_progress_complete("Container stopped")
 
         # Run the async workflow
-        return asyncio.run(run_docker_workflow())
+        return _run_async(run_docker_workflow())
 
     def _build_task(self, instance: Any, branch_name: str) -> str:
         """Build task description for Docker-based execution.
@@ -505,9 +561,11 @@ Use absolute paths like: /testbed/path/to/file.py
                 f"Fetched #{issue.number}: {issue.title[:50]}..."
             )
 
-        # Step 4: Create Docker deployment config (generic Python image)
+        # Step 4: Get Docker image (template or fallback)
+        docker_image, has_tools = self._get_github_docker_image()
+
         config = DockerConfig(
-            image="python:3.11-slim",
+            image=docker_image,
             memory=args.docker_memory,
             cpus=args.docker_cpus,
         )
@@ -523,17 +581,17 @@ Use absolute paths like: /testbed/path/to/file.py
             try:
                 # Step 5: Start container
                 if self.ui_callback and hasattr(self.ui_callback, "on_progress_start"):
-                    self.ui_callback.on_progress_start("Docker: Starting container...")
+                    self.ui_callback.on_progress_start(f"Docker: Starting {docker_image}...")
 
                 await deployment.start()
                 container_name = deployment._container_name
                 runtime = deployment.runtime
 
-                # Step 6: Install git in container (python:3.11-slim doesn't have it)
-                if self.ui_callback and hasattr(self.ui_callback, "on_progress_update"):
-                    self.ui_callback.on_progress_update("Docker: Installing git...")
-
-                await runtime.run("apt-get update && apt-get install -y git", timeout=120.0)
+                # Step 6: Install git only if using fallback image
+                if not has_tools:
+                    if self.ui_callback and hasattr(self.ui_callback, "on_progress_update"):
+                        self.ui_callback.on_progress_update("Docker: Installing git...")
+                    await runtime.run("apt-get update && apt-get install -y git", timeout=120.0)
 
                 # Step 7: Clone repo inside container
                 if self.ui_callback and hasattr(self.ui_callback, "on_progress_update"):
@@ -628,7 +686,7 @@ Use absolute paths like: /testbed/path/to/file.py
                     self.ui_callback.on_progress_complete("Container stopped")
 
         # Run the async workflow
-        return asyncio.run(run_docker_workflow())
+        return _run_async(run_docker_workflow())
 
     def _build_github_task(self, issue: Any, issue_info: Any, branch_name: str) -> str:
         """Build task description for GitHub issue resolution."""

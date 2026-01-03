@@ -1034,7 +1034,7 @@ Work through each implementation step in order. Mark each todo item as 'in_progr
 
         # Capture any console output during execution
         with self.repl.console.capture() as capture:
-            self.repl._resolve_issue(command, ui_callback=ui_callback)
+            self.repl.tool_commands.resolve_issue(command, ui_callback=ui_callback)
 
         output = capture.get()
         if output.strip():
@@ -1062,7 +1062,7 @@ Work through each implementation step in order. Mark each todo item as 'in_progr
 
         # Capture any console output during execution
         with self.repl.console.capture() as capture:
-            self.repl._paper2code(command, ui_callback=ui_callback)
+            self.repl.tool_commands.paper2code(command, ui_callback=ui_callback)
 
         output = capture.get()
         if output.strip():
