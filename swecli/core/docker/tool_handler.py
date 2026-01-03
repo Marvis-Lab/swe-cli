@@ -701,6 +701,7 @@ class DockerToolRegistry:
 
             if has_error:
                 # Inject retry prompt to force LLM to fix before proceeding
+                # Store in _llm_suffix so UI doesn't display it, only LLM sees it
                 retry_prompt = (
                     "\n\n⚠️ COMMAND FAILED (exit code {})\n"
                     "You MUST fix this error before proceeding.\n"
@@ -712,7 +713,7 @@ class DockerToolRegistry:
                     "4. Only proceed after success"
                 ).format(exit_code)
                 result = dict(result)
-                result["output"] = output + retry_prompt
+                result["_llm_suffix"] = retry_prompt  # Hidden from UI, visible to LLM
                 logger.info("  → Injected retry prompt (command failed)")
 
         logger.info(f"  → Docker result: success={result.get('success')}")

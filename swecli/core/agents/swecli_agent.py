@@ -248,6 +248,9 @@ class SwecliAgent(BaseAgent):
                     if result["success"]
                     else f"Error: {result.get('error', 'Tool execution failed')}"
                 )
+                # Append LLM-only suffix (e.g., retry prompts) - hidden from UI
+                if result.get("_llm_suffix"):
+                    tool_result += result["_llm_suffix"]
                 messages.append(
                     {
                         "role": "tool",
