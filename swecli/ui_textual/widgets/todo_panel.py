@@ -181,7 +181,7 @@ class TodoPanel(Static):
     def _stop_spinner(self) -> None:
         """Stop the spinner via SpinnerService."""
         if self._spinner_id and self._spinner_service:
-            self._spinner_service.stop(self._spinner_id, immediate=True)
+            self._spinner_service.stop(self._spinner_id)
         self._spinner_id = ""
 
     def _on_spinner_frame(self, frame: "SpinnerFrame") -> None:
