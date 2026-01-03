@@ -151,7 +151,7 @@ class TerminalBoxRenderer:
         if apply_error_style:
             content_line.append(display, style=self.ERROR_COLOR)
         else:
-            content_line.append(display)
+            content_line.append(display, style=self.POINTER_COLOR)  # Grey to match results
 
         # Pad to EXACT content_width for aligned right border
         padding_needed = content_width - len(display)

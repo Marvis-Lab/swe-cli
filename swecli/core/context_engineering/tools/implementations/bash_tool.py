@@ -304,13 +304,16 @@ class BashTool(BaseTool):
                 if operation:
                     operation.mark_success()
 
+                # Return captured startup output (not empty strings)
+                stdout_text = "".join(stdout_lines).rstrip()
+                stderr_text = "".join(stderr_lines).rstrip()
                 return BashResult(
                     success=True,
                     command=command,
                     exit_code=0,  # Process started
-                    stdout="",  # Background process running, output captured separately
-                    stderr="",
-                    duration=0.0,
+                    stdout=stdout_text,  # Return captured startup output
+                    stderr=stderr_text,
+                    duration=time.time() - start_time,
                     operation_id=operation.id if operation else None,
                 )
 
