@@ -61,7 +61,7 @@ SPINNER_CONFIGS: Dict[SpinnerType, SpinnerConfig] = {
     SpinnerType.NESTED: SpinnerConfig(
         chars=("⏺", "○"),
         interval_ms=300,
-        style="bright_cyan",
+        style="green",  # Flashing animation uses green (not cyan like spinners)
     ),
     SpinnerType.TODO: SpinnerConfig(
         chars=("←", "↖", "↑", "↗", "→", "↘", "↓", "↙"),

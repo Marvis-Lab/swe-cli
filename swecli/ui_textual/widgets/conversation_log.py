@@ -458,7 +458,7 @@ class ConversationLog(RichLog):
         formatted = Text()
         indent = "  " * depth
         formatted.append(indent)
-        formatted.append(f"{self._nested_spinner_chars[0]} ", style="bright_cyan")
+        formatted.append(f"{self._nested_spinner_chars[0]} ", style="green")
         formatted.append_text(tool_text)
         formatted.append(" (0s)", style="#7a8594")  # Initial elapsed time
 
@@ -516,7 +516,7 @@ class ConversationLog(RichLog):
         indent = "  " * self._nested_tool_depth
         formatted.append(indent)
         spinner_char = self._nested_spinner_chars[self._nested_spinner_index]
-        formatted.append(f"{spinner_char} ", style="bright_cyan")
+        formatted.append(f"{spinner_char} ", style="green")
         formatted.append_text(self._nested_tool_text.copy())
         formatted.append(f" ({elapsed}s)", style="#7a8594")
 
