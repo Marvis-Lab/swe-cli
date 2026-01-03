@@ -479,7 +479,9 @@ class ConversationLog(RichLog):
         """Start the independent timer for nested tool spinner animation."""
         if self._nested_tool_timer is not None:
             self._nested_tool_timer.stop()
-        self._nested_tool_timer = self.set_timer(0.12, self._animate_nested_tool_spinner)
+        # Run first animation frame IMMEDIATELY to ensure animation shows
+        # even for fast tools that complete in <100ms
+        self._animate_nested_tool_spinner()
 
     def _animate_nested_tool_spinner(self) -> None:
         """Animate the nested tool spinner independently."""
