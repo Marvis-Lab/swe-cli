@@ -364,6 +364,9 @@ class TextualUICallback:
 
                 # Record summary for history
                 stdout = result.get("stdout") or result.get("output") or ""
+                # Filter out placeholder messages
+                if stdout in ("Command executed", "Command execution failed"):
+                    stdout = ""
                 if stdout and self.chat_app and hasattr(self.chat_app, "record_tool_summary"):
                     lines = stdout.strip().splitlines()
                     if lines:
@@ -380,15 +383,19 @@ class TextualUICallback:
                 command = self._normalize_arguments(tool_args).get("command", "")
                 working_dir = os.getcwd()
                 # Combine stdout and stderr for display, avoiding duplicates
-                # Note: result["output"] is already stdout+stderr combined, and
-                # result["error"] often contains the same text, so we only use
-                # the raw stdout/stderr to avoid showing the same message 3x
+                # First try stdout/stderr, then fall back to combined output key
                 output_parts = []
                 if result.get("stdout"):
                     output_parts.append(result["stdout"])
                 if result.get("stderr"):
                     output_parts.append(result["stderr"])
                 combined_output = "\n".join(output_parts).strip()
+                # Fall back to "output" key if stdout/stderr are empty
+                # Filter out placeholder messages that aren't actual command output
+                if not combined_output and result.get("output"):
+                    output_value = result["output"].strip()
+                    if output_value not in ("Command executed", "Command execution failed"):
+                        combined_output = output_value
                 self._run_on_ui(
                     self.conversation.add_bash_output_box,
                     combined_output,
@@ -523,18 +530,20 @@ class TextualUICallback:
             self._display_todo_complete_result(todo_data, depth)
         elif tool_name in ("bash_execute", "run_command") and isinstance(result, dict):
             # Special handling for bash commands - render in VS Code Terminal style
-            stdout = result.get("stdout") or ""
+            # Docker returns "output", local bash returns "stdout"/"stderr"
+            stdout = result.get("stdout") or result.get("output") or ""
+            # Filter out placeholder messages
+            if stdout in ("Command executed", "Command execution failed"):
+                stdout = ""
             stderr = result.get("stderr") or ""
             is_error = not result.get("success", True)
             exit_code = result.get("exit_code", 1 if is_error else 0)
             command = normalized_args.get("command", "")
 
-            # Get working_dir from subagent context if available
-            working_dir = "."
+            # Get working_dir from tool args (Docker subagents inject this with prefix)
+            working_dir = normalized_args.get("working_dir", ".")
 
             # Combine stdout and stderr for display, avoiding duplicates
-            # Note: result["output"] is already stdout+stderr, and result["error"]
-            # often contains the same text, so we only use raw stdout/stderr
             output = stdout.strip()
             if stderr.strip():
                 output = (output + "\n" + stderr.strip()) if output else stderr.strip()

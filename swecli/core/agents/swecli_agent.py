@@ -213,6 +213,12 @@ class SwecliAgent(BaseAgent):
                 # Check if this is a subagent (has overridden system prompt)
                 is_subagent = hasattr(self, "_subagent_system_prompt") and self._subagent_system_prompt is not None
 
+                # Log tool registry type for debugging Docker execution
+                import logging
+                _logger = logging.getLogger(__name__)
+                _logger.info(f"SwecliAgent executing tool: {tool_name}")
+                _logger.info(f"  tool_registry type: {type(self.tool_registry).__name__}")
+
                 result = self.tool_registry.execute_tool(
                     tool_name,
                     tool_args,
@@ -221,6 +227,7 @@ class SwecliAgent(BaseAgent):
                     undo_manager=deps.undo_manager,
                     task_monitor=task_monitor,
                     is_subagent=is_subagent,
+                    ui_callback=ui_callback,
                 )
 
                 # Notify UI callback after tool execution

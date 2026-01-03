@@ -41,10 +41,13 @@ class NestedUICallback(BaseUICallback):
         self._depth = depth
         self._path_sanitizer = path_sanitizer
 
-    def _sanitize_tool_args(self, tool_args: Dict[str, Any]) -> Dict[str, Any]:
+    def _sanitize_tool_args(
+        self, tool_name: str, tool_args: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """Sanitize path arguments for display.
 
         Args:
+            tool_name: Name of the tool being called
             tool_args: Original tool arguments from LLM
 
         Returns:
@@ -58,6 +61,13 @@ class NestedUICallback(BaseUICallback):
         for key in ("path", "file_path", "working_dir"):
             if key in sanitized and isinstance(sanitized[key], str):
                 sanitized[key] = self._path_sanitizer(sanitized[key])
+
+        # For bash commands, inject working_dir with Docker prefix
+        # This allows the UI to show where the command is being executed
+        if tool_name in ("bash_execute", "run_command"):
+            if "working_dir" not in sanitized:
+                sanitized["working_dir"] = self._path_sanitizer(".")
+
         return sanitized
 
     def on_thinking_start(self) -> None:
@@ -92,8 +102,8 @@ class NestedUICallback(BaseUICallback):
         if self._parent is None:
             return
 
-        # Sanitize paths for display (e.g., /Users/.../file.py → /workspace/file.py)
-        display_args = self._sanitize_tool_args(tool_args)
+        # Sanitize paths for display (e.g., /Users/.../file.py → [uv:id]:/workspace/file.py)
+        display_args = self._sanitize_tool_args(tool_name, tool_args)
 
         # Check if parent supports nested tool calls
         if hasattr(self._parent, "on_nested_tool_call"):
@@ -126,8 +136,8 @@ class NestedUICallback(BaseUICallback):
         if self._parent is None:
             return
 
-        # Sanitize paths for display (e.g., /Users/.../file.py → file.py)
-        display_args = self._sanitize_tool_args(tool_args)
+        # Sanitize paths for display (e.g., /Users/.../file.py → [uv:id]:/workspace/file.py)
+        display_args = self._sanitize_tool_args(tool_name, tool_args)
 
         # Check if parent supports nested tool results
         if hasattr(self._parent, "on_nested_tool_result"):

@@ -61,7 +61,7 @@ class ProcessToolHandler:
                 "output": None,
             }
 
-        # Create output callback for streaming if ui_callback supports it
+        # Create output callback for streaming bash output to UI
         output_callback = None
         if context.ui_callback and hasattr(context.ui_callback, 'on_bash_output_line'):
             def _output_callback(line: str, is_stderr: bool = False) -> None:
@@ -87,6 +87,8 @@ class ProcessToolHandler:
             return {
                 "success": True,
                 "output": combined_output or "Command executed",
+                "stdout": result.stdout,
+                "stderr": result.stderr,
                 "exit_code": result.exit_code,
                 "error": None,
             }
@@ -95,7 +97,9 @@ class ProcessToolHandler:
         error_message = "\n".join(error_parts) if error_parts else "Command execution failed"
         return {
             "success": False,
-            "output": None,
+            "output": combined_output or None,
+            "stdout": result.stdout,
+            "stderr": result.stderr,
             "exit_code": result.exit_code,
             "error": error_message,
         }

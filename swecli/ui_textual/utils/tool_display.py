@@ -139,8 +139,12 @@ def _is_path_string(value: str, key: str | None = None) -> bool:
 def _normalize_path_display(value: str) -> str:
     try:
         expanded = os.path.expanduser(value.strip())
-        # os.path.abspath handles both relative inputs and already-absolute paths
-        return os.path.abspath(expanded)
+        # Only normalize paths that are already absolute
+        # Leave relative paths as-is (important for Docker subagents where
+        # we intentionally sanitize /Users/.../file.py → file.py)
+        if os.path.isabs(expanded):
+            return os.path.abspath(expanded)
+        return expanded
     except Exception:
         return value
 
@@ -308,6 +312,22 @@ def format_tool_call(tool_name: str, tool_args: Mapping[str, Any]) -> str:
         elif not str(todo_id).startswith("todo-"):
             todo_id = f"todo-{todo_id}"
         return f"Complete ({todo_id})"
+
+    # Enhanced formatting for bash/run commands - show working_dir for Docker
+    elif tool_name in ("run_command", "bash_execute") and tool_args:
+        command = tool_args.get("command", "")
+        working_dir = tool_args.get("working_dir", "")
+
+        # Truncate long commands for display
+        max_cmd_len = 60
+        cmd_display = command.replace("\n", " ").strip()
+        if len(cmd_display) > max_cmd_len:
+            cmd_display = cmd_display[:max_cmd_len - 3] + "..."
+
+        # If working_dir has Docker prefix (e.g., [uv:abc123]:/workspace), show it
+        if working_dir and working_dir.startswith("["):
+            return f"Run ({working_dir}) {cmd_display}"
+        return f"Run ({cmd_display})"
 
     # Default formatting for other tools
     verb, label = get_tool_display_parts(tool_name)
