@@ -481,6 +481,26 @@ Use ONLY the filename or relative path for all file operations.
             path_sanitizer=path_sanitizer,
         )
 
+    def _extract_task_description(self, task: str) -> str:
+        """Extract a short description from the task for Spawn header display.
+
+        Args:
+            task: The full task description
+
+        Returns:
+            A short description suitable for display
+        """
+        # Look for PDF filename in task
+        if ".pdf" in task.lower():
+            match = re.search(r'([^\s/]+\.pdf)', task, re.IGNORECASE)
+            if match:
+                return f"Implement {match.group(1)}"
+        # Default: first line, truncated
+        first_line = task.split('\n')[0][:50]
+        if len(task.split('\n')[0]) > 50:
+            return first_line + "..."
+        return first_line
+
     def _execute_with_docker(
         self,
         name: str,
@@ -528,6 +548,14 @@ Use ONLY the filename or relative path for all file operations.
         deployment = None
         loop = None
         nested_callback = None
+
+        # Show Spawn header (before Docker operations)
+        spawn_args = {
+            "subagent_type": name,
+            "description": self._extract_task_description(task),
+        }
+        if ui_callback and hasattr(ui_callback, "on_tool_call"):
+            ui_callback.on_tool_call("spawn_subagent", spawn_args)
 
         try:
             # Create Docker deployment first to get container name
@@ -621,6 +649,12 @@ Use ONLY the filename or relative path for all file operations.
                     ui_callback=nested_callback,
                 )
 
+            # Show Spawn completion
+            if ui_callback and hasattr(ui_callback, "on_tool_result"):
+                ui_callback.on_tool_result("spawn_subagent", spawn_args, {
+                    "success": result.get("success", True),
+                })
+
             return result
 
         except Exception as e:
@@ -628,6 +662,12 @@ Use ONLY the filename or relative path for all file operations.
             # Stop the docker_start spinner by reporting failure
             if nested_callback and hasattr(nested_callback, 'on_tool_result'):
                 nested_callback.on_tool_result("docker_start", {"image": docker_config.image}, {
+                    "success": False,
+                    "error": str(e),
+                })
+            # Show Spawn failure
+            if ui_callback and hasattr(ui_callback, "on_tool_result"):
+                ui_callback.on_tool_result("spawn_subagent", spawn_args, {
                     "success": False,
                     "error": str(e),
                 })

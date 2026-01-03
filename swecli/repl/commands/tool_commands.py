@@ -231,8 +231,6 @@ class ToolCommands(CommandHandler):
             self.print_error(str(e))
             return
 
-        self.print_command_header("paper2code", args.pdf_path)
-
         try:
             result = handler.execute(args)
             if result.success:
@@ -321,17 +319,17 @@ class ToolCommands(CommandHandler):
 
     def _create_console_callback(self):
         """Create a simple console callback for progress display."""
-        class ConsoleUICallback:
-            """Simple console-based UI callback for progress display."""
+        from swecli.ui_textual.callback_interface import BaseUICallback
+
+        class ConsoleUICallback(BaseUICallback):
+            """Simple console-based UI callback for progress display.
+
+            Inherits from BaseUICallback for consistent interface.
+            Only overrides on_tool_call and on_tool_result with console output.
+            """
             def __init__(self, console):
                 self.console = console
                 self._depth = 0
-
-            def on_thinking_start(self):
-                pass
-
-            def on_thinking_complete(self):
-                pass
 
             def on_tool_call(self, tool_name: str, tool_args: dict):
                 indent = "  " * self._depth
@@ -339,7 +337,7 @@ class ToolCommands(CommandHandler):
                 self.console.print(f"{indent}[cyan]⏺[/cyan] {tool_name}({args_str})")
                 self._depth += 1
 
-            def on_tool_result(self, tool_name: str, tool_args: dict, result: str):
+            def on_tool_result(self, tool_name: str, tool_args: dict, result):
                 self._depth = max(0, self._depth - 1)
                 indent = "  " * self._depth
                 # Show truncated result
