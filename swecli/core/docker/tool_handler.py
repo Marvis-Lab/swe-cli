@@ -8,8 +8,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Union
+from typing import TYPE_CHECKING, Any, Coroutine, TypeVar, Union
 
 if TYPE_CHECKING:
     from .remote_runtime import RemoteRuntime
@@ -17,6 +18,34 @@ if TYPE_CHECKING:
 __all__ = ["DockerToolHandler", "DockerToolRegistry"]
 
 logger = logging.getLogger(__name__)
+
+T = TypeVar("T")
+
+
+def _run_async(coro: Coroutine[Any, Any, T]) -> T:
+    """Run an async coroutine, handling both nested and standalone event loops.
+
+    When called from within a running event loop (e.g., Textual UI), we can't use
+    asyncio.run() directly. This helper detects that case and runs the coroutine
+    in a separate thread with its own event loop.
+
+    Args:
+        coro: The coroutine to execute
+
+    Returns:
+        The result of the coroutine
+    """
+    try:
+        # Check if there's already a running event loop
+        asyncio.get_running_loop()
+    except RuntimeError:
+        # No running loop - we can use asyncio.run() safely
+        return asyncio.run(coro)
+
+    # There's a running loop - run in a separate thread
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(asyncio.run, coro)
+        return future.result()
 
 
 class DockerToolHandler:
@@ -405,36 +434,36 @@ class DockerToolHandler:
         HTTP sessions. Each call gets a fresh RemoteRuntime/aiohttp session.
         """
         fresh = self._create_fresh_handler()
-        return asyncio.run(fresh.run_command(arguments, context))
+        return _run_async(fresh.run_command(arguments, context))
 
     def read_file_sync(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """Synchronous wrapper for read_file."""
         fresh = self._create_fresh_handler()
-        return asyncio.run(fresh.read_file(arguments))
+        return _run_async(fresh.read_file(arguments))
 
     def write_file_sync(
         self, arguments: dict[str, Any], context: Any = None
     ) -> dict[str, Any]:
         """Synchronous wrapper for write_file."""
         fresh = self._create_fresh_handler()
-        return asyncio.run(fresh.write_file(arguments, context))
+        return _run_async(fresh.write_file(arguments, context))
 
     def edit_file_sync(
         self, arguments: dict[str, Any], context: Any = None
     ) -> dict[str, Any]:
         """Synchronous wrapper for edit_file."""
         fresh = self._create_fresh_handler()
-        return asyncio.run(fresh.edit_file(arguments, context))
+        return _run_async(fresh.edit_file(arguments, context))
 
     def list_files_sync(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """Synchronous wrapper for list_files."""
         fresh = self._create_fresh_handler()
-        return asyncio.run(fresh.list_files(arguments))
+        return _run_async(fresh.list_files(arguments))
 
     def search_sync(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """Synchronous wrapper for search."""
         fresh = self._create_fresh_handler()
-        return asyncio.run(fresh.search(arguments))
+        return _run_async(fresh.search(arguments))
 
 
 class DockerToolRegistry:
@@ -475,6 +504,8 @@ class DockerToolRegistry:
         }
         # Tools that should always run locally (not in Docker)
         self._local_only_tools = {"read_pdf", "analyze_image", "capture_screenshot"}
+        # Track last run_command result for todo verification (Layer 1 & 2)
+        self._last_run_command_result: dict[str, Any] | None = None
 
     def _remap_paths_to_local(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """Remap Docker paths in arguments to local paths.
@@ -599,6 +630,34 @@ class DockerToolRegistry:
                 }
 
         if tool_name not in self._sync_handlers:
+            # LAYER 2: Block complete_todo if last run_command failed
+            if tool_name == "complete_todo" and self._last_run_command_result:
+                last = self._last_run_command_result
+                exit_code = last.get("exit_code", 0)
+                output = last.get("output", "")
+
+                if self._check_command_has_error(exit_code, output):
+                    # Truncate error output for readability
+                    error_preview = output[:500] if output else "No output"
+                    logger.warning(
+                        f"  → Blocked complete_todo: last run_command failed (exit_code={exit_code})"
+                    )
+                    return {
+                        "success": False,
+                        "error": (
+                            f"Cannot complete todo: last run_command failed.\n\n"
+                            f"Exit code: {exit_code}\n"
+                            f"Output:\n{error_preview}\n\n"
+                            f"Fix the error and run the command successfully before completing this todo."
+                        ),
+                        "output": None,
+                        "blocked_by": "command_verification",
+                    }
+
+                # Clear state after successful verification (command succeeded)
+                logger.info("  → Cleared _last_run_command_result (command succeeded)")
+                self._last_run_command_result = None
+
             # Try local fallback for unknown tools
             logger.info(f"  → Routing to LOCAL (unknown tool: {tool_name}, not in sync_handlers)")
             if self._local_registry is not None:
@@ -630,8 +689,69 @@ class DockerToolRegistry:
 
         handler = self._sync_handlers[tool_name]
         result = handler(arguments)
+
+        # LAYER 1: Track run_command results and inject retry prompt on failure
+        if tool_name == "run_command":
+            self._last_run_command_result = result
+
+            # Check for failure indicators
+            exit_code = result.get("exit_code", 0)
+            output = result.get("output", "")
+            has_error = self._check_command_has_error(exit_code, output)
+
+            if has_error:
+                # Inject retry prompt to force LLM to fix before proceeding
+                retry_prompt = (
+                    "\n\n⚠️ COMMAND FAILED (exit code {})\n"
+                    "You MUST fix this error before proceeding.\n"
+                    "Do NOT call complete_todo until this command succeeds.\n"
+                    "Steps:\n"
+                    "1. Analyze the error above\n"
+                    "2. Fix the issue (edit files, install deps, etc.)\n"
+                    "3. Run the command again\n"
+                    "4. Only proceed after success"
+                ).format(exit_code)
+                result = dict(result)
+                result["output"] = output + retry_prompt
+                logger.info("  → Injected retry prompt (command failed)")
+
         logger.info(f"  → Docker result: success={result.get('success')}")
         return result
+
+    def _check_command_has_error(self, exit_code: int, output: str) -> bool:
+        """Check if command output indicates an error.
+
+        Args:
+            exit_code: Command exit code
+            output: Command output string
+
+        Returns:
+            True if the command appears to have failed
+        """
+        if exit_code != 0:
+            return True
+
+        # Check for common error patterns in output
+        error_patterns = [
+            "Error:",
+            "error:",
+            "ERROR:",
+            "ModuleNotFoundError",
+            "ImportError",
+            "No such file or directory",
+            "SyntaxError",
+            "TypeError",
+            "ValueError",
+            "Traceback (most recent call last)",
+            "FileNotFoundError",
+            "NameError",
+            "AttributeError",
+        ]
+        for pattern in error_patterns:
+            if pattern in output:
+                return True
+
+        return False
 
     def get_tool_specs(self) -> list[dict[str, Any]]:
         """Return tool specifications for the agent.
