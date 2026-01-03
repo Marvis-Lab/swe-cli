@@ -142,6 +142,7 @@ class QueryProcessor:
     REFLECTION_WINDOW_SIZE = 10
     MAX_PLAYBOOK_STRATEGIES = 30
     PLAYBOOK_DEBUG_PATH = "/tmp/swecli_debug/playbook_evolution.log"
+    MAX_ERROR_RECOVERY_ATTEMPTS = 3  # Max times to inject recovery prompt on tool failure
 
     def __init__(
         self,
@@ -615,6 +616,33 @@ class QueryProcessor:
             return True
         return False
 
+    def _should_attempt_error_recovery(self, messages: list, attempts: int) -> bool:
+        """Check if we should inject a recovery prompt after tool failure.
+
+        When the LLM returns no tool calls after a tool error, this method
+        determines if we should prompt it to fix the issue and retry.
+
+        Args:
+            messages: Message history
+            attempts: Number of recovery attempts already made
+
+        Returns:
+            True if recovery should be attempted
+        """
+        if attempts >= self.MAX_ERROR_RECOVERY_ATTEMPTS:
+            return False
+
+        # Find the most recent tool result
+        for msg in reversed(messages):
+            if msg.get("role") == "tool":
+                content = msg.get("content", "")
+                # Check if the tool failed
+                if content.startswith("Error:"):
+                    return True
+                # Only check the most recent tool result
+                break
+        return False
+
     def _render_status_line(self):
         """Render the status line with current context."""
         total_tokens = self.session_manager.current_session.total_tokens() if self.session_manager.current_session else 0
@@ -671,6 +699,7 @@ class QueryProcessor:
             # ReAct loop: Reasoning → Acting → Observing
             consecutive_reads = 0
             iteration = 0
+            error_recovery_attempts = 0
             READ_OPERATIONS = {"read_file", "list_files", "search_code"}
 
             while True:
@@ -715,8 +744,25 @@ class QueryProcessor:
                     tool_calls=tool_calls or []
                 )
 
-                # If no tool calls, task is complete
+                # If no tool calls, check if we should attempt error recovery
                 if not has_tool_calls:
+                    # Check if last tool failed and we should try to recover
+                    if self._should_attempt_error_recovery(messages, error_recovery_attempts):
+                        # Add assistant's suggestion to history
+                        if normalized_description:
+                            messages.append({
+                                "role": "assistant",
+                                "content": raw_llm_content or normalized_description,
+                            })
+                        # Inject recovery prompt
+                        messages.append({
+                            "role": "user",
+                            "content": "The previous command failed. Please fix the issue and try again.",
+                        })
+                        error_recovery_attempts += 1
+                        continue  # Loop back to LLM
+
+                    # No recovery needed - task is complete
                     if not normalized_description:
                         normalized_description = "Warning: model returned no reply."
                     self.console.print(f"\n[dim]{normalized_description}[/dim]")
@@ -866,6 +912,7 @@ class QueryProcessor:
             # ReAct loop: Reasoning → Acting → Observing
             consecutive_reads = 0
             iteration = 0
+            error_recovery_attempts = 0
             READ_OPERATIONS = {"read_file", "list_files", "search_code"}
 
             while True:
@@ -924,8 +971,28 @@ class QueryProcessor:
                 if ui_callback and hasattr(ui_callback, 'on_thinking_complete'):
                     ui_callback.on_thinking_complete()
 
-                # If no tool calls, task is complete
+                # If no tool calls, check if we should attempt error recovery
                 if not has_tool_calls:
+                    # Check if last tool failed and we should try to recover
+                    if self._should_attempt_error_recovery(messages, error_recovery_attempts):
+                        # Show assistant's suggestion via UI callback
+                        if normalized_description and ui_callback and hasattr(ui_callback, 'on_assistant_message'):
+                            ui_callback.on_assistant_message(normalized_description)
+                        # Add assistant's suggestion to history
+                        if normalized_description:
+                            messages.append({
+                                "role": "assistant",
+                                "content": raw_llm_content or normalized_description,
+                            })
+                        # Inject recovery prompt
+                        messages.append({
+                            "role": "user",
+                            "content": "The previous command failed. Please fix the issue and try again.",
+                        })
+                        error_recovery_attempts += 1
+                        continue  # Loop back to LLM
+
+                    # No recovery needed - task is complete
                     if not normalized_description:
                         normalized_description = "Warning: model returned no reply."
                     if ui_callback and hasattr(ui_callback, 'on_assistant_message'):
