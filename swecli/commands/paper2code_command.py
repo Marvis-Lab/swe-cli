@@ -29,6 +29,97 @@ class Paper2CodeResult:
 class Paper2CodeCommand:
     """Handler for Paper2Code subagent execution."""
 
+    def _verify_output(self, target_dir: Path) -> Paper2CodeResult:
+        """Verify the generated project is at least minimally runnable.
+
+        Checks:
+        - main.py exists
+        - dependency installation succeeds (best-effort)
+        - running main.py succeeds (best-effort)
+
+        Notes:
+            This runs on the host (not in the subagent Docker). It is meant as a
+            safety net to catch obvious cases where the agent skipped Stage 4.
+        """
+        main_py = target_dir / "main.py"
+        if not main_py.exists():
+            return Paper2CodeResult(
+                success=False,
+                message=f"Verification failed: missing entrypoint {main_py.name}",
+                output_path=target_dir,
+            )
+
+        # Prefer uv if available; fall back to python -m pip.
+        install_cmds = [
+            "uv pip install -e .",
+            "python -m pip install -e .",
+        ]
+
+        install_ok = False
+        last_install_output = ""
+        for cmd in install_cmds:
+            try:
+                import subprocess
+
+                proc = subprocess.run(
+                    cmd,
+                    shell=True,
+                    cwd=str(target_dir),
+                    capture_output=True,
+                    text=True,
+                )
+                last_install_output = (proc.stdout or "") + (proc.stderr or "")
+                if proc.returncode == 0:
+                    install_ok = True
+                    break
+            except Exception as e:  # noqa: BLE001
+                last_install_output = str(e)
+
+        if not install_ok:
+            # Don't dump huge logs; include a small tail.
+            tail = "\n".join(last_install_output.splitlines()[-20:])
+            return Paper2CodeResult(
+                success=False,
+                message=(
+                    "Verification failed: could not install generated project dependencies.\n"
+                    "Tried: uv pip install -e . and python -m pip install -e .\n"
+                    f"Output (tail):\n{tail}"
+                ),
+                output_path=target_dir,
+            )
+
+        # Run entrypoint.
+        try:
+            import subprocess
+
+            proc = subprocess.run(
+                "python main.py",
+                shell=True,
+                cwd=str(target_dir),
+                capture_output=True,
+                text=True,
+            )
+            if proc.returncode != 0:
+                out = (proc.stdout or "") + (proc.stderr or "")
+                tail = "\n".join(out.splitlines()[-40:])
+                return Paper2CodeResult(
+                    success=False,
+                    message=f"Verification failed: running main.py exited with {proc.returncode}.\nOutput (tail):\n{tail}",
+                    output_path=target_dir,
+                )
+        except Exception as e:  # noqa: BLE001
+            return Paper2CodeResult(
+                success=False,
+                message=f"Verification failed: could not run main.py ({e})",
+                output_path=target_dir,
+            )
+
+        return Paper2CodeResult(
+            success=True,
+            message="Verification succeeded",
+            output_path=target_dir,
+        )
+
     def __init__(
         self,
         subagent_manager: "SubAgentManager",
@@ -133,6 +224,16 @@ class Paper2CodeCommand:
                 message=f"Subagent failed: {result.get('error', 'Unknown error')}",
             )
 
+        # Post-run verification: ensure the agent produced a runnable project.
+        # This is a lightweight guardrail in case the agent skipped Stage 4.
+        verification = self._verify_output(target_dir)
+        if not verification.success:
+            return Paper2CodeResult(
+                success=False,
+                message=verification.message,
+                output_path=target_dir,
+            )
+
         return Paper2CodeResult(
             success=True,
             message=f"Paper implemented in {target_dir}",
@@ -141,16 +242,17 @@ class Paper2CodeCommand:
 
     def _build_task(self, pdf_path: str, output_dir: str) -> str:
         """Build the task description for the subagent."""
-        return f"""Implement the research paper found at: {pdf_path}
+        pdf_name = Path(pdf_path).name
 
-The goal is to create a complete, runnable codebase implementation of this paper.
-You are working in: {output_dir}
+        return f"""Implement the research paper: {pdf_name}
 
-Follow the defined 4-stage pipeline:
-1. Planning (Analysis & Design)
-2. Analysis (Detailed Logic)
-3. Coding (Implementation)
-4. Debugging (Verification)
+Create a minimal, runnable Python implementation with:
+- pyproject.toml with dependencies
+- config.yaml with paper's hyperparameters
+- main.py CLI entrypoint that runs a demo
+- Core implementation modules
+- README.md with usage
 
-Read the PDF first using `read_pdf`.
+IMPORTANT: Do NOT stop until main.py exists and runs successfully.
+Test with: uv pip install -e . --system && python main.py
 """
