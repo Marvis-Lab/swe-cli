@@ -341,8 +341,8 @@ class TextualUICallback:
         if isinstance(result, dict) and result.get("interrupted"):
             return
 
-        # Skip displaying spawn_subagent errors - nested tool already showed the error
-        if tool_name == "spawn_subagent" and not result.get("success", True):
+        # Skip displaying spawn_subagent results - the command handler shows its own result
+        if tool_name == "spawn_subagent":
             return
 
         # Special handling for bash commands - close streaming box or show summary

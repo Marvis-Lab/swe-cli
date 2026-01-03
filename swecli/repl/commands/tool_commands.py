@@ -234,9 +234,7 @@ class ToolCommands(CommandHandler):
         try:
             result = handler.execute(args)
             if result.success:
-                self.print_success(result.message)
-                if result.output_path:
-                    self.print_info(f"Output: {result.output_path}")
+                self.console.print(f"[green]⏺[/green] {result.message}")
             else:
                 self.print_error(result.message)
 
