@@ -350,6 +350,9 @@ async def create_session(req: CreateSessionRequest, x_api_key: str = Header(None
     time.sleep(0.2)
     shell.sendline(f"export PS1=\\"{PS1}\\" PS2=\\"\\" PS0=\\"\\"; export PAGER=cat")
     shell.expect(PS1, timeout=req.startup_timeout)
+    # Start in /workspace where files are written
+    shell.sendline("cd /workspace 2>/dev/null || cd /testbed 2>/dev/null || true")
+    shell.expect(PS1, timeout=req.startup_timeout)
     sessions[req.session] = shell
     return CreateSessionResponse(success=True, session=req.session)
 

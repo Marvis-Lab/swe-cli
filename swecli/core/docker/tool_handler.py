@@ -154,6 +154,9 @@ class DockerToolHandler:
         path = arguments.get("file_path") or arguments.get("path", "")
         content = arguments.get("content", "")
 
+        # Debug: Confirm Docker write is being used
+        logger.info(f"DockerToolHandler.write_file called with path: {path}")
+
         if not path:
             return {
                 "success": False,
@@ -163,6 +166,7 @@ class DockerToolHandler:
 
         # Translate path to container path
         container_path = self._translate_path(path)
+        logger.info(f"  → Translated to Docker path: {container_path}")
 
         try:
             await self.runtime.write_file(container_path, content)
@@ -361,30 +365,21 @@ class DockerToolHandler:
         if path.startswith("/testbed") or path.startswith("/workspace"):
             return path
 
-        # If it's an absolute host path, extract the repo-relative part
-        # e.g., /Users/foo/bar/repo/src/file.py -> /workspace/src/file.py
+        # Relative path - prepend workspace (strip leading ./)
+        if not path.startswith("/"):
+            clean_path = path.lstrip("./")
+            return f"{self.workspace_dir}/{clean_path}"
+
+        # Absolute host path (e.g., /Users/.../file.py)
+        # Extract just the filename - safest for Docker since we can't know
+        # the original repo structure
         try:
             p = Path(path)
-            if p.is_absolute():
-                # Try to find a common repo pattern and extract relative path
-                parts = p.parts
-                # Look for common patterns that indicate repo root
-                for i, part in enumerate(parts):
-                    if part in {"src", "lib", "tests", "test", "docs"} or part.endswith(".git"):
-                        # Take from one level up
-                        if i > 0:
-                            relative = "/".join(parts[i:])
-                            return f"{self.workspace_dir}/{relative}"
-
-                # Default: just use the filename/last few parts
-                if len(parts) > 2:
-                    relative = "/".join(parts[-2:])
-                    return f"{self.workspace_dir}/{relative}"
-                return f"{self.workspace_dir}/{p.name}"
+            return f"{self.workspace_dir}/{p.name}"
         except Exception:
             pass
 
-        # Assume it's relative to workspace
+        # Fallback: just use the path as-is under workspace
         return f"{self.workspace_dir}/{path}"
 
     # Synchronous wrappers for use with SwecliAgent (which expects sync handlers)
@@ -457,15 +452,18 @@ class DockerToolRegistry:
         self,
         docker_handler: DockerToolHandler,
         local_registry: Any = None,
+        path_mapping: dict[str, str] | None = None,
     ):
         """Initialize with a Docker tool handler and optional local fallback.
 
         Args:
             docker_handler: DockerToolHandler instance
             local_registry: Optional local ToolRegistry for fallback on unsupported tools
+            path_mapping: Mapping of Docker paths to local paths for local-only tools
         """
         self.handler = docker_handler
         self._local_registry = local_registry
+        self._path_mapping = path_mapping or {}
         # Use sync handlers for compatibility with SwecliAgent
         self._sync_handlers = {
             "run_command": self.handler.run_command_sync,
@@ -477,6 +475,63 @@ class DockerToolRegistry:
         }
         # Tools that should always run locally (not in Docker)
         self._local_only_tools = {"read_pdf", "analyze_image", "capture_screenshot"}
+
+    def _remap_paths_to_local(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        """Remap Docker paths in arguments to local paths.
+
+        Uses the path_mapping to convert Docker paths (e.g., /workspace/paper.pdf)
+        back to their original local paths for local-only tool execution.
+
+        Args:
+            arguments: Tool arguments that may contain Docker paths
+
+        Returns:
+            Arguments with Docker paths replaced by local paths
+        """
+        if not self._path_mapping:
+            return arguments
+
+        remapped = dict(arguments)
+        for key, value in remapped.items():
+            if isinstance(value, str):
+                # Check if this value matches a Docker path in our mapping
+                for docker_path, local_path in self._path_mapping.items():
+                    # Match exact Docker path or path ending with Docker path
+                    if value == docker_path or value.endswith(docker_path):
+                        remapped[key] = local_path
+                        logger.info(f"  Remapped {key}: {value} → {local_path}")
+                        break
+                    # Also match by filename (for when LLM outputs just the filename)
+                    docker_filename = Path(docker_path).name
+                    if value == docker_filename or value.endswith(f"/{docker_filename}"):
+                        remapped[key] = local_path
+                        logger.info(f"  Remapped {key} (by filename): {value} → {local_path}")
+                        break
+        return remapped
+
+    def _sanitize_local_paths(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        """Sanitize local paths in arguments to relative paths.
+
+        This is a safety net that catches any local paths the LLM might output
+        and converts them to just filenames for Docker execution.
+
+        Args:
+            arguments: Tool arguments that may contain local paths
+
+        Returns:
+            Arguments with local paths replaced by filenames
+        """
+        import re
+        sanitized = dict(arguments)
+        for key, value in sanitized.items():
+            if isinstance(value, str):
+                # Match absolute paths starting with /Users/, /home/, /var/, etc.
+                match = re.match(r'^(/Users/|/home/|/var/|/tmp/).+/([^/]+)$', value)
+                if match:
+                    filename = match.group(2)
+                    sanitized[key] = filename
+                    logger.warning(f"Sanitized local path: {value} → {filename}")
+        return sanitized
 
     def execute_tool(
         self,
@@ -510,13 +565,24 @@ class DockerToolRegistry:
         Returns:
             Tool execution result
         """
+        # Sanitize any local paths in arguments (safety net for LLM outputs)
+        arguments = self._sanitize_local_paths(arguments)
+
+        # Logging to trace tool routing (INFO for visibility during testing)
+        logger.info(f"DockerToolRegistry.execute_tool: {tool_name}")
+        logger.debug(f"  sync_handlers: {list(self._sync_handlers.keys())}")
+        logger.debug(f"  local_only_tools: {self._local_only_tools}")
+
         # Check if tool should run locally (not in Docker)
         if tool_name in self._local_only_tools:
+            logger.info(f"  → Routing to LOCAL (local-only tool: {tool_name})")
             if self._local_registry is not None:
+                # Remap Docker paths to local paths for local execution
+                local_arguments = self._remap_paths_to_local(arguments)
                 # Fall back to local registry for this tool
                 return self._local_registry.execute_tool(
                     tool_name,
-                    arguments,
+                    local_arguments,
                     mode_manager=mode_manager,
                     approval_manager=approval_manager,
                     undo_manager=undo_manager,
@@ -534,6 +600,7 @@ class DockerToolRegistry:
 
         if tool_name not in self._sync_handlers:
             # Try local fallback for unknown tools
+            logger.info(f"  → Routing to LOCAL (unknown tool: {tool_name}, not in sync_handlers)")
             if self._local_registry is not None:
                 return self._local_registry.execute_tool(
                     tool_name,
@@ -552,8 +619,19 @@ class DockerToolRegistry:
                 "output": None,
             }
 
+        logger.info(f"  → Routing to DOCKER handler: {tool_name}")
+
+        # For run_command, inject default working_dir if not specified
+        # This ensures commands run from /workspace where files are written
+        if tool_name == "run_command" and "working_dir" not in arguments:
+            arguments = dict(arguments)
+            arguments["working_dir"] = self.handler.workspace_dir
+            logger.info(f"  → Injected default working_dir: {self.handler.workspace_dir}")
+
         handler = self._sync_handlers[tool_name]
-        return handler(arguments)
+        result = handler(arguments)
+        logger.info(f"  → Docker result: success={result.get('success')}")
+        return result
 
     def get_tool_specs(self) -> list[dict[str, Any]]:
         """Return tool specifications for the agent.
