@@ -3,21 +3,26 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Dict
+from pathlib import Path
+from typing import Any, Dict, Optional
 
 from swecli.ui_textual.formatters.style_formatter import StyleFormatter
 from swecli.ui_textual.utils.tool_display import build_tool_call_text
+
+# Path argument keys that should be resolved to absolute paths
+_PATH_ARG_KEYS = {"path", "file_path", "working_dir", "directory", "dir", "target"}
 
 
 class TextualUICallback:
     """Callback for real-time display of agent actions in Textual UI."""
 
-    def __init__(self, conversation_log, chat_app=None):
+    def __init__(self, conversation_log, chat_app=None, working_dir: Optional[Path] = None):
         """Initialize the UI callback.
 
         Args:
             conversation_log: The ConversationLog widget to display messages
             chat_app: The main chat app (SWECLIChatApp instance) for controlling processing state
+            working_dir: Working directory for resolving relative paths in tool displays
         """
         self.conversation = conversation_log
         self.chat_app = chat_app
@@ -36,6 +41,8 @@ class TextualUICallback:
         self._bash_buffer: list[tuple[str, bool]] = []
         self._last_bash_flush: float = 0
         self._BASH_FLUSH_INTERVAL: float = 0.1  # 100ms
+        # Working directory for resolving relative paths
+        self._working_dir = working_dir
 
     def on_thinking_start(self) -> None:
         """Called when the agent starts thinking."""
@@ -265,7 +272,9 @@ class TextualUICallback:
             self._run_on_ui(self.chat_app._stop_local_spinner)
 
         normalized_args = self._normalize_arguments(tool_args)
-        display_text = build_tool_call_text(tool_name, normalized_args)
+        # Resolve relative paths to absolute for display
+        display_args = self._resolve_paths_in_args(normalized_args)
+        display_text = build_tool_call_text(tool_name, display_args)
 
         # Use SpinnerService for unified spinner management
         if self._app is not None and hasattr(self._app, 'spinner_service'):
@@ -334,8 +343,6 @@ class TextualUICallback:
 
         # Skip displaying spawn_subagent errors - nested tool already showed the error
         if tool_name == "spawn_subagent" and not result.get("success", True):
-            if self.chat_app and hasattr(self.chat_app, "resume_reasoning_spinner"):
-                self._run_on_ui(self.chat_app.resume_reasoning_spinner)
             return
 
         # Special handling for bash commands - close streaming box or show summary
@@ -365,8 +372,6 @@ class TextualUICallback:
                             summary += f" ({len(lines)} lines)"
                         self._run_on_ui(self.chat_app.record_tool_summary, tool_name, self._normalize_arguments(tool_args), [summary])
 
-                if self.chat_app and hasattr(self.chat_app, "resume_reasoning_spinner"):
-                    self._run_on_ui(self.chat_app.resume_reasoning_spinner)
                 return
 
             # Fallback: show terminal box if no streaming was happening (no output case)
@@ -374,16 +379,15 @@ class TextualUICallback:
                 import os
                 command = self._normalize_arguments(tool_args).get("command", "")
                 working_dir = os.getcwd()
-                # Combine stdout, stderr, output, and error for display
+                # Combine stdout and stderr for display, avoiding duplicates
+                # Note: result["output"] is already stdout+stderr combined, and
+                # result["error"] often contains the same text, so we only use
+                # the raw stdout/stderr to avoid showing the same message 3x
                 output_parts = []
                 if result.get("stdout"):
                     output_parts.append(result["stdout"])
                 if result.get("stderr"):
                     output_parts.append(result["stderr"])
-                if result.get("output"):
-                    output_parts.append(result["output"])
-                if result.get("error"):
-                    output_parts.append(result["error"])
                 combined_output = "\n".join(output_parts).strip()
                 self._run_on_ui(
                     self.conversation.add_bash_output_box,
@@ -394,8 +398,6 @@ class TextualUICallback:
                     0,  # depth
                 )
 
-            if self.chat_app and hasattr(self.chat_app, "resume_reasoning_spinner"):
-                self._run_on_ui(self.chat_app.resume_reasoning_spinner)
             return
 
         # Format the result using the Claude-style formatter
@@ -429,9 +431,6 @@ class TextualUICallback:
 
         if summary_lines and self.chat_app and hasattr(self.chat_app, "record_tool_summary"):
             self._run_on_ui(self.chat_app.record_tool_summary, tool_name, normalized_args, summary_lines.copy())
-
-        if self.chat_app and hasattr(self.chat_app, "resume_reasoning_spinner"):
-            self._run_on_ui(self.chat_app.resume_reasoning_spinner)
 
         # Auto-refresh todo panel after todo tool execution
         if tool_name in {"write_todos", "update_todo", "complete_todo"}:
@@ -524,9 +523,8 @@ class TextualUICallback:
             self._display_todo_complete_result(todo_data, depth)
         elif tool_name in ("bash_execute", "run_command") and isinstance(result, dict):
             # Special handling for bash commands - render in VS Code Terminal style
-            stdout = result.get("stdout") or result.get("output") or ""
+            stdout = result.get("stdout") or ""
             stderr = result.get("stderr") or ""
-            error_msg = result.get("error") or ""
             is_error = not result.get("success", True)
             exit_code = result.get("exit_code", 1 if is_error else 0)
             command = normalized_args.get("command", "")
@@ -534,12 +532,12 @@ class TextualUICallback:
             # Get working_dir from subagent context if available
             working_dir = "."
 
-            # Combine stdout, stderr, and error for display
+            # Combine stdout and stderr for display, avoiding duplicates
+            # Note: result["output"] is already stdout+stderr, and result["error"]
+            # often contains the same text, so we only use raw stdout/stderr
             output = stdout.strip()
             if stderr.strip():
                 output = (output + "\n" + stderr.strip()) if output else stderr.strip()
-            if is_error and error_msg.strip():
-                output = (output + "\n" + error_msg.strip()) if output else error_msg.strip()
 
             if hasattr(self.conversation, 'add_nested_bash_output_box'):
                 self._run_on_ui(
@@ -717,6 +715,33 @@ class TextualUICallback:
             elif not url.startswith(("http://", "https://")):
                 result["url"] = f"https://{url}"
 
+        return result
+
+    def _resolve_paths_in_args(self, tool_args: Dict[str, Any]) -> Dict[str, Any]:
+        """Resolve relative paths to absolute paths for display.
+
+        Args:
+            tool_args: Tool arguments dict
+
+        Returns:
+            Copy of tool_args with paths resolved to absolute paths
+        """
+        if self._working_dir is None:
+            return tool_args
+
+        result = dict(tool_args)
+        for key in _PATH_ARG_KEYS:
+            if key in result and isinstance(result[key], str):
+                path = result[key]
+                # Skip if already absolute or has special prefix (like docker://[...]:)
+                if path.startswith("/") or path.startswith("["):
+                    continue
+                # Resolve relative path
+                if path == "." or path == "":
+                    result[key] = str(self._working_dir)
+                else:
+                    clean_path = path.lstrip("./")
+                    result[key] = str(self._working_dir / clean_path)
         return result
 
     def _run_on_ui(self, func, *args, **kwargs) -> None:

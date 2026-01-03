@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
@@ -317,22 +318,108 @@ class SubAgentManager:
             Task with paths rewritten to Docker paths, including Docker context
         """
         new_task = task
+
+        # Remove phrases that hint at local filesystem
+        new_task = re.sub(r'\blocal\s+', '', new_task, flags=re.IGNORECASE)
+        new_task = re.sub(r'\bin this repo\b', f'in {workspace_dir}', new_task, flags=re.IGNORECASE)
+        new_task = re.sub(r'\bthis repo\b', workspace_dir, new_task, flags=re.IGNORECASE)
+
+        # Replace any reference to the local working directory with workspace
+        local_working_dir = self._working_dir
+        if local_working_dir:
+            local_dir_str = str(local_working_dir)
+            # Replace the local directory path with workspace
+            new_task = new_task.replace(local_dir_str, workspace_dir)
+            # Also try without trailing slash
+            new_task = new_task.replace(local_dir_str.rstrip("/"), workspace_dir)
+
         for local_file in input_files:
             docker_path = f"{workspace_dir}/{local_file.name}"
             # Replace @filename with Docker path
             new_task = new_task.replace(f"@{local_file.name}", docker_path)
             # Also replace any absolute local paths
             new_task = new_task.replace(str(local_file), docker_path)
+            # Replace plain filename references (be careful to avoid partial matches)
+            # Use word boundary matching by checking surrounding chars
+            new_task = re.sub(
+                rf'\b{re.escape(local_file.name)}\b',
+                docker_path,
+                new_task
+            )
 
-        # Prepend Docker context so the agent knows it's running in Docker
-        docker_context = f"""IMPORTANT: You are running inside a Docker container.
-Your working directory is: {workspace_dir}
-All file operations (read_file, write_file, edit_file, list_files, run_command) execute inside the container.
-Use paths relative to {workspace_dir}/ or absolute paths starting with {workspace_dir}/.
-Do NOT use local paths like /Users/... - they don't exist in this container.
+        # Prepend Docker context with strong emphasis
+        docker_context = f"""## CRITICAL: Docker Environment
+
+YOU ARE RUNNING INSIDE A DOCKER CONTAINER.
+
+Working directory: {workspace_dir}
+All file paths MUST be relative (e.g., `file.py`, `src/file.py`) or start with {workspace_dir}/.
+
+NEVER use paths like:
+- /Users/...
+- /home/...
+- Any absolute path outside {workspace_dir}
+
+ALWAYS use paths like:
+- pyproject.toml
+- src/model.py
+- config.yaml
+
+Use ONLY the filename or relative path for all file operations.
 
 """
         return docker_context + new_task
+
+    def _create_docker_path_sanitizer(
+        self,
+        workspace_dir: str,
+        local_dir: str,
+        image_name: str,
+        container_id: str,
+    ):
+        """Create a path sanitizer for Docker mode UI display.
+
+        Converts local paths to Docker workspace paths with container prefix:
+        - /Users/.../test_opencli/src/file.py → [uv:a1b2c3d4]:/workspace/src/file.py
+        - README.md → [uv:a1b2c3d4]:/workspace/README.md
+
+        Args:
+            workspace_dir: The Docker workspace directory (e.g., /workspace)
+            local_dir: The local working directory (e.g., /Users/.../test_opencli)
+            image_name: Full Docker image name (e.g., ghcr.io/astral-sh/uv:python3.11)
+            container_id: Short container ID (e.g., a1b2c3d4)
+
+        Returns:
+            A callable that sanitizes paths for display
+        """
+        # Extract short image name: "ghcr.io/astral-sh/uv:python3.11-bookworm" → "uv"
+        short_image = image_name.split("/")[-1].split(":")[0]
+        prefix = f"[{short_image}:{container_id}]:"
+
+        def sanitize(path: str) -> str:
+            # If path starts with local_dir, replace with workspace_dir
+            if path.startswith(local_dir):
+                relative = path[len(local_dir):].lstrip("/")
+                docker_path = f"{workspace_dir}/{relative}" if relative else workspace_dir
+                return f"{prefix}{docker_path}"
+
+            # Fallback: extract filename from other absolute paths
+            match = re.match(r'^(/Users/|/home/|/var/|/tmp/).+/([^/]+)$', path)
+            if match:
+                return f"{prefix}{workspace_dir}/{match.group(2)}"
+
+            # Convert relative paths to full Docker paths
+            # e.g., "README.md" → "[uv:a1b2c3d4]:/workspace/README.md"
+            # e.g., "." → "[uv:a1b2c3d4]:/workspace"
+            # e.g., "src/model.py" → "[uv:a1b2c3d4]:/workspace/src/model.py"
+            if not path.startswith("/"):
+                clean_path = path.lstrip("./")
+                if not clean_path:
+                    return f"{prefix}{workspace_dir}"
+                return f"{prefix}{workspace_dir}/{clean_path}"
+
+            return path
+        return sanitize
 
     def _execute_with_docker(
         self,
@@ -380,26 +467,40 @@ Do NOT use local paths like /Users/... - they don't exist in this container.
 
         deployment = None
         loop = None
-
-        # Create nested callback wrapper FIRST - before any tool calls
-        # This ensures docker_start, docker_copy, and all subagent tool calls
-        # appear properly nested under the Spawn[subagent_name] parent
         nested_callback = None
-        if ui_callback is not None:
-            from swecli.ui_textual.nested_callback import NestedUICallback
-            nested_callback = NestedUICallback(
-                parent_callback=ui_callback,
-                parent_context=name,
-                depth=1,
-            )
 
         try:
+            # Create Docker deployment first to get container name
+            # (container name is generated in __init__, before start())
+            deployment = DockerDeployment(config=docker_config)
+
+            # Extract container ID (last 8 chars of container name)
+            # Container name format: "swecli-runtime-a1b2c3d4"
+            container_id = deployment._container_name.split("-")[-1]
+
+            # Create nested callback wrapper with container info
+            # This ensures docker_start, docker_copy, and all subagent tool calls
+            # appear properly nested under the Spawn[subagent_name] parent
+            #
+            # Pass path_sanitizer to convert local paths to Docker paths with prefix
+            # e.g., /Users/.../file.py → [uv:a1b2c3d4]:/workspace/file.py
+            if ui_callback is not None:
+                from swecli.ui_textual.nested_callback import NestedUICallback
+                nested_callback = NestedUICallback(
+                    parent_callback=ui_callback,
+                    parent_context=name,
+                    depth=1,
+                    path_sanitizer=self._create_docker_path_sanitizer(
+                        workspace_dir,
+                        str(local_working_dir),
+                        docker_config.image,
+                        container_id,
+                    ),
+                )
+
             # Show Docker start as a tool call with spinner (using nested callback)
             if nested_callback and hasattr(nested_callback, 'on_tool_call'):
                 nested_callback.on_tool_call("docker_start", {"image": docker_config.image})
-
-            # Create and start Docker deployment
-            deployment = DockerDeployment(config=docker_config)
 
             # Run async start in sync context - use a single event loop for the whole operation
             loop = asyncio.new_event_loop()
@@ -661,7 +762,27 @@ Do NOT use local paths like /Users/... - they don't exist in this container.
             )
             # Apply system prompt override
             if spec.get("system_prompt"):
-                agent.system_prompt = spec["system_prompt"]
+                base_prompt = spec["system_prompt"]
+                # When running in Docker, inject Docker context into system prompt
+                if docker_handler is not None:
+                    docker_preamble = f"""## CRITICAL: Docker Environment
+
+YOU ARE RUNNING INSIDE A DOCKER CONTAINER.
+
+Working directory: {working_dir}
+All file operations execute inside the container.
+
+FILE PATHS - VERY IMPORTANT:
+- CORRECT: `pyproject.toml`, `src/model.py`, `config.yaml`
+- WRONG: `/Users/.../file.py`, `/home/.../file.py`
+
+NEVER use absolute paths like /Users/, /home/, /var/.
+ALWAYS use relative paths (just the filename or relative path like src/file.py).
+
+"""
+                    agent.system_prompt = docker_preamble + base_prompt
+                else:
+                    agent.system_prompt = base_prompt
         else:
             agent = compiled["agent"]
 

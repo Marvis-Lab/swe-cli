@@ -634,15 +634,12 @@ class TextualRunner:
                 conversation_widget.set_debug_enabled(config.debug_logging)
 
                 from swecli.ui_textual.ui_callback import TextualUICallback
-                ui_callback = TextualUICallback(conversation_widget, self.app)
+                ui_callback = TextualUICallback(conversation_widget, self.app, self.working_dir)
             else:
                 # Create a mock callback for when app is not mounted (e.g., during testing)
-                class MockCallback:
-                    def on_thinking_start(self): pass
-                    def on_thinking_complete(self): pass
-                    def on_tool_call(self, tool_name, tool_args): pass
-                    def on_tool_result(self, tool_name, tool_args, result): pass
-                ui_callback = MockCallback()
+                # BaseUICallback provides no-op implementations for all methods
+                from swecli.ui_textual.callback_interface import BaseUICallback
+                ui_callback = BaseUICallback()
 
             # Temporarily disable console bridge to prevent duplicate rendering
             # All relevant messages are already in session.messages
@@ -792,6 +789,11 @@ Work through each implementation step in order. Mark each todo item as 'in_progr
         # Special handling for /mcp view command - use Textual modal instead of prompt_toolkit
         if lowered.startswith("/mcp view "):
             self._handle_mcp_view_command(command)
+            return
+
+        # Special handling for /mcp connect - use Textual spinner
+        if lowered.startswith("/mcp connect "):
+            self._handle_mcp_connect_command(command)
             return
 
         # Special handling for /resolve-issue - use TextualUICallback for proper display
@@ -996,6 +998,17 @@ Work through each implementation step in order. Mark each todo item as 'in_progr
         output = string_io.getvalue()
         self._enqueue_console_text(output)
 
+    def _handle_mcp_connect_command(self, command: str) -> None:
+        """Handle /mcp connect with Textual spinner.
+
+        Args:
+            command: The full command (e.g., "/mcp connect github")
+        """
+        from swecli.ui_textual.controllers.mcp_command_controller import MCPCommandController
+
+        controller = MCPCommandController(self.app, self.repl)
+        controller.handle_connect(command)
+
     def _handle_resolve_issue_command(self, command: str) -> None:
         """Handle /resolve-issue command with TextualUICallback for proper display.
 
@@ -1017,7 +1030,7 @@ Work through each implementation step in order. Mark each todo item as 'in_progr
         ui_callback = None
         if conversation_widget is not None:
             from swecli.ui_textual.ui_callback import TextualUICallback
-            ui_callback = TextualUICallback(conversation_widget, self.app)
+            ui_callback = TextualUICallback(conversation_widget, self.app, self.working_dir)
 
         # Capture any console output during execution
         with self.repl.console.capture() as capture:
@@ -1045,7 +1058,7 @@ Work through each implementation step in order. Mark each todo item as 'in_progr
         ui_callback = None
         if conversation_widget is not None:
             from swecli.ui_textual.ui_callback import TextualUICallback
-            ui_callback = TextualUICallback(conversation_widget, self.app)
+            ui_callback = TextualUICallback(conversation_widget, self.app, self.working_dir)
 
         # Capture any console output during execution
         with self.repl.console.capture() as capture:
