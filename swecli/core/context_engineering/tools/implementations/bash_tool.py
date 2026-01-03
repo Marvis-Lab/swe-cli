@@ -236,27 +236,28 @@ class BashTool(BaseTool):
                         if remaining_stderr:
                             stderr_lines.extend(remaining_stderr.splitlines(keepends=True))
 
+                # Send captured output through callback for streaming display
+                # Do this for ALL captured output, regardless of success/failure
+                if output_callback:
+                    for line in stdout_lines:
+                        try:
+                            output_callback(line.rstrip('\n'), is_stderr=False)
+                        except Exception:
+                            pass
+                    for line in stderr_lines:
+                        try:
+                            output_callback(line.rstrip('\n'), is_stderr=True)
+                        except Exception:
+                            pass
+
                 # Check if process exited during startup capture
-                # If it failed quickly (non-zero exit), treat it as a synchronous failure
                 exit_code = process.poll()
+
                 if exit_code is not None and exit_code != 0:
-                    # Process failed during startup - return actual result
+                    # Process failed during startup - return failure result
                     duration = time.time() - start_time
                     stdout_text = "".join(stdout_lines).rstrip()
                     stderr_text = "".join(stderr_lines).rstrip()
-
-                    # Send captured output through callback for streaming display
-                    if output_callback:
-                        for line in stdout_lines:
-                            try:
-                                output_callback(line.rstrip('\n'), is_stderr=False)
-                            except Exception:
-                                pass
-                        for line in stderr_lines:
-                            try:
-                                output_callback(line.rstrip('\n'), is_stderr=True)
-                            except Exception:
-                                pass
 
                     if operation:
                         operation.mark_failed(f"Command failed with exit code {exit_code}")
@@ -271,7 +272,26 @@ class BashTool(BaseTool):
                         operation_id=operation.id if operation else None,
                     )
 
-                # Store process info with captured output
+                if exit_code is not None and exit_code == 0:
+                    # Process completed successfully during startup - return actual output
+                    duration = time.time() - start_time
+                    stdout_text = "".join(stdout_lines).rstrip()
+                    stderr_text = "".join(stderr_lines).rstrip()
+
+                    if operation:
+                        operation.mark_success()
+
+                    return BashResult(
+                        success=True,
+                        command=command,
+                        exit_code=0,
+                        stdout=stdout_text,
+                        stderr=stderr_text,
+                        duration=duration,
+                        operation_id=operation.id if operation else None,
+                    )
+
+                # Process still running - store as background process
                 self._background_processes[process.pid] = {
                     "process": process,
                     "command": command,
@@ -288,7 +308,7 @@ class BashTool(BaseTool):
                     success=True,
                     command=command,
                     exit_code=0,  # Process started
-                    stdout="",  # Background process started, output captured separately
+                    stdout="",  # Background process running, output captured separately
                     stderr="",
                     duration=0.0,
                     operation_id=operation.id if operation else None,

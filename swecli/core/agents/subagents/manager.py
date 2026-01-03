@@ -509,6 +509,8 @@ Use ONLY the filename or relative path for all file operations.
         spec: SubAgentSpec,
         ui_callback: Any = None,
         task_monitor: Any = None,
+        show_spawn_header: bool = True,
+        local_output_dir: Path | None = None,
     ) -> dict[str, Any]:
         """Execute a subagent inside Docker with automatic container lifecycle.
 
@@ -525,6 +527,10 @@ Use ONLY the filename or relative path for all file operations.
             spec: The subagent specification with docker_config
             ui_callback: Optional UI callback
             task_monitor: Optional task monitor
+            show_spawn_header: Whether to show the Spawn[] header. Set to False when
+                called via tool_registry (react_executor already showed it).
+            local_output_dir: Local directory where files should be copied after Docker
+                execution. If None, uses self._working_dir or cwd.
 
         Returns:
             Result dict with content, success, and messages
@@ -543,19 +549,22 @@ Use ONLY the filename or relative path for all file operations.
 
         # Workspace inside Docker container
         workspace_dir = "/workspace"
-        local_working_dir = Path(self._working_dir) if self._working_dir else Path.cwd()
+        local_working_dir = local_output_dir or (Path(self._working_dir) if self._working_dir else Path.cwd())
 
         deployment = None
         loop = None
         nested_callback = None
 
-        # Show Spawn header (before Docker operations)
-        spawn_args = {
-            "subagent_type": name,
-            "description": self._extract_task_description(task),
-        }
-        if ui_callback and hasattr(ui_callback, "on_tool_call"):
-            ui_callback.on_tool_call("spawn_subagent", spawn_args)
+        # Show Spawn header only for direct invocations (e.g., /paper2code)
+        # When called via tool_registry, react_executor already showed the header
+        spawn_args = None
+        if show_spawn_header:
+            spawn_args = {
+                "subagent_type": name,
+                "description": self._extract_task_description(task),
+            }
+            if ui_callback and hasattr(ui_callback, "on_tool_call"):
+                ui_callback.on_tool_call("spawn_subagent", spawn_args)
 
         try:
             # Create Docker deployment first to get container name
@@ -649,8 +658,8 @@ Use ONLY the filename or relative path for all file operations.
                     ui_callback=nested_callback,
                 )
 
-            # Show Spawn completion
-            if ui_callback and hasattr(ui_callback, "on_tool_result"):
+            # Show Spawn completion only if we showed the header
+            if spawn_args and ui_callback and hasattr(ui_callback, "on_tool_result"):
                 ui_callback.on_tool_result("spawn_subagent", spawn_args, {
                     "success": result.get("success", True),
                 })
@@ -665,8 +674,8 @@ Use ONLY the filename or relative path for all file operations.
                     "success": False,
                     "error": str(e),
                 })
-            # Show Spawn failure
-            if ui_callback and hasattr(ui_callback, "on_tool_result"):
+            # Show Spawn failure only if we showed the header
+            if spawn_args and ui_callback and hasattr(ui_callback, "on_tool_result"):
                 ui_callback.on_tool_result("spawn_subagent", spawn_args, {
                     "success": False,
                     "error": str(e),
@@ -764,6 +773,7 @@ Use ONLY the filename or relative path for all file operations.
         working_dir: Any = None,
         docker_handler: Any = None,
         path_mapping: dict[str, str] | None = None,
+        show_spawn_header: bool = True,
     ) -> dict[str, Any]:
         """Execute a subagent synchronously with the given task.
 
@@ -779,6 +789,8 @@ Use ONLY the filename or relative path for all file operations.
                            instead of local execution.
             path_mapping: Mapping of Docker paths to local paths for local-only tools.
                          Used to remap paths when tools like read_pdf run locally.
+            show_spawn_header: Whether to show the Spawn[] header. Set to False when
+                              called via tool_registry (react_executor already showed it).
 
         Returns:
             Result dict with content, success, and messages
@@ -797,6 +809,8 @@ Use ONLY the filename or relative path for all file operations.
                         spec=spec,
                         ui_callback=ui_callback,
                         task_monitor=task_monitor,
+                        show_spawn_header=show_spawn_header,
+                        local_output_dir=Path(working_dir) if working_dir else None,
                     )
                 # If Docker not available, fall through to local execution
 

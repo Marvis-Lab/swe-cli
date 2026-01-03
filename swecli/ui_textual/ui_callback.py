@@ -30,17 +30,9 @@ class TextualUICallback:
         self._app = chat_app
         self.formatter = StyleFormatter()
         self._current_thinking = False
-        self._streaming_bash_box = False  # True when streaming bash output to box
-        self._pending_bash_start = False  # True when bash box start is deferred
-        self._pending_bash_command = ""  # Command being executed (for VS Code terminal display)
-        self._pending_bash_working_dir = "."  # Working directory for bash command
         # Spinner IDs for tracking active spinners via SpinnerService
         self._progress_spinner_id: str = ""
         self._tool_spinner_id: str = ""
-        # Buffering for bash output to prevent UI flooding
-        self._bash_buffer: list[tuple[str, bool]] = []
-        self._last_bash_flush: float = 0
-        self._BASH_FLUSH_INTERVAL: float = 0.1  # 100ms
         # Working directory for resolving relative paths
         self._working_dir = working_dir
 
@@ -209,52 +201,17 @@ class TextualUICallback:
         self._run_on_ui(write_interrupt_replacing_blank_line)
 
     def on_bash_output_line(self, line: str, is_stderr: bool = False) -> None:
-        """Called for each line of bash output during streaming execution.
+        """Called for each line of bash output during execution.
+
+        For main agent: Output is collected and shown via add_bash_output_box in on_tool_result.
+        For subagents: ForwardingUICallback forwards this to parent for nested display.
 
         Args:
             line: A single line of output from the bash command
             is_stderr: True if this line came from stderr
         """
-        import time
-
-        # Lazy start: only open the box when we actually have output
-        if self._pending_bash_start:
-            self._pending_bash_start = False
-            self._streaming_bash_box = True
-            if hasattr(self.conversation, 'start_streaming_bash_box'):
-                self._run_on_ui(
-                    self.conversation.start_streaming_bash_box,
-                    self._pending_bash_command,
-                    self._pending_bash_working_dir,
-                )
-
-        if self._streaming_bash_box and hasattr(self.conversation, 'append_to_streaming_box'):
-            # Buffer the output
-            self._bash_buffer.append((line, is_stderr))
-
-            # Check if it's time to flush
-            now = time.time()
-            if now - self._last_bash_flush >= self._BASH_FLUSH_INTERVAL:
-                self._flush_bash_buffer()
-
-    def _flush_bash_buffer(self) -> None:
-        """Flush buffered bash output to UI."""
-        import time
-
-        if not self._bash_buffer:
-            return
-
-        # Atomic swap to avoid locking
-        chunk = self._bash_buffer
-        self._bash_buffer = []
-        self._last_bash_flush = time.time()
-
-        def update_ui(chunk_to_process: list[tuple[str, bool]]) -> None:
-            if self._streaming_bash_box and hasattr(self.conversation, 'append_to_streaming_box'):
-                 for line_content, is_err in chunk_to_process:
-                     self.conversation.append_to_streaming_box(line_content, is_err)
-
-        self._run_on_ui(update_ui, chunk)
+        # Main agent doesn't stream - output shown in on_tool_result
+        pass
 
     def on_tool_call(self, tool_name: str, tool_args: Dict[str, Any]) -> None:
         """Called when a tool call is about to be executed.
@@ -286,29 +243,8 @@ class TextualUICallback:
             if hasattr(self.conversation, 'start_tool_execution') and self._app is not None:
                 self._app.call_from_thread(self.conversation.start_tool_execution)
 
-        # For bash commands, start streaming box with command info
-        if tool_name in ("bash_execute", "run_command"):
-            self._pending_bash_command = normalized_args.get("command", "")
-            # Get working_dir - try multiple sources
-            import os
-            working_dir = os.getcwd()  # Default to current working directory
-
-            # Try to get from runner's bash_tool if available
-            if self.chat_app and hasattr(self.chat_app, 'runner'):
-                runner = self.chat_app.runner
-                if hasattr(runner, 'query_processor'):
-                    qp = runner.query_processor
-                    if hasattr(qp, 'bash_tool') and qp.bash_tool:
-                        bash_wd = getattr(qp.bash_tool, 'working_dir', None)
-                        if bash_wd:
-                            working_dir = str(bash_wd)
-
-            self._pending_bash_working_dir = working_dir
-
-            # Don't start box yet - wait for first output line (lazy start)
-            # This prevents empty boxes appearing during approval prompts
-            if hasattr(self.conversation, 'start_streaming_bash_box'):
-                self._pending_bash_start = True
+        # Bash commands: no special setup needed
+        # Output will be shown via add_bash_output_box in on_tool_result
 
     def on_tool_result(self, tool_name: str, tool_args: Dict[str, Any], result: Any) -> None:
         """Called when a tool execution completes.
@@ -345,45 +281,15 @@ class TextualUICallback:
         if tool_name == "spawn_subagent":
             return
 
-        # Special handling for bash commands - close streaming box or show summary
+        # Bash commands: show terminal box with complete output
         if tool_name in ("bash_execute", "run_command") and isinstance(result, dict):
             is_error = not result.get("success", True)
-            exit_code = result.get("exit_code", 1 if is_error else 0)
 
-            # Flush any remaining output in buffer
-            self._flush_bash_buffer()
-
-            # Reset pending start flag if it was never triggered (no output)
-            self._pending_bash_start = False
-
-            # If streaming box is active, close it
-            if self._streaming_bash_box:
-                if hasattr(self.conversation, 'close_streaming_bash_box'):
-                    self._run_on_ui(self.conversation.close_streaming_bash_box, is_error, exit_code)
-                self._streaming_bash_box = False
-
-                # Record summary for history
-                stdout = result.get("stdout") or result.get("output") or ""
-                # Filter out placeholder messages
-                if stdout in ("Command executed", "Command execution failed"):
-                    stdout = ""
-                if stdout and self.chat_app and hasattr(self.chat_app, "record_tool_summary"):
-                    lines = stdout.strip().splitlines()
-                    if lines:
-                        summary = lines[0][:70] + "..." if len(lines[0]) > 70 else lines[0]
-                        if len(lines) > 1:
-                            summary += f" ({len(lines)} lines)"
-                        self._run_on_ui(self.chat_app.record_tool_summary, tool_name, self._normalize_arguments(tool_args), [summary])
-
-                return
-
-            # Fallback: show terminal box if no streaming was happening (no output case)
             if hasattr(self.conversation, 'add_bash_output_box'):
                 import os
                 command = self._normalize_arguments(tool_args).get("command", "")
                 working_dir = os.getcwd()
-                # Combine stdout and stderr for display, avoiding duplicates
-                # First try stdout/stderr, then fall back to combined output key
+                # Combine stdout and stderr for display
                 output_parts = []
                 if result.get("stdout"):
                     output_parts.append(result["stdout"])
@@ -391,9 +297,9 @@ class TextualUICallback:
                     output_parts.append(result["stderr"])
                 combined_output = "\n".join(output_parts).strip()
                 # Fall back to "output" key if stdout/stderr are empty
-                # Filter out placeholder messages that aren't actual command output
                 if not combined_output and result.get("output"):
                     output_value = result["output"].strip()
+                    # Filter out placeholder messages
                     if output_value not in ("Command executed", "Command execution failed"):
                         combined_output = output_value
                 self._run_on_ui(

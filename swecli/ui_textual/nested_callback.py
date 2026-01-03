@@ -4,17 +4,21 @@ from __future__ import annotations
 
 from typing import Any, Callable, Dict, Optional
 
-from swecli.ui_textual.callback_interface import BaseUICallback, UICallbackProtocol
+from swecli.ui_textual.callback_interface import ForwardingUICallback, UICallbackProtocol
 
 # Re-export for backwards compatibility
 UICallback = UICallbackProtocol
 
 
-class NestedUICallback(BaseUICallback):
+class NestedUICallback(ForwardingUICallback):
     """Wraps a UI callback to add nesting/indentation context for subagent tool calls.
 
     This wrapper intercepts tool events from subagents and forwards them to the parent
     callback with additional nesting information (depth and parent context).
+
+    Extends ForwardingUICallback to automatically forward methods like on_bash_output_line,
+    on_progress_*, on_interrupt, etc. Only methods that need special nesting behavior
+    are overridden.
 
     Optionally sanitizes paths before display (useful for Docker mode where LLM may
     output local filesystem paths that should be shown as relative paths).
@@ -36,7 +40,7 @@ class NestedUICallback(BaseUICallback):
             path_sanitizer: Optional function to sanitize paths before display.
                            Used in Docker mode to convert /Users/.../file.py → file.py
         """
-        self._parent = parent_callback
+        super().__init__(parent_callback)  # Initialize ForwardingUICallback with parent
         self._context = parent_context
         self._depth = depth
         self._path_sanitizer = path_sanitizer
@@ -70,24 +74,21 @@ class NestedUICallback(BaseUICallback):
 
         return sanitized
 
+    # Override methods that should NOT forward from subagents:
+
     def on_thinking_start(self) -> None:
-        """Called when the agent starts thinking."""
-        # Don't forward thinking events from subagents
+        """Don't forward thinking events from subagents."""
         pass
 
     def on_thinking_complete(self) -> None:
-        """Called when the agent completes thinking."""
-        # Don't forward thinking events from subagents
+        """Don't forward thinking events from subagents."""
         pass
 
     def on_assistant_message(self, content: str) -> None:
-        """Called when assistant provides a message.
-
-        Args:
-            content: The assistant's message
-        """
-        # Don't forward assistant messages from subagents (they'll appear as final result)
+        """Don't forward assistant messages from subagents (they appear as final result)."""
         pass
+
+    # Override methods that need special nesting behavior:
 
     def on_tool_call(self, tool_name: str, tool_args: Dict[str, Any]) -> None:
         """Called when a tool call is about to be executed.
@@ -152,11 +153,7 @@ class NestedUICallback(BaseUICallback):
             # Fallback: use regular tool result (loses nesting info)
             self._parent.on_tool_result(tool_name, display_args, result)
 
-    def on_interrupt(self) -> None:
-        """Called when execution is interrupted."""
-        # Forward interrupt to parent
-        if self._parent and hasattr(self._parent, "on_interrupt"):
-            self._parent.on_interrupt()
+    # on_interrupt is automatically forwarded by ForwardingUICallback
 
     def on_debug(self, message: str, prefix: str = "DEBUG") -> None:
         """Called to display debug information.
@@ -184,3 +181,11 @@ class NestedUICallback(BaseUICallback):
             depth=self._depth + 1,
             path_sanitizer=self._path_sanitizer,  # Propagate to children
         )
+
+    # The following methods are automatically forwarded by ForwardingUICallback:
+    # - on_message()
+    # - on_progress_start(), on_progress_update(), on_progress_complete()
+    # - on_interrupt()
+    # - on_bash_output_line()  <- This was missing before, now auto-forwarded!
+    # - on_nested_tool_call(), on_nested_tool_result()
+    # - on_tool_complete()

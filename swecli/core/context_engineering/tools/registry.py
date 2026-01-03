@@ -173,12 +173,15 @@ class ToolRegistry:
         # Get task_monitor from context for interrupt support
         task_monitor = context.task_monitor if context else None
 
+        # show_spawn_header=False because react_executor already showed the Spawn[] header
+        # via on_tool_call before calling this tool handler
         result = self._subagent_manager.execute_subagent(
             name=subagent_type,
             task=description,
             deps=deps,
             ui_callback=ui_callback,
             task_monitor=task_monitor,
+            show_spawn_header=False,
         )
 
         # Format output for consistency
