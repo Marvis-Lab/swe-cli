@@ -250,6 +250,9 @@ class ConversationLog(RichLog):
 
     def on_mouse_scroll_down(self, event: MouseScrollDown) -> None:
         """Handle mouse scroll down (wheel down / two-finger swipe down)."""
+        # When Option (meta) key is pressed, allow default behavior for text selection scrolling
+        if event.meta:
+            return  # Don't stop event, let terminal handle it
         self._user_scrolled = True
         self.auto_scroll = False
         self.scroll_relative(y=3)  # Scroll 3 lines per tick
@@ -257,6 +260,9 @@ class ConversationLog(RichLog):
 
     def on_mouse_scroll_up(self, event: MouseScrollUp) -> None:
         """Handle mouse scroll up (wheel up / two-finger swipe up)."""
+        # When Option (meta) key is pressed, allow default behavior for text selection scrolling
+        if event.meta:
+            return  # Don't stop event, let terminal handle it
         self._user_scrolled = True
         self.auto_scroll = False
         self.scroll_relative(y=-3)  # Scroll 3 lines per tick
