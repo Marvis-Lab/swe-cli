@@ -296,53 +296,63 @@ class IssueResolverCommand:
             cpus=args.docker_cpus,
         )
 
-        # Use status callback to update Docker progress in-place
-        def on_docker_status(msg: str) -> None:
-            if self.ui_callback and hasattr(self.ui_callback, "on_progress_update"):
-                self.ui_callback.on_progress_update(f"Docker: {msg}")
-
-        deployment = DockerDeployment(config=config, on_status=on_docker_status)
+        deployment = DockerDeployment(config=config)
 
         # Run the async Docker workflow
         async def run_docker_workflow() -> ResolveResult:
             try:
-                # Step 3: Start container (single progress line for all Docker setup)
-                # Show image name (truncate if too long)
-                image_short = docker_image.split("/")[-1][:40]
-                if self.ui_callback and hasattr(self.ui_callback, "on_progress_start"):
-                    self.ui_callback.on_progress_start(f"Docker: Pulling {image_short}...")
+                # SWE-bench images have repo pre-installed at /testbed
+                repo_path = "/testbed"
+
+                # Show Spawn header (like paper2code's spawn_subagent tool call)
+                spawn_args = {
+                    "subagent_type": "Issue-Resolver",
+                    "description": f"Fix {instance.instance_id}",
+                }
+                if self.ui_callback and hasattr(self.ui_callback, "on_tool_call"):
+                    self.ui_callback.on_tool_call("spawn_subagent", spawn_args)
+
+                # Get container ID from deployment (generated in __init__ before start)
+                container_name = deployment._container_name
+                container_id = container_name.split("-")[-1]
+
+                # Create nested callback with Docker context BEFORE starting container
+                # This way docker_start appears nested under Spawn[Issue-Resolver]
+                nested_callback = self.subagent_manager.create_docker_nested_callback(
+                    ui_callback=self.ui_callback,
+                    subagent_name="Issue-Resolver",
+                    workspace_dir=repo_path,
+                    image_name=docker_image,
+                    container_id=container_id,
+                )
+
+                # Show docker_start as nested tool call (like paper2code)
+                if nested_callback and hasattr(nested_callback, "on_tool_call"):
+                    nested_callback.on_tool_call("docker_start", {"image": docker_image})
 
                 await deployment.start()
 
-                # Get container name for display
-                container_name = deployment._container_name
+                # Show docker_start completion
+                if nested_callback and hasattr(nested_callback, "on_tool_result"):
+                    nested_callback.on_tool_result("docker_start", {"image": docker_image}, {
+                        "success": True,
+                        "output": docker_image,
+                    })
 
                 runtime = deployment.runtime
 
-                # SWE-bench images have repo pre-installed at /testbed
-                # with correct commit already checked out - no setup needed!
-                repo_path = "/testbed"
-
                 # Create fix branch for our changes
-                if self.ui_callback and hasattr(self.ui_callback, "on_progress_update"):
-                    self.ui_callback.on_progress_update("Docker: Creating fix branch...")
-
                 branch_name = f"fix/{instance.instance_id}"
                 branch_cmd = f"cd {repo_path} && git checkout -b {branch_name}"
                 await runtime.run(branch_cmd, timeout=30.0)
 
-                # Complete Docker setup with container name
-                if self.ui_callback and hasattr(self.ui_callback, "on_progress_complete"):
-                    self.ui_callback.on_progress_complete(f"{container_name} ready")
-
-                # Step 4: Create Docker tool handler
+                # Create Docker tool handler
                 docker_handler = DockerToolHandler(runtime, workspace_dir=repo_path)
 
-                # Step 5: Build task for subagent
+                # Build task for subagent
                 task = self._build_task(instance, branch_name)
 
-                # Step 6: Execute the Issue-Resolver subagent
-                # The subagent will use Docker tools for all operations
+                # Execute the Issue-Resolver subagent
                 from swecli.core.agents.subagents.manager import SubAgentDeps
 
                 deps = SubAgentDeps(
@@ -356,7 +366,7 @@ class IssueResolverCommand:
                     name="Issue-Resolver",
                     task=task,
                     deps=deps,
-                    ui_callback=self.ui_callback,
+                    ui_callback=nested_callback,  # Use standardized Docker callback
                     docker_handler=docker_handler,  # Route all tools through Docker
                 )
 
@@ -364,14 +374,27 @@ class IssueResolverCommand:
                 if isinstance(result, str):
                     pass  # Continue to extract patch
                 elif not result.get("success"):
+                    # Show Spawn result (failure)
+                    if self.ui_callback and hasattr(self.ui_callback, "on_tool_result"):
+                        self.ui_callback.on_tool_result("spawn_subagent", spawn_args, {
+                            "success": False,
+                            "error": result.get("error", "Unknown error"),
+                        })
                     return ResolveResult(
                         success=False,
                         message=f"Subagent failed: {result.get('error', 'Unknown error')}",
                     )
 
-                # Step 8: Extract patch from container
+                # Show Spawn result (success)
+                if self.ui_callback and hasattr(self.ui_callback, "on_tool_result"):
+                    self.ui_callback.on_tool_result("spawn_subagent", spawn_args, {
+                        "success": True,
+                        "output": result.get("content", ""),
+                    })
+
+                # Extract patch from container
                 if self.ui_callback and hasattr(self.ui_callback, "on_progress_start"):
-                    self.ui_callback.on_progress_start("Extracting patch from container...")
+                    self.ui_callback.on_progress_start("Extracting patch...")
 
                 patch_cmd = f"cd {repo_path} && git diff {instance.base_commit}"
                 obs = await runtime.run(patch_cmd, timeout=60.0)

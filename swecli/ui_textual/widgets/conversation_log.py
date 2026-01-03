@@ -451,7 +451,8 @@ class ConversationLog(RichLog):
         if isinstance(display, Text):
             tool_text = display.copy()
         else:
-            tool_text = Text(str(display), style="white")
+            # Use dim style for nested tool calls to match nested result styling
+            tool_text = Text(str(display), style="dim")
 
         # Build indented line with spinner - START with first spinner char (flashing bullet)
         formatted = Text()

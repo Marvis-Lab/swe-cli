@@ -326,7 +326,7 @@ def format_tool_call(tool_name: str, tool_args: Mapping[str, Any]) -> str:
 
         # If working_dir has Docker prefix (e.g., [uv:abc123]:/workspace), show it
         if working_dir and working_dir.startswith("["):
-            return f"Run ({working_dir}) {cmd_display}"
+            return f"Run ({working_dir} {cmd_display})"
         return f"Run ({cmd_display})"
 
     # Default formatting for other tools

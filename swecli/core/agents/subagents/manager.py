@@ -403,6 +403,11 @@ Use ONLY the filename or relative path for all file operations.
                 docker_path = f"{workspace_dir}/{relative}" if relative else workspace_dir
                 return f"{prefix}{docker_path}"
 
+            # Handle Docker-internal absolute paths (e.g., /workspace/..., /testbed/...)
+            # These are paths the LLM outputs when running inside Docker
+            if path.startswith(workspace_dir):
+                return f"{prefix}{path}"
+
             # Fallback: extract filename from other absolute paths
             match = re.match(r'^(/Users/|/home/|/var/|/tmp/).+/([^/]+)$', path)
             if match:
@@ -420,6 +425,61 @@ Use ONLY the filename or relative path for all file operations.
 
             return path
         return sanitize
+
+    def create_docker_nested_callback(
+        self,
+        ui_callback: Any,
+        subagent_name: str,
+        workspace_dir: str,
+        image_name: str,
+        container_id: str,
+        local_dir: str | None = None,
+    ) -> Any:
+        """Create NestedUICallback with Docker path sanitizer for consistent display.
+
+        This is the STANDARD INTERFACE for Docker subagent UI context.
+        Use this method whenever executing a subagent inside Docker.
+
+        Args:
+            ui_callback: Parent UI callback to wrap
+            subagent_name: Name of the subagent (e.g., "Paper2Code", "Issue-Resolver")
+            workspace_dir: Docker workspace path (e.g., "/workspace", "/testbed")
+            image_name: Full Docker image name (e.g., "ghcr.io/astral-sh/uv:python3.11")
+            container_id: Short container ID (e.g., "a1b2c3d4")
+            local_dir: Local directory for path remapping (optional)
+
+        Returns:
+            NestedUICallback wrapped with Docker path sanitizer, or None if ui_callback is None
+
+        Usage:
+            nested_callback = manager.create_docker_nested_callback(
+                ui_callback=self.ui_callback,
+                subagent_name="Issue-Resolver",
+                workspace_dir="/testbed",
+                image_name=docker_image,
+                container_id=container_id,
+            )
+            result = manager.execute_subagent(..., ui_callback=nested_callback)
+        """
+        if ui_callback is None:
+            return None
+
+        from swecli.ui_textual.nested_callback import NestedUICallback
+
+        # Use existing _create_docker_path_sanitizer
+        path_sanitizer = self._create_docker_path_sanitizer(
+            workspace_dir=workspace_dir,
+            local_dir=local_dir or str(self._working_dir or Path.cwd()),
+            image_name=image_name,
+            container_id=container_id,
+        )
+
+        return NestedUICallback(
+            parent_callback=ui_callback,
+            parent_context=subagent_name,
+            depth=1,
+            path_sanitizer=path_sanitizer,
+        )
 
     def _execute_with_docker(
         self,
@@ -478,25 +538,17 @@ Use ONLY the filename or relative path for all file operations.
             # Container name format: "swecli-runtime-a1b2c3d4"
             container_id = deployment._container_name.split("-")[-1]
 
-            # Create nested callback wrapper with container info
+            # Create nested callback wrapper with container info using standardized interface
             # This ensures docker_start, docker_copy, and all subagent tool calls
             # appear properly nested under the Spawn[subagent_name] parent
-            #
-            # Pass path_sanitizer to convert local paths to Docker paths with prefix
-            # e.g., /Users/.../file.py → [uv:a1b2c3d4]:/workspace/file.py
-            if ui_callback is not None:
-                from swecli.ui_textual.nested_callback import NestedUICallback
-                nested_callback = NestedUICallback(
-                    parent_callback=ui_callback,
-                    parent_context=name,
-                    depth=1,
-                    path_sanitizer=self._create_docker_path_sanitizer(
-                        workspace_dir,
-                        str(local_working_dir),
-                        docker_config.image,
-                        container_id,
-                    ),
-                )
+            nested_callback = self.create_docker_nested_callback(
+                ui_callback=ui_callback,
+                subagent_name=name,
+                workspace_dir=workspace_dir,
+                image_name=docker_config.image,
+                container_id=container_id,
+                local_dir=str(local_working_dir),
+            )
 
             # Show Docker start as a tool call with spinner (using nested callback)
             if nested_callback and hasattr(nested_callback, 'on_tool_call'):
@@ -788,14 +840,17 @@ ALWAYS use relative paths (just the filename or relative path like src/file.py).
 
         # Create nested callback wrapper if parent callback provided
         # If ui_callback is already a NestedUICallback, use it directly (avoids double-wrapping)
+        # For Docker subagents, caller should use create_docker_nested_callback() first
         nested_callback = None
         if ui_callback is not None:
             from swecli.ui_textual.nested_callback import NestedUICallback
             if isinstance(ui_callback, NestedUICallback):
-                # Already nested (e.g., from _execute_with_docker), use directly
+                # Already nested (e.g., from create_docker_nested_callback), use directly
                 nested_callback = ui_callback
             else:
                 # Wrap in NestedUICallback for proper nesting display
+                # No path_sanitizer for local subagents - Docker subagents should
+                # use create_docker_nested_callback() before calling execute_subagent()
                 nested_callback = NestedUICallback(
                     parent_callback=ui_callback,
                     parent_context=name,
