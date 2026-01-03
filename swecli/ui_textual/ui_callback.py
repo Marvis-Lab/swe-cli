@@ -495,8 +495,9 @@ class TextualUICallback:
         # These are already shown by the approval controller interrupt message
         if isinstance(result, dict) and result.get("interrupted"):
             # Still update the tool call status to show it was interrupted
-            if hasattr(self.conversation, 'complete_nested_tool_call'):
-                self._run_on_ui(
+            # Use BLOCKING call_from_thread to ensure display updates before next tool
+            if hasattr(self.conversation, 'complete_nested_tool_call') and self._app is not None:
+                self._app.call_from_thread(
                     self.conversation.complete_nested_tool_call,
                     tool_name,
                     depth,
@@ -506,9 +507,11 @@ class TextualUICallback:
             return
 
         # Update the nested tool call status to complete
-        if hasattr(self.conversation, 'complete_nested_tool_call'):
+        # Use BLOCKING call_from_thread to ensure each tool's completion is displayed
+        # before the next tool starts (fixes "all at once" display issue)
+        if hasattr(self.conversation, 'complete_nested_tool_call') and self._app is not None:
             success = result.get("success", False) if isinstance(result, dict) else True
-            self._run_on_ui(
+            self._app.call_from_thread(
                 self.conversation.complete_nested_tool_call,
                 tool_name,
                 depth,
@@ -820,3 +823,41 @@ class TextualUICallback:
         except Exception:
             # Panel not found or not initialized yet
             pass
+
+    def on_tool_complete(
+        self,
+        tool_name: str,
+        success: bool,
+        message: str,
+        details: Optional[str] = None,
+    ) -> None:
+        """Called when ANY tool completes to display result.
+        
+        This is the standardized method for showing tool completion results.
+        Every tool should call this to display its pass/fail status.
+        
+        Args:
+            tool_name: Name of the tool that completed
+            success: Whether the tool succeeded
+            message: Result message to display
+            details: Optional additional details (shown dimmed)
+        """
+        from swecli.ui_textual.formatters.result_formatter import (
+            ToolResultFormatter,
+            ResultType,
+        )
+        
+        formatter = ToolResultFormatter()
+        
+        # Determine result type based on success
+        result_type = ResultType.SUCCESS if success else ResultType.ERROR
+        
+        # Format the result using centralized formatter
+        result_text = formatter.format_result(
+            message,
+            result_type,
+            secondary=details,
+        )
+        
+        # Display in conversation
+        self._run_on_ui(self.conversation.write, result_text)
