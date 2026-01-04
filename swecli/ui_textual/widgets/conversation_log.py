@@ -18,6 +18,7 @@ from textual.widgets import RichLog
 
 from swecli.ui_textual.renderers import render_markdown_text_segment
 from swecli.ui_textual.constants import TOOL_ERROR_SENTINEL
+from swecli.ui_textual.style_tokens import ERROR, GREY
 from swecli.ui_textual.widgets.terminal_box_renderer import (
     TerminalBoxConfig,
     TerminalBoxRenderer,
@@ -341,8 +342,8 @@ class ConversationLog(RichLog):
     def add_error(self, message: str) -> None:
         """Render an error message with a red bullet and clear any active spinner."""
         self.stop_spinner()
-        bullet = Text("⦿ ", style="bold red")
-        bullet.append(message, style="red")
+        bullet = Text("⦿ ", style=f"bold {ERROR}")
+        bullet.append(message, style=ERROR)
         self.write(bullet)
         self.write(Text(""))
 
@@ -460,7 +461,7 @@ class ConversationLog(RichLog):
         formatted.append(indent)
         formatted.append(f"{self._nested_spinner_chars[0]} ", style="green")
         formatted.append_text(tool_text)
-        formatted.append(" (0s)", style="#7a8594")  # Initial elapsed time
+        formatted.append(" (0s)", style=GREY)  # Initial elapsed time
 
         self.write(formatted, scroll_end=True, animate=False)
 
@@ -518,7 +519,7 @@ class ConversationLog(RichLog):
         spinner_char = self._nested_spinner_chars[self._nested_spinner_index]
         formatted.append(f"{spinner_char} ", style="green")
         formatted.append_text(self._nested_tool_text.copy())
-        formatted.append(f" ({elapsed}s)", style="#7a8594")
+        formatted.append(f" ({elapsed}s)", style=GREY)
 
         # Convert Text to Strip for in-place storage
         from rich.console import Console
@@ -581,10 +582,10 @@ class ConversationLog(RichLog):
         formatted = Text()
         indent = "  " * self._nested_tool_depth
         formatted.append(indent)
-        bullet_style = "green" if success else "red"
+        bullet_style = "green" if success else ERROR
         formatted.append("⏺ ", style=bullet_style)
         formatted.append_text(self._nested_tool_text.copy())
-        formatted.append(f" ({elapsed}s)", style="#7a8594")
+        formatted.append(f" ({elapsed}s)", style=GREY)
 
         # Convert Text to Strip for in-place storage
         from rich.console import Console
@@ -694,9 +695,9 @@ class ConversationLog(RichLog):
 
             # Apply consistent styling based on error state
             if has_interrupted:
-                formatted.append(clean_line, style="bold red")
+                formatted.append(clean_line, style=f"bold {ERROR}")
             elif has_error:
-                formatted.append(clean_line, style="red")
+                formatted.append(clean_line, style=ERROR)
             else:
                 formatted.append(clean_line, style="dim")
 
@@ -740,8 +741,8 @@ class ConversationLog(RichLog):
             elif entry_type == "del":
                 display_no = f"{line_no:>4} " if line_no is not None else "     "
                 formatted.append(display_no, style="dim")
-                formatted.append("- ", style="red")
-                formatted.append(content.replace("\t", "    "), style="red")
+                formatted.append("- ", style=ERROR)
+                formatted.append(content.replace("\t", "    "), style=ERROR)
             else:
                 display_no = f"{line_no:>4} " if line_no is not None else "     "
                 formatted.append(display_no, style="dim")
@@ -789,9 +790,8 @@ class ConversationLog(RichLog):
 
     def _write_generic_tool_result(self, text: str) -> None:
         lines = text.rstrip("\n").splitlines() or [text]
-        grey = "#a0a4ad"
         for raw_line in lines:
-            line = Text("  ⎿  ", style=grey)
+            line = Text("  ⎿  ", style=GREY)
             message = raw_line.rstrip("\n")
             is_error = False
             is_interrupted = False
@@ -803,9 +803,9 @@ class ConversationLog(RichLog):
                 message = message[len("::interrupted::"):].lstrip()
 
             if is_interrupted:
-                line.append(message, style="bold red")
+                line.append(message, style=f"bold {ERROR}")
             else:
-                line.append(message, style="red" if is_error else grey)
+                line.append(message, style=ERROR if is_error else GREY)
             self.write(line)
 
     def add_bash_output_box(
@@ -940,7 +940,7 @@ class ConversationLog(RichLog):
         if not diff_lines:
             return
 
-        self.write(Text(header, style="bold #d0d0d0"))
+        self.write(Text(header, style=f"bold {GREY}"))
         match = re.search(r"Edit(?:ed)?\s+[\"']?([^\s\"']+)", header)
         title = match.group(1) if match else "diff"
 
@@ -952,18 +952,18 @@ class ConversationLog(RichLog):
                 continue
 
             stripped = display.lstrip()
-            style = "#d0d0d0"
+            style = GREY
             if stripped.startswith("+"):
                 style = "green"
             elif stripped.startswith("-"):
-                style = "red"
+                style = ERROR
             elif stripped.startswith(("@@", "diff ", "index ", "---", "+++")):
                 style = "cyan"
             rendered_lines.append(Text(display, style=style))
 
         panel = Panel(
             Group(*rendered_lines),
-            border_style="#5a5a5a",
+            border_style=GREY,
             padding=(0, 2),
             title=title,
             title_align="left",
@@ -1270,9 +1270,8 @@ class ConversationLog(RichLog):
             # Also add tip line if present
             if self._thinking_tip:
                 tip_line = Text()
-                grey = "#a0a4ad"
-                tip_line.append("  ⎿  Tip: ", style=grey)
-                tip_line.append(self._thinking_tip, style=grey)
+                tip_line.append("  ⎿  Tip: ", style=GREY)
+                tip_line.append(self._thinking_tip, style=GREY)
                 self.write(tip_line, scroll_end=True, animate=False)
                 self._spinner_line_count = len(self.lines) - self._spinner_start
         else:
@@ -1394,7 +1393,7 @@ class ConversationLog(RichLog):
         # Build the new line content
         formatted = Text()
         if prefix == "⏺":
-            style = "green" if success else "red"
+            style = "green" if success else ERROR
         else:
             style = "bright_cyan"
         formatted.append(f"{prefix} ", style=style)
@@ -1453,7 +1452,7 @@ class ConversationLog(RichLog):
         elapsed = self._tool_elapsed_seconds()
         if elapsed is None:
             return None
-        return Text(f" ({elapsed}s)", style="#7a8594")
+        return Text(f" ({elapsed}s)", style=GREY)
 
     def _schedule_tool_spinner(self) -> None:
         if not self._spinner_active:

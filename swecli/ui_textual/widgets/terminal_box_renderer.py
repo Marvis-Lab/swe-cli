@@ -9,6 +9,8 @@ from typing import Callable, List
 
 from rich.text import Text
 
+from swecli.ui_textual.style_tokens import ERROR, GREY, PANEL_BORDER
+
 
 @dataclass
 class TerminalBoxConfig:
@@ -29,13 +31,13 @@ class TerminalBoxRenderer:
     """
 
     # Color constants for terminal box elements
-    POINTER_COLOR = "#a0a4ad"
+    POINTER_COLOR = GREY
     PATH_COLOR = "#58a6ff"
     PROMPT_COLOR = "#7ee787"
-    COMMAND_COLOR = "#c9d1d9"
-    ERROR_COLOR = "#f85149"
-    BORDER_DEFAULT = "#3a3f4b"
-    BORDER_ERROR = "#f85149"
+    COMMAND_COLOR = GREY
+    ERROR_COLOR = ERROR
+    BORDER_DEFAULT = PANEL_BORDER
+    BORDER_ERROR = ERROR
 
     def __init__(self, width_provider: Callable[[], int]):
         """Initialize renderer.
@@ -174,7 +176,7 @@ class TerminalBoxRenderer:
     def render_code_block_header(self, language: str, box_width: int) -> Text:
         """Render code block top border with language: ╭─ python ────────╮"""
         border = self.BORDER_DEFAULT
-        lang_color = "#8b949e"  # Subtle gray for language label
+        lang_color = GREY
 
         # Build: ╭─ python ─────────────────╮
         # Format: "    ╭─ {language} ─...─╮"

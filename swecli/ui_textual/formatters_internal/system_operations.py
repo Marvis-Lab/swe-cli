@@ -6,6 +6,8 @@ from typing import Any, Dict
 from rich.panel import Panel
 from rich.tree import Tree
 
+from swecli.ui_textual.style_tokens import ERROR
+
 from .base import BaseToolFormatter
 
 
@@ -112,7 +114,7 @@ class ListDirectoryFormatter(BaseToolFormatter):
                 content_text,
                 title=status_icon,
                 title_align="left",
-                border_style="red",
+                border_style=ERROR,
             )
 
 

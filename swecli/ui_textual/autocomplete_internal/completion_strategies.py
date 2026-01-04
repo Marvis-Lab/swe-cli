@@ -8,6 +8,8 @@ from prompt_toolkit.completion import Completion
 from prompt_toolkit.document import Document
 from prompt_toolkit.formatted_text import FormattedText
 
+from swecli.ui_textual.style_tokens import GREY
+
 from .commands import CommandRegistry
 from .utils import FileFinder, FileSizeFormatter
 
@@ -82,7 +84,7 @@ def get_file_icon(file_path: Path) -> tuple[str, str]:
     elif suffix in [".md", ".markdown"]:
         return "md", "blue"
     elif suffix == ".txt":
-        return "txt", "gray"
+        return "txt", "GREY"
     elif suffix == ".pdf":
         return "pdf", "red"
     elif suffix in [".doc", ".docx"]:
@@ -118,7 +120,7 @@ def get_file_icon(file_path: Path) -> tuple[str, str]:
     elif suffix == ".env":
         return "env", "yellow"
     elif suffix in [".ini", ".conf", ".config"]:
-        return "cfg", "gray"
+        return "cfg", "GREY"
 
     # Build files
     elif file_path.name == "Makefile":
@@ -128,12 +130,12 @@ def get_file_icon(file_path: Path) -> tuple[str, str]:
     elif file_path.name == "Vagrantfile":
         return "vag", "blue"
     elif suffix == ".lock":
-        return "lock", "gray"
+        return "lock", "GREY"
 
     # Default - show extension without dot, max 4 chars
     else:
         ext = suffix[1:] if suffix else "file"
-        return ext[:4], "gray"
+        return ext[:4], "GREY"
 
 
 class CompletionStrategy(ABC):

@@ -11,6 +11,8 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
+from swecli.ui_textual.style_tokens import GREY
+
 if TYPE_CHECKING:
     from swecli.ui_textual.chat_app import SWECLIChatApp
 
@@ -419,7 +421,7 @@ class ModelPickerController:
 
         instructions = Text(
             "Use ↑/↓ or 1-3 to select a slot, Enter to configure, Esc to cancel.",
-            style="italic #7a8691",
+            style=f"italic {GREY}",
         )
         header = Text("Select which model slot you'd like to configure.", style="#9ccffd")
         panel = Panel(
@@ -521,7 +523,7 @@ class ModelPickerController:
 
         instructions = Text(
             "Use ↑/↓ or number keys, Enter to view models, B to go back, Esc to cancel.",
-            style="italic #7a8691",
+            style=f"italic {GREY}",
         )
         subtitle = Text(
             f"{labels.get(slot, slot.title())} · {description}",
@@ -587,7 +589,7 @@ class ModelPickerController:
 
         instructions = Text(
             "Use ↑/↓ or number keys, Enter to apply, B to go back, Esc to cancel.",
-            style="italic #7a8691",
+            style=f"italic {GREY}",
         )
         subtitle = Text(
             f"{provider_entry.name} · {labels.get(slot, slot.title())}",
@@ -613,8 +615,8 @@ class ModelPickerController:
             expand=True,
         )
         table.add_column("Slot", style="bold white")
-        table.add_column("Provider", style="#d7d7d7")
-        table.add_column("Model", style="#d7d7d7")
+        table.add_column("Provider", style=GREY)
+        table.add_column("Model", style=GREY)
 
         for slot in ["normal", "thinking", "vision"]:
             entry = snapshot.get(slot, {})
@@ -624,7 +626,7 @@ class ModelPickerController:
                 model_display = "—"
             table.add_row(labels.get(slot, slot.title()), provider_display, model_display)
 
-        instructions = Text("Type /models again to reopen the selector anytime.", style="italic #7a8691")
+        instructions = Text("Type /models again to reopen the selector anytime.", style=f"italic {GREY}")
         panel = Panel(
             Group(Text("Current model configuration", style="#9ccffd"), table, instructions),
             title="[bold]Model Summary[/bold]",

@@ -8,6 +8,8 @@ from typing import Any, Mapping, Tuple
 
 from rich.text import Text
 
+from swecli.ui_textual.style_tokens import GREY
+
 _TOOL_DISPLAY_PARTS: dict[str, tuple[str, str]] = {
     "read_file": ("Read", "file"),
     "read_pdf": ("Read", "pdf"),
@@ -226,7 +228,7 @@ def build_tool_call_text(tool_name: str, tool_args: Mapping[str, Any]) -> Text:
         # Strip trailing space from tool_part to avoid double space
         text = Text(tool_part.rstrip())
         if params_part:
-            text.append(f" ({params_part})", style="dim")
+            text.append(f" ({params_part})", style=GREY)
         return text
     else:
         return Text(formatted)

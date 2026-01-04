@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from swecli.ui_textual.formatters.style_formatter import StyleFormatter
+from swecli.ui_textual.style_tokens import GREY
 from swecli.ui_textual.utils.tool_display import build_tool_call_text
 from swecli.models.message import ToolCall
 
@@ -152,8 +153,8 @@ class TextualUICallback:
 
             # Show result line (if message provided)
             if message:
-                result_line = Text("  ⎿  ", style="#a0a4ad")
-                result_line.append(message, style="#a0a4ad")
+                result_line = Text("  ⎿  ", style=GREY)
+                result_line.append(message, style=GREY)
                 self._run_on_ui(self.conversation.write, result_line)
 
     def on_interrupt(self) -> None:

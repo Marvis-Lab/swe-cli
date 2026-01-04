@@ -2,6 +2,8 @@
 
 from rich.text import Text
 
+from swecli.ui_textual.style_tokens import ERROR, GREY
+
 
 def create_interrupt_message(message: str) -> str:
     """Create an interrupt message string with the special marker.
@@ -31,9 +33,8 @@ def create_interrupt_text(message: str) -> Text:
     Returns:
         Text object with proper interrupt styling
     """
-    grey = "#a0a4ad"
-    line = Text("  ⎿  ", style=grey)
-    line.append(message.strip(), style="bold red")
+    line = Text("  ⎿  ", style=GREY)
+    line.append(message.strip(), style=f"bold {ERROR}")
     return line
 
 

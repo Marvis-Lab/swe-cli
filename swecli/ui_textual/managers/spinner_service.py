@@ -21,6 +21,8 @@ from typing import TYPE_CHECKING, Any, Callable, Dict, Optional
 
 from rich.text import Text
 
+from swecli.ui_textual.style_tokens import GREY
+
 if TYPE_CHECKING:
     from textual.app import App
     from textual.timer import Timer
@@ -271,8 +273,8 @@ class SpinnerService:
 
             # Show result line if provided
             if result_message:
-                result_line = Text("  ⎿  ", style="#a0a4ad")
-                result_line.append(result_message, style="#a0a4ad")
+                result_line = Text("  ⎿  ", style=GREY)
+                result_line.append(result_message, style=GREY)
                 conversation.write(result_line)
 
         self._run_non_blocking(_stop_on_ui)

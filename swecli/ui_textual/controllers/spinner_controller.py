@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import random
-import time
 from typing import Optional, TYPE_CHECKING
 
 from rich.text import Text
-from textual.timer import Timer
+
+from swecli.ui_textual.style_tokens import GREY
 
 if TYPE_CHECKING:  # pragma: no cover
     from swecli.ui_textual.chat_app import SWECLIChatApp
@@ -16,7 +16,14 @@ if TYPE_CHECKING:  # pragma: no cover
 
 
 class SpinnerController:
-    """Manages the in-conversation spinner animation."""
+    """Manages the in-conversation spinner.
+
+    This controller delegates animation to ConversationLog which uses
+    widget-level timers for reliable animation. The controller's job is to:
+    - Determine the spinner message (from todo or random thinking verb)
+    - Get tips from TipsManager
+    - Coordinate start/stop with the conversation widget
+    """
 
     def __init__(
         self,
@@ -27,11 +34,7 @@ class SpinnerController:
         self.app = app
         self.tips_manager = tips_manager
         self.todo_handler = todo_handler
-        self._frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
-        self._timer: Timer | None = None
-        self._frame_index = 0
         self._message = "Thinking…"
-        self._started_at = 0.0
         self._active = False
         self._current_tip = ""
 
@@ -40,7 +43,13 @@ class SpinnerController:
         return self._active
 
     def start(self, message: Optional[str] = None) -> None:
-        if self._timer is not None:
+        """Start the thinking spinner.
+
+        Args:
+            message: Optional custom message. If not provided, uses todo's
+                     activeForm or a random thinking verb.
+        """
+        if self._active:
             return
 
         conversation = getattr(self.app, "conversation", None)
@@ -59,69 +68,46 @@ class SpinnerController:
             else:
                 self._message = self._default_message()
 
-        self._frame_index = 0
-        self._started_at = time.monotonic()
         self._active = True
         self._current_tip = self.tips_manager.get_next_tip() if self.tips_manager else ""
-        self._render(initial=True)
-        self._timer = self.app.set_interval(0.12, self._advance_frame)
+
+        # Build the initial message with tip
+        text = self._format_spinner_text()
+
+        # Delegate to conversation - it handles its own animation
+        conversation.start_spinner(text)
 
     def stop(self) -> None:
-        if self._timer is not None:
-            self._timer.stop()
-            self._timer = None
-
-        conversation = getattr(self.app, "conversation", None)
-        if self._active and conversation is not None:
-            conversation.stop_spinner()
+        """Stop the thinking spinner."""
+        if not self._active:
+            return
 
         self._active = False
-        self._started_at = 0.0
         self._current_tip = ""
 
+        conversation = getattr(self.app, "conversation", None)
+        if conversation is not None:
+            conversation.stop_spinner()
+
     def resume(self) -> None:
+        """Resume the spinner if not active."""
         if not self._active:
             self.start(self._default_message())
-        else:
-            # Restart timer to refresh animation if already marked active
-            if self._timer is not None:
-                self._timer.stop()
-            self._timer = self.app.set_interval(0.12, self._advance_frame)
-
-    def _advance_frame(self) -> None:
-        if not self._active:
-            return
-
-        self._frame_index = (self._frame_index + 1) % len(self._frames)
-        self._render(initial=False)
-
-    def _render(self, *, initial: bool) -> None:
-        conversation = getattr(self.app, "conversation", None)
-        if conversation is None:
-            return
-
-        text = self._format_spinner_text()
-        if initial:
-            conversation.start_spinner(text)
-        else:
-            conversation.update_spinner(text)
 
     def _format_spinner_text(self) -> Text:
-        frame = self._frames[self._frame_index]
-        elapsed = 0
-        if self._started_at:
-            elapsed = int(time.monotonic() - self._started_at)
-        suffix = f" ({elapsed}s)" if elapsed else " (0s)"
+        """Format the spinner text with message and tip.
 
+        Note: Frame character and timing are handled by ConversationLog.
+        We just provide the message and tip.
+        """
         renderable = Text()
-        renderable.append(frame, style="bright_cyan")
-        renderable.append(f" {self._message}{suffix}", style="bright_cyan")
+        # Just provide the message - ConversationLog adds spinner char and timing
+        renderable.append(self._message, style="bright_cyan")
 
         if self._current_tip:
             renderable.append("\n")
-            grey = "#a0a4ad"
-            renderable.append("  ⎿  Tip: ", style=grey)
-            renderable.append(self._current_tip, style=grey)
+            renderable.append("  ⎿  Tip: ", style=GREY)
+            renderable.append(self._current_tip, style=GREY)
 
         return renderable
 

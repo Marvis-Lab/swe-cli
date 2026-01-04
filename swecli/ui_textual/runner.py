@@ -38,6 +38,7 @@ from rich.ansi import AnsiDecoder
 from rich.text import Text
 
 from swecli.core.agents.components import extract_plan_from_response
+from swecli.ui_textual.style_tokens import ERROR
 from swecli.core.runtime import ConfigManager, OperationMode
 from swecli.core.context_engineering.history import SessionManager
 from swecli.models.message import ChatMessage, Role
@@ -1121,7 +1122,7 @@ Work through each implementation step in order. Mark each todo item as 'in_progr
         enabled_text = (
             Text("Yes", style="green")
             if server_config.enabled
-            else Text("No", style="red")
+            else Text("No", style=ERROR)
         )
         info_table.add_row("Enabled", enabled_text)
 

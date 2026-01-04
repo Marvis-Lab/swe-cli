@@ -5,6 +5,8 @@ from typing import Any, Dict, Optional
 from rich.panel import Panel
 from rich.tree import Tree
 
+from swecli.ui_textual.style_tokens import ERROR
+
 from .formatter_base import BaseFormatter, STATUS_ICONS
 
 
@@ -83,7 +85,7 @@ class DirectoryFormatter(BaseFormatter):
         if not result.get("success"):
             error = result.get("error", "Unknown error")
             content_text = f"{status_icon} [bold]{directory}[/bold]\n[red]{error}[/red]"
-            return Panel(content_text, title=status_icon, title_align="left", border_style="red")
+            return Panel(content_text, title=status_icon, title_align="left", border_style=ERROR)
 
         output = result.get("output", "")
 

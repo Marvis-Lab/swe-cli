@@ -10,6 +10,8 @@ from rich.text import Text
 from textual.app import ComposeResult
 from textual.widgets import Footer, Static
 
+from swecli.ui_textual.style_tokens import GREY
+
 
 def _get_git_branch_in_thread(working_dir: str) -> str | None:
     """Get git branch in a separate thread to avoid Textual FD issues.
@@ -141,30 +143,30 @@ class StatusBar(Static):
         status = Text()
 
         # Mode with cycling hint
-        status.append("Mode: ", style="#6a6a6a")
+        status.append("Mode: ", style=GREY)
         status.append(f"{self.mode.upper()}", style=f"bold {mode_color}")
-        status.append(" (Shift+Tab)", style="#6a6a6a")
+        status.append(" (Shift+Tab)", style=GREY)
 
         # Autonomy level with color coding
-        status.append("  │  ", style="#6a6a6a")
-        status.append("Autonomy: ", style="#6a6a6a")
+        status.append("  │  ", style=GREY)
+        status.append("Autonomy: ", style=GREY)
         autonomy_colors = {
             "Manual": "#ffa500",    # Orange - caution, needs attention
             "Semi-Auto": "#00bfff",  # Cyan - partial automation
             "Auto": "#00ff00",       # Green - fully automated
         }
-        autonomy_color = autonomy_colors.get(self.autonomy, "#6a6a6a")
+        autonomy_color = autonomy_colors.get(self.autonomy, GREY)
         status.append(self.autonomy, style=f"bold {autonomy_color}")
-        status.append(" (Ctrl+Shift+A)", style="#6a6a6a")
+        status.append(" (Ctrl+Shift+A)", style=GREY)
 
         # Repo info
         repo_display = self._get_repo_display()
         if repo_display:
-            status.append("  │  ", style="#6a6a6a")
+            status.append("  │  ", style=GREY)
             status.append(repo_display, style="#4a9eff")
 
         if self.spinner_text:
-            status.append("  │  ", style="#6a6a6a")
+            status.append("  │  ", style=GREY)
             status.append(self.spinner_text, style="#4a9eff")
 
         self.update(status)
@@ -291,7 +293,7 @@ class ModelFooter(Footer):
 
     def _build_model_text(self) -> Text:
         """Create comprehensive Rich text showing all models with providers."""
-        base_style = "#6a6a6a"
+        base_style = GREY
         normal_style = "#00ff00"  # Green for normal
         thinking_style = "#FFD700"  # Gold for thinking
         vision_style = "#00CED1"  # Cyan for vision
@@ -301,7 +303,7 @@ class ModelFooter(Footer):
         def format_model_display(model_str: str, style: str) -> None:
             """Format a model with provider and name in a compact way."""
             if not model_str:
-                text.append("Not set", style=f"italic #5a5a5a")
+                text.append("Not set", style=f"italic {GREY}")
                 return
 
             # Extract provider and model name
