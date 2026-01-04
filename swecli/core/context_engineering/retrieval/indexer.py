@@ -2,12 +2,26 @@
 
 from __future__ import annotations
 
+import fnmatch
 import json
+import os
 import subprocess
 from pathlib import Path
 from typing import Dict, List, Optional
 
 from .token_monitor import ContextTokenMonitor
+
+IGNORED_DIRS = {
+    "node_modules",
+    "__pycache__",
+    ".git",
+    "venv",
+    "build",
+    "dist",
+    ".venv",
+    ".idea",
+    ".vscode",
+}
 
 
 class CodebaseIndexer:
@@ -17,8 +31,13 @@ class CodebaseIndexer:
         self.working_dir = Path(working_dir or Path.cwd())
         self.token_monitor = ContextTokenMonitor()
         self.target_tokens = 3000
+        self._file_cache: Optional[List[Path]] = None
+        self._dir_cache: Optional[List[Path]] = None
 
     def generate_index(self, max_tokens: int = 3000) -> str:
+        # Pre-scan codebase to populate caches
+        self._scan_codebase()
+
         sections = []
         sections.append(f"# {self.working_dir.name}\n")
         sections.append(self._generate_overview())
@@ -35,21 +54,42 @@ class CodebaseIndexer:
             content = self._compress_content(content, max_tokens)
         return content
 
+    def _scan_codebase(self) -> None:
+        """Walk the directory once and cache files and directories."""
+        self._file_cache = []
+        self._dir_cache = []
+
+        for root, dirs, files in os.walk(self.working_dir):
+            # Modify dirs in-place to skip ignored directories
+            dirs[:] = [d for d in dirs if d not in IGNORED_DIRS]
+
+            root_path = Path(root)
+            self._dir_cache.append(root_path)
+            for f in files:
+                self._file_cache.append(root_path / f)
+
     def _generate_overview(self) -> str:
         lines = ["## Overview\n"]
-        try:
-            result = subprocess.run(
-                ["find", ".", "-type", "f"],
-                capture_output=True,
-                text=True,
-                cwd=self.working_dir,
-                timeout=5,
-            )
-            if result.returncode == 0:
-                file_count = len(result.stdout.strip().split("\n"))
-                lines.append(f"**Total Files:** {file_count}")
-        except Exception:
-            pass
+
+        # Use cached file count if available, otherwise fallback (though _scan_codebase should be called)
+        if self._file_cache is not None:
+            file_count = len(self._file_cache)
+            lines.append(f"**Total Files:** {file_count}")
+        else:
+             # Fallback if _scan_codebase wasn't called (shouldn't happen in normal flow)
+            try:
+                result = subprocess.run(
+                    ["find", ".", "-type", "f"],
+                    capture_output=True,
+                    text=True,
+                    cwd=self.working_dir,
+                    timeout=5,
+                )
+                if result.returncode == 0:
+                    file_count = len(result.stdout.strip().split("\n"))
+                    lines.append(f"**Total Files:** {file_count}")
+            except Exception:
+                pass
 
         readme_path = self._find_readme()
         if readme_path:
@@ -67,13 +107,15 @@ class CodebaseIndexer:
     def _generate_structure(self) -> str:
         lines = ["## Structure\n", "```"]
         try:
+            # Construct ignore pattern for tree
+            ignore_pattern = "|".join(IGNORED_DIRS)
             result = subprocess.run(
                 [
                     "tree",
                     "-L",
                     "2",
                     "-I",
-                    "node_modules|__pycache__|.git|venv|build|dist",
+                    ignore_pattern,
                 ],
                 capture_output=True,
                 text=True,
@@ -179,13 +221,64 @@ class CodebaseIndexer:
         return None
 
     def _find_files(self, patterns: List[str]) -> List[Path]:
+        if self._file_cache is None:
+            # Fallback if _scan_codebase wasn't called
+            self._scan_codebase()
+
         matches: List[Path] = []
-        for pattern in patterns:
-            matches.extend(self.working_dir.glob(f"**/{pattern}"))
-        return matches
+
+        # We need to handle directory patterns like "tests/" or "spec/" differently
+        # and file patterns like "*.py" or "test_*.py"
+
+        dir_patterns = [p for p in patterns if p.endswith("/")]
+        file_patterns = [p for p in patterns if not p.endswith("/")]
+
+        if self._file_cache:
+            for f in self._file_cache:
+                # Check file patterns
+                name = f.name
+                if any(fnmatch.fnmatch(name, p) for p in file_patterns):
+                    matches.append(f)
+                    continue
+
+                # Check directory patterns (simple approach: check if file is under that dir)
+                # But glob(**/tests/) implies finding directories.
+                # The original code used glob(**/pattern)
+                # If pattern is tests/, glob finds directories named tests.
+
+                # If the original code returned directories for patterns ending in /, we should too.
+                # But _find_files return type is List[Path], usually files.
+                # Let's see how it's used: "for f in found[:5]: lines.append(...)".
+
+                # If the original glob returned directories, and we only cache files, we miss directories.
+                # But _dir_cache can help.
+
+        # Let's refine based on what glob does.
+        # glob(**/tests/) finds directories.
+        # glob(**/test_*.py) finds files.
+
+        # So we should search in _dir_cache for dir patterns, and _file_cache for file patterns.
+
+        for p in dir_patterns:
+            p_clean = p.rstrip("/")
+            if self._dir_cache:
+                for d in self._dir_cache:
+                    if fnmatch.fnmatch(d.name, p_clean):
+                        matches.append(d)
+
+        for p in file_patterns:
+            if self._file_cache:
+                for f in self._file_cache:
+                    if fnmatch.fnmatch(f.name, p):
+                        matches.append(f)
+
+        return sorted(list(set(matches)))
 
     def _basic_structure(self) -> str:
         try:
+             # Can we use _dir_cache and _file_cache here to generate a tree-like structure?
+             # For now, sticking to existing subprocess logic but maybe it's fine as fallback.
+             # Or we can improve it later.
             result = subprocess.run(
                 ["ls", "-R"],
                 capture_output=True,
