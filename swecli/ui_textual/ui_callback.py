@@ -8,6 +8,7 @@ from typing import Any, Dict, Optional
 
 from swecli.ui_textual.formatters.style_formatter import StyleFormatter
 from swecli.ui_textual.utils.tool_display import build_tool_call_text
+from swecli.models.message import ToolCall
 
 # Path argument keys that should be resolved to absolute paths
 _PATH_ARG_KEYS = {"path", "file_path", "working_dir", "directory", "dir", "target"}
@@ -35,6 +36,8 @@ class TextualUICallback:
         self._tool_spinner_id: str = ""
         # Working directory for resolving relative paths
         self._working_dir = working_dir
+        # Collector for nested tool calls (for session storage)
+        self._pending_nested_calls: list[ToolCall] = []
 
     def on_thinking_start(self) -> None:
         """Called when the agent starts thinking."""
@@ -49,6 +52,15 @@ class TextualUICallback:
             # Don't stop the spinner here - let it continue during tool execution
             # The app will stop it when the entire process is complete
             self._current_thinking = False
+
+    def get_and_clear_nested_calls(self) -> list[ToolCall]:
+        """Return collected nested calls and clear the buffer.
+
+        Called after spawn_subagent completes to attach nested calls to the ToolCall.
+        """
+        calls = self._pending_nested_calls
+        self._pending_nested_calls = []
+        return calls
 
     def on_assistant_message(self, content: str) -> None:
         """Called when assistant provides a message before tool execution.
@@ -67,6 +79,9 @@ class TextualUICallback:
             # Display the assistant's thinking/message
             if hasattr(self.conversation, 'add_assistant_message'):
                 self._run_on_ui(self.conversation.add_assistant_message, content)
+                # Force refresh to ensure immediate visual update
+                if hasattr(self.conversation, 'refresh'):
+                    self._run_on_ui(self.conversation.refresh)
 
     def on_message(self, message: str) -> None:
         """Called to display a simple progress message (no spinner).
@@ -475,6 +490,14 @@ class TextualUICallback:
         if tool_name in {"write_todos", "update_todo", "complete_todo"}:
             self._refresh_todo_panel()
 
+        # Collect for session storage
+        self._pending_nested_calls.append(ToolCall(
+            id=f"nested_{len(self._pending_nested_calls)}",
+            name=tool_name,
+            parameters=tool_args,
+            result=result,
+        ))
+
     def _display_tool_sub_result(
         self, tool_name: str, tool_args: Dict[str, Any], result: Dict[str, Any], depth: int
     ) -> None:
@@ -663,28 +686,31 @@ class TextualUICallback:
         return result
 
     def _run_on_ui(self, func, *args, **kwargs) -> None:
-        """Execute a function on the Textual UI thread WITHOUT waiting.
+        """Execute a function on the Textual UI thread and WAIT for completion.
 
-        Uses call_soon_threadsafe to schedule work on the event loop
-        without blocking the calling thread.
+        Uses call_from_thread to ensure ordered execution of UI updates.
+        This prevents race conditions where messages are displayed out of order.
         """
         if self._app is not None:
-            # Use call_soon_threadsafe for truly non-blocking UI updates
-            loop = getattr(self._app, '_loop', None)
-            if loop is not None:
-                loop.call_soon_threadsafe(lambda: func(*args, **kwargs))
-            else:
-                # Fallback to blocking call_from_thread if no loop available
-                self._app.call_from_thread(func, *args, **kwargs)
+            self._app.call_from_thread(func, *args, **kwargs)
         else:
             func(*args, **kwargs)
 
     def _run_on_ui_non_blocking(self, func, *args, **kwargs) -> None:
         """Execute a function on the Textual UI thread WITHOUT waiting.
 
-        Note: This is now identical to _run_on_ui. Kept for API compatibility.
+        Uses call_soon_threadsafe to schedule work on the event loop
+        without blocking the calling thread. Use with caution as this
+        does not guarantee execution order.
         """
-        self._run_on_ui(func, *args, **kwargs)
+        if self._app is not None:
+            loop = getattr(self._app, '_loop', None)
+            if loop is not None:
+                loop.call_soon_threadsafe(lambda: func(*args, **kwargs))
+            else:
+                self._app.call_from_thread(func, *args, **kwargs)
+        else:
+            func(*args, **kwargs)
 
     def _should_skip_due_to_interrupt(self) -> bool:
         """Check if we should skip UI operations due to interrupt.

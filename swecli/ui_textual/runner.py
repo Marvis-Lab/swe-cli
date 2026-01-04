@@ -741,6 +741,9 @@ class TextualRunner:
                         self.app.call_from_thread(
                             self.app.conversation.add_user_message, message
                         )
+                        # Force visual refresh to ensure user message appears before processing
+                        if hasattr(self.app.conversation, 'refresh'):
+                            self.app.call_from_thread(self.app.conversation.refresh)
 
                     try:
                         if is_command:
@@ -755,9 +758,12 @@ class TextualRunner:
                         else:
                             self.app.call_from_thread(self.app.notify_processing_error, str(exc))
                     finally:
-                        if not is_command:
-                            self.app.call_from_thread(self.app.notify_processing_complete)
                         self._pending.task_done()
+                        # Only reset processing state when queue is empty
+                        # This prevents race where new messages see _is_processing=False
+                        # and display immediately while queue still has messages
+                        if not is_command and self._pending.empty():
+                            self.app.call_from_thread(self.app.notify_processing_complete)
                         # Notify UI of queue update after processing
                         if self._queue_update_callback:
                             self.app.call_from_thread(
@@ -1320,10 +1326,15 @@ Work through each implementation step in order. Mark each todo item as 'in_progr
 
                 # Only render assistant messages that DON'T have tool calls
                 # Messages with tool calls were already displayed in real-time by callbacks
+                # Note: Simple text messages may also have been displayed via on_assistant_message
+                # callback - add_assistant_message has deduplication to prevent double-render
                 has_tool_calls = getattr(msg, "tool_calls", None) and len(msg.tool_calls) > 0
 
                 if content and not has_tool_calls:
                     self.app.conversation.add_assistant_message(msg.content)
+                    # Force refresh to ensure immediate visual update
+                    if hasattr(self.app.conversation, 'refresh'):
+                        self.app.conversation.refresh()
                     if hasattr(self.app, "record_assistant_message"):
                         self.app.record_assistant_message(msg.content)
                     if hasattr(self.app, "_last_rendered_assistant"):

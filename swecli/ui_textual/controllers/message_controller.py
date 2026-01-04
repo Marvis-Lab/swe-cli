@@ -43,7 +43,10 @@ class MessageController:
 
         # Only display user message if NOT already processing
         # Queued messages are displayed when they start processing in runner
+        # IMPORTANT: Set _is_processing BEFORE display to prevent race condition
+        # where rapid submissions see False before the flag is set in _process_message
         if not already_processing:
+            app._is_processing = True  # Set immediately to prevent race
             app.conversation.add_user_message(message)
 
         if app._model_picker.active:
