@@ -183,6 +183,23 @@ class StyleFormatter:
 
         return lines
 
+    # Binary file extensions to skip in search results
+    _BINARY_EXTENSIONS = {
+        '.exe', '.dll', '.so', '.dylib', '.o', '.a', '.lib',
+        '.pyc', '.pyo', '.class', '.jar', '.war',
+        '.test', '.bin', '.dat', '.db', '.sqlite', '.sqlite3',
+        '.zip', '.tar', '.gz', '.bz2', '.xz', '.7z', '.rar',
+        '.png', '.jpg', '.jpeg', '.gif', '.bmp', '.ico', '.webp',
+        '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
+        '.mp3', '.mp4', '.avi', '.mov', '.mkv', '.wav', '.flac',
+        '.woff', '.woff2', '.ttf', '.otf', '.eot',
+    }
+
+    def _is_binary_file(self, filepath: str) -> bool:
+        """Check if a file is likely binary based on extension."""
+        ext = Path(filepath).suffix.lower()
+        return ext in self._BINARY_EXTENSIONS
+
     def _format_search_result(self, tool_args: Dict[str, Any], result: Dict[str, Any]) -> List[str]:
         if not result.get("success"):
             error_msg = result.get("error") or "Unknown error"
@@ -194,18 +211,45 @@ class StyleFormatter:
         if not matches:
             return ["No matches found"]
 
-        summary = []
-        for match in matches[:3]:
+        # Group matches by file and count
+        file_counts: Dict[str, int] = {}
+        binary_files: set = set()
+
+        for match in matches:
             # Support both formats: {"file", "line", "content"} and {"location", "preview"}
             if "file" in match:
-                location = f"{match['file']}:{match.get('line', '')}"
-                content = match.get("content", "").strip()
+                filepath = match["file"]
             else:
+                # Extract file from location like "path/file.py:123"
                 location = match.get("location", "unknown")
-                content = match.get("preview", "").strip()
-            summary.append(f"{location}: {content}")
-        if len(matches) > 3:
-            summary.append(f"... and {len(matches) - 3} more")
+                filepath = location.split(":")[0] if ":" in location else location
+
+            # Skip binary files
+            if self._is_binary_file(filepath):
+                binary_files.add(filepath)
+                continue
+
+            file_counts[filepath] = file_counts.get(filepath, 0) + 1
+
+        if not file_counts and not binary_files:
+            return ["No matches found"]
+
+        # Format as "file.py (N matches)" - show up to 10 files
+        summary = []
+        total_matches = sum(file_counts.values())
+
+        for filepath, count in list(file_counts.items())[:10]:
+            match_word = "match" if count == 1 else "matches"
+            summary.append(f"{filepath} ({count} {match_word})")
+
+        # Show truncation if more files
+        remaining_files = len(file_counts) - 10
+        if remaining_files > 0:
+            summary.append(f"... and {remaining_files} more files")
+
+        # Note skipped binary files
+        if binary_files:
+            summary.append(f"(skipped {len(binary_files)} binary file(s))")
 
         return summary
 

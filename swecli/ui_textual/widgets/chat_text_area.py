@@ -8,7 +8,7 @@ from typing import Any, Optional
 
 from prompt_toolkit.completion import Completer
 from prompt_toolkit.document import Document as PTDocument
-from textual.events import Key, Paste
+from textual.events import Key, MouseDown, MouseMove, MouseUp, Paste
 from textual.message import Message
 from textual.widgets import TextArea
 
@@ -261,12 +261,22 @@ class ChatTextArea(TextArea):
         start_location = self.document.get_location_from_index(replace_start)
         end_location = self.document.get_location_from_index(replace_end)
 
+        # Set flag BEFORE text modification to catch any triggered events
+        self._suppress_next_autocomplete = True
+
+        # Cancel any pending autocomplete timer
+        if self._autocomplete_timer is not None:
+            self._autocomplete_timer.stop()
+            self._autocomplete_timer = None
+
         result = self._replace_via_keyboard(completion_text, start_location, end_location)
         if result is not None:
             self.cursor_location = result.end_location
 
+        # Update last text to prevent "text changed" triggers from re-running autocomplete
+        self._last_autocomplete_text = self.text or ""
+
         self._clear_completions()
-        self._suppress_next_autocomplete = True
         self.update_suggestion()
         return True
 
@@ -491,6 +501,21 @@ class ChatTextArea(TextArea):
         """Clear cached large paste payloads after submission."""
 
         self._large_paste_cache.clear()
+
+    # Mouse event handlers to prevent mouse escape sequences from being
+    # interpreted as keyboard input (causes random characters in input)
+
+    def on_mouse_down(self, event: MouseDown) -> None:
+        """Handle mouse down - consume to prevent escape sequence leakage."""
+        pass  # Let parent handle, but consume the event
+
+    def on_mouse_move(self, event: MouseMove) -> None:
+        """Handle mouse move - consume to prevent escape sequence leakage."""
+        pass  # Consume mouse move events
+
+    def on_mouse_up(self, event: MouseUp) -> None:
+        """Handle mouse up - consume to prevent escape sequence leakage."""
+        pass  # Consume mouse up events
 
     def _register_large_paste(self, content: str) -> str:
         """Store large paste content and return the placeholder token."""

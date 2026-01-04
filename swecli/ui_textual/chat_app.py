@@ -35,8 +35,8 @@ class SWECLIChatApp(App):
 
     CSS_PATH = "styles/chat.tcss"
 
-    # Enable mouse for scroll support; text selection requires Option/Alt + drag
-    ENABLE_MOUSE = True
+    # Disable mouse to avoid escape sequence issues and random character input
+    ENABLE_MOUSE = False
 
     BINDINGS = [
         Binding("ctrl+c", "clear_or_quit", "", show=False, priority=True),

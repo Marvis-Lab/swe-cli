@@ -3,12 +3,36 @@
 from __future__ import annotations
 
 import asyncio
+import atexit
 import contextlib
 import os
 import queue
+import signal
+import sys
 import threading
 from pathlib import Path
 from typing import Any, Callable, Optional
+
+
+def _reset_terminal_mouse_mode() -> None:
+    """Send escape sequences to disable mouse tracking.
+
+    This ensures mouse mode is properly cleaned up even if the app
+    crashes or exits unexpectedly. Registered with atexit for reliability.
+    """
+    try:
+        # Disable SGR mouse mode and basic mouse tracking
+        sys.stdout.write("\033[?1006l")  # Disable SGR extended mouse mode
+        sys.stdout.write("\033[?1003l")  # Disable any-event tracking
+        sys.stdout.write("\033[?1002l")  # Disable button-event tracking
+        sys.stdout.write("\033[?1000l")  # Disable basic mouse mode
+        sys.stdout.flush()
+    except Exception:
+        pass  # Ignore errors during cleanup
+
+
+# Register cleanup to run on exit
+atexit.register(_reset_terminal_mouse_mode)
 
 from rich.ansi import AnsiDecoder
 from rich.text import Text
@@ -322,31 +346,203 @@ class TextualRunner:
         self._history_restored = True
 
     def _render_stored_tool_calls(self, conversation, tool_calls: list[Any]) -> None:
-        """Replay historical tool calls and results."""
-
+        """Replay historical tool calls using same logic as live display."""
         if not tool_calls:
             return
 
+        from swecli.ui_textual.formatters.style_formatter import StyleFormatter
+        formatter = StyleFormatter()
+
         for tool_call in tool_calls:
+            tool_name = getattr(tool_call, "name", "tool")
             try:
                 parameters = self._coerce_tool_parameters(getattr(tool_call, "parameters", {}))
             except Exception:
                 parameters = {}
+            result = getattr(tool_call, "result", None)
 
-            display = build_tool_call_text(getattr(tool_call, "name", "tool"), parameters)
+            # Resolve paths for display (same as ui_callback._resolve_paths_in_args)
+            display_params = self._resolve_paths_for_display(parameters)
+
+            # Display tool call header (same as on_tool_call)
+            display = build_tool_call_text(tool_name, display_params)
             conversation.add_tool_call(display)
             if hasattr(conversation, "stop_tool_execution"):
                 conversation.stop_tool_execution()
 
-            lines = self._format_tool_history_lines(tool_call)
-            if lines:
-                conversation.add_tool_result("\n".join(lines))
+            # Handle result using same logic as on_tool_result() in ui_callback.py
+            if isinstance(result, str):
+                result = {"success": True, "output": result}
+
+            # Skip interrupted operations (same as live display - ui_callback.py line 402)
+            if isinstance(result, dict) and result.get("interrupted"):
+                continue
+
+            # Handle spawn_subagent with nested tool calls
+            if tool_name == "spawn_subagent":
+                nested = getattr(tool_call, "nested_tool_calls", [])
+                if nested:
+                    self._render_nested_tool_calls(conversation, nested, formatter)
+                continue
+
+            # Bash commands: use add_bash_output_box (mirrors on_tool_result)
+            if tool_name in ("bash_execute", "run_command", "Bash") and isinstance(result, dict):
+                is_error = not result.get("success", True)
+                command = parameters.get("command", "")
+                working_dir = str(self.working_dir)
+
+                output_parts = []
+                if result.get("stdout"):
+                    output_parts.append(result["stdout"])
+                if result.get("stderr"):
+                    output_parts.append(result["stderr"])
+                combined_output = "\n".join(output_parts).strip()
+                if not combined_output and result.get("output"):
+                    output_value = result["output"].strip()
+                    if output_value not in ("Command executed", "Command execution failed"):
+                        combined_output = output_value
+
+                if hasattr(conversation, "add_bash_output_box"):
+                    conversation.add_bash_output_box(combined_output, is_error, command, working_dir, 0)
+                continue
+
+            # edit_file: Use add_edit_diff_result for colored diff (mirrors ui_callback.py lines 516-533)
+            if tool_name == "edit_file" and isinstance(result, dict) and result.get("success"):
+                diff_text = result.get("diff", "")
+                if diff_text and hasattr(conversation, 'add_edit_diff_result'):
+                    file_path = parameters.get("file_path", "unknown")
+                    lines_added = result.get("lines_added", 0) or 0
+                    lines_removed = result.get("lines_removed", 0) or 0
+                    summary = f"Updated {file_path} with {lines_added} addition(s) and {lines_removed} removal(s)"
+                    conversation.add_tool_result(summary)
+                    conversation.add_edit_diff_result(diff_text, depth=0)
+                    continue
+
+            # Todo tools: Use add_todo_sub_results with symbols (mirrors ui_callback.py)
+            if tool_name == "write_todos" and isinstance(result, dict) and result.get("success"):
+                todos = parameters.get("todos", [])
+                if todos and hasattr(conversation, 'add_todo_sub_results'):
+                    items = []
+                    for todo in todos:
+                        status = todo.get("status", "pending")
+                        content = todo.get("content", "")
+                        symbol = "○" if status == "pending" else ("▶" if status == "in_progress" else "✓")
+                        items.append((symbol, content))
+                    conversation.add_todo_sub_results(items, depth=0)
+                    continue
+
+            # Other tools: use StyleFormatter (mirrors on_tool_result)
+            if isinstance(result, dict):
+                formatted = formatter.format_tool_result(tool_name, parameters, result)
+                lines = []
+                if isinstance(formatted, str):
+                    for line in formatted.splitlines():
+                        stripped = line.strip()
+                        if stripped.startswith("⎿"):
+                            result_text = stripped.lstrip("⎿").strip()
+                            if result_text:
+                                lines.append(result_text)
+                if lines:
+                    conversation.add_tool_result("\n".join(lines))
+            else:
+                # Fallback for non-dict results
+                fallback_lines = self._format_tool_history_lines(tool_call)
+                if fallback_lines:
+                    conversation.add_tool_result("\n".join(fallback_lines))
+
+    def _render_nested_tool_calls(self, conversation, nested_calls: list[Any], formatter: Any) -> None:
+        """Render nested tool calls using existing conversation log methods."""
+        for nested in nested_calls:
+            tool_name = getattr(nested, "name", "tool")
+            parameters = self._coerce_tool_parameters(getattr(nested, "parameters", {}))
+            result = getattr(nested, "result", None)
+            depth = 1
+
+            # Convert string result to dict
+            if isinstance(result, str):
+                result = {"success": True, "output": result}
+
+            # Skip interrupted operations
+            if isinstance(result, dict) and result.get("interrupted"):
+                continue
+
+            # Resolve paths for display (same as ui_callback._resolve_paths_in_args)
+            display_params = self._resolve_paths_for_display(parameters)
+
+            # Display nested tool call header
+            display = build_tool_call_text(tool_name, display_params)
+            if hasattr(conversation, "add_nested_tool_call"):
+                conversation.add_nested_tool_call(display, depth, "subagent")
+
+            # Display result FIRST, then complete
+            success = result.get("success", True) if isinstance(result, dict) else True
+
+            if tool_name in ("bash_execute", "run_command", "Bash") and isinstance(result, dict):
+                # Bash output box
+                is_error = not result.get("success", True)
+                command = parameters.get("command", "")
+                working_dir = parameters.get("working_dir", str(self.working_dir))
+                output = result.get("stdout", "") or result.get("output", "")
+                if result.get("stderr"):
+                    output = (output + "\n" + result["stderr"]).strip() if output else result["stderr"]
+                if hasattr(conversation, "add_bash_output_box"):
+                    conversation.add_bash_output_box(output.strip(), is_error, command, working_dir, depth)
+            elif tool_name == "edit_file" and isinstance(result, dict) and result.get("success"):
+                # Colored diff display
+                diff_text = result.get("diff", "")
+                if diff_text and hasattr(conversation, 'add_edit_diff_result'):
+                    file_path = parameters.get("file_path", "unknown")
+                    lines_added = result.get("lines_added", 0) or 0
+                    lines_removed = result.get("lines_removed", 0) or 0
+                    summary = f"Updated {file_path} with {lines_added} addition(s) and {lines_removed} removal(s)"
+                    if hasattr(conversation, "add_nested_tool_sub_results"):
+                        conversation.add_nested_tool_sub_results([summary], depth)
+                    conversation.add_edit_diff_result(diff_text, depth)
+            elif tool_name == "write_todos" and isinstance(result, dict) and result.get("success"):
+                # Todo symbols
+                todos = parameters.get("todos", [])
+                if todos and hasattr(conversation, 'add_todo_sub_results'):
+                    items = []
+                    for todo in todos:
+                        status = todo.get("status", "pending")
+                        content = todo.get("content", "")
+                        symbol = "○" if status == "pending" else ("▶" if status == "in_progress" else "✓")
+                        items.append((symbol, content))
+                    conversation.add_todo_sub_results(items, depth)
+            elif isinstance(result, dict):
+                # Generic StyleFormatter
+                formatted = formatter.format_tool_result(tool_name, parameters, result)
+                lines = [ln.lstrip("⎿").strip() for ln in formatted.splitlines() if ln.strip().startswith("⎿")]
+                if lines and hasattr(conversation, "add_nested_tool_sub_results"):
+                    conversation.add_nested_tool_sub_results(lines, depth)
+
+            # Complete AFTER result display
+            if hasattr(conversation, "complete_nested_tool_call"):
+                conversation.complete_nested_tool_call(tool_name, depth, "subagent", success)
 
     @staticmethod
     def _coerce_tool_parameters(raw: Any) -> dict[str, Any]:
         if isinstance(raw, dict):
             return raw
         return {}
+
+    def _resolve_paths_for_display(self, params: dict) -> dict:
+        """Resolve relative paths to absolute for display (same as ui_callback._resolve_paths_in_args)."""
+        PATH_KEYS = {"path", "file_path", "working_dir", "directory", "dir", "target"}
+        result = dict(params)
+        for key in PATH_KEYS:
+            if key in result and isinstance(result[key], str):
+                path = result[key]
+                # Skip if already absolute or has special prefix (like docker://[...]:)
+                if path.startswith("/") or path.startswith("["):
+                    continue
+                # Resolve relative path
+                if path == "." or path == "":
+                    result[key] = str(self.working_dir)
+                else:
+                    clean_path = path.lstrip("./")
+                    result[key] = str(self.working_dir / clean_path)
+        return result
 
     def _format_tool_history_lines(self, tool_call: Any) -> list[str]:
         """Convert stored ToolCall data into RichLog-friendly summary lines."""
@@ -1244,6 +1440,7 @@ Work through each implementation step in order. Mark each todo item as 'in_progr
         try:
             self._loop.run_until_complete(self._run_app())
         finally:
+            _reset_terminal_mouse_mode()  # Ensure mouse mode is disabled
             self.repl._cleanup()
             with contextlib.suppress(RuntimeError):
                 self._loop.run_until_complete(self._loop.shutdown_asyncgens())
@@ -1259,7 +1456,7 @@ Work through each implementation step in order. Mark each todo item as 'in_progr
         try:
             # Use alternate screen mode (inline=False) for clean TUI with no terminal noise
             # Enable mouse for scroll support; text selection requires Option/Alt + drag
-            await self.app.run_async(inline=False, mouse=True)
+            await self.app.run_async(inline=False, mouse=False)
         finally:
             # Stop message processor thread
             self._stop_message_processor()
