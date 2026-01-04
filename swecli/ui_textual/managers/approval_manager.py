@@ -114,8 +114,11 @@ class ChatApprovalManager:
                 apply_to_all=False,
             )
 
-        # Check pattern-based auto-approval (prefix matching)
-        if command and any(command.startswith(pattern) for pattern in self.approved_patterns):
+        # Check pattern-based auto-approval (exact match or prefix match)
+        if command and any(
+            command == pattern or command.startswith(pattern + " ")
+            for pattern in self.approved_patterns
+        ):
             return ApprovalResult(
                 approved=True,
                 choice=ApprovalChoice.APPROVE_ALL,
@@ -311,9 +314,8 @@ class ChatApprovalManager:
         pattern_cmd = edited_command if edited_command else command
         if pattern_cmd:
             base_cmd = " ".join(pattern_cmd.split()[:2])
-            # Add trailing space for proper prefix matching (avoids python3 matching python3.11)
-            pattern_with_space = base_cmd + " "
-            self.approved_patterns.add(pattern_with_space)
+            # Store without trailing space - matching logic handles both exact and prefix cases
+            self.approved_patterns.add(base_cmd)
 
             # Create persistent approval rule
             rule_id = f"user_approved_{uuid.uuid4().hex[:8]}"
@@ -322,7 +324,7 @@ class ChatApprovalManager:
                 name=f"Auto-approve: {base_cmd}",
                 description=f"User approved command starting with '{base_cmd}' on {datetime.now().strftime('%Y-%m-%d %H:%M')}",
                 rule_type=RuleType.PREFIX,
-                pattern=pattern_with_space,
+                pattern=base_cmd,  # No trailing space - rule matching handles both cases
                 action=RuleAction.AUTO_APPROVE,
                 enabled=True,
                 priority=50,

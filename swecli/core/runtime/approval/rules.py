@@ -52,7 +52,8 @@ class ApprovalRule:
         if self.rule_type == RuleType.COMMAND:
             return command == self.pattern
         if self.rule_type == RuleType.PREFIX:
-            return command.startswith(self.pattern)
+            # Match exact command OR command with additional args
+            return command == self.pattern or command.startswith(self.pattern + " ")
         if self.rule_type == RuleType.DANGER:
             try:
                 return bool(re.search(self.pattern, command))
