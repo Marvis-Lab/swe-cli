@@ -22,6 +22,8 @@ PLANNING_TOOLS = {
     "find_referencing_symbols",
     # Subagent spawning (subagents handle their own restrictions)
     "spawn_subagent",
+    # Task completion (always allowed - agents must signal completion)
+    "task_complete",
 }
 
 
@@ -815,6 +817,30 @@ _BUILTIN_TOOL_SCHEMAS: list[dict[str, Any]] = [
                     },
                 },
                 "required": ["symbol_name", "file_path", "new_name"],
+            },
+        },
+    },
+    # ===== Task Completion Tool =====
+    {
+        "type": "function",
+        "function": {
+            "name": "task_complete",
+            "description": "Call this tool when you have completed the user's request. You MUST call this tool to end the conversation - do NOT just stop making tool calls. Provide a summary of what was accomplished.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "summary": {
+                        "type": "string",
+                        "description": "Summary of what was accomplished. Be concise but complete.",
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": ["success", "partial", "failed"],
+                        "description": "Completion status: 'success' if fully completed, 'partial' if some parts done, 'failed' if couldn't complete",
+                        "default": "success",
+                    },
+                },
+                "required": ["summary", "status"],
             },
         },
     },

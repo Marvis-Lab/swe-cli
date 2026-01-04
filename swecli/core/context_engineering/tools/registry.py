@@ -14,6 +14,7 @@ from swecli.core.context_engineering.tools.handlers.screenshot_handler import Sc
 from swecli.core.context_engineering.tools.handlers.todo_handler import TodoHandler
 from swecli.core.context_engineering.tools.handlers.mcp_config_handler import MCPConfigHandler
 from swecli.core.context_engineering.tools.implementations.pdf_tool import PDFTool
+from swecli.core.context_engineering.tools.implementations.task_complete_tool import TaskCompleteTool
 from swecli.core.context_engineering.tools.symbol_tools import (
     handle_find_symbol,
     handle_find_referencing_symbols,
@@ -38,6 +39,8 @@ _PLAN_READ_ONLY_TOOLS = {
     "find_referencing_symbols",
     # Subagent spawning allowed in plan mode (subagents handle their own restrictions)
     "spawn_subagent",
+    # Task completion (always allowed - agents must signal completion)
+    "task_complete",
 }
 
 
@@ -73,6 +76,7 @@ class ToolRegistry:
         self._screenshot_handler = ScreenshotToolHandler()
         self.todo_handler = TodoHandler()
         self._pdf_tool = PDFTool()
+        self._task_complete_tool = TaskCompleteTool()
         self._subagent_manager: Union[Any, None] = None
         self.set_mcp_manager(mcp_manager)
 
@@ -113,6 +117,8 @@ class ToolRegistry:
             # MCP configuration tools
             "configure_mcp_server": self._mcp_config_handler.configure_mcp_server,
             "list_mcp_presets": self._mcp_config_handler.list_mcp_presets,
+            # Task completion tool
+            "task_complete": self._execute_task_complete,
         }
 
     def set_subagent_manager(self, manager: Any) -> None:
@@ -483,3 +489,18 @@ class ToolRegistry:
                 "error": result.get("error", "Unknown error"),
                 "output": None,
             }
+
+    def _execute_task_complete(self, arguments: dict[str, Any], context: Any = None) -> dict[str, Any]:
+        """Execute the task_complete tool to signal explicit task completion.
+
+        Args:
+            arguments: Dict with 'summary' (required) and 'status' keys
+            context: Tool execution context (unused)
+
+        Returns:
+            Result with _completion flag for loop termination
+        """
+        summary = arguments.get("summary", "")
+        status = arguments.get("status", "success")
+
+        return self._task_complete_tool.execute(summary=summary, status=status)

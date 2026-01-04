@@ -142,7 +142,6 @@ class QueryProcessor:
     REFLECTION_WINDOW_SIZE = 10
     MAX_PLAYBOOK_STRATEGIES = 30
     PLAYBOOK_DEBUG_PATH = "/tmp/swecli_debug/playbook_evolution.log"
-    MAX_ERROR_RECOVERY_ATTEMPTS = 3  # Max times to inject recovery prompt on tool failure
 
     def __init__(
         self,
@@ -616,33 +615,6 @@ class QueryProcessor:
             return True
         return False
 
-    def _should_attempt_error_recovery(self, messages: list, attempts: int) -> bool:
-        """Check if we should inject a recovery prompt after tool failure.
-
-        When the LLM returns no tool calls after a tool error, this method
-        determines if we should prompt it to fix the issue and retry.
-
-        Args:
-            messages: Message history
-            attempts: Number of recovery attempts already made
-
-        Returns:
-            True if recovery should be attempted
-        """
-        if attempts >= self.MAX_ERROR_RECOVERY_ATTEMPTS:
-            return False
-
-        # Find the most recent tool result
-        for msg in reversed(messages):
-            if msg.get("role") == "tool":
-                content = msg.get("content", "")
-                # Check if the tool failed
-                if content.startswith("Error:"):
-                    return True
-                # Only check the most recent tool result
-                break
-        return False
-
     def _render_status_line(self):
         """Render the status line with current context."""
         total_tokens = self.session_manager.current_session.total_tokens() if self.session_manager.current_session else 0
@@ -699,7 +671,8 @@ class QueryProcessor:
             # ReAct loop: Reasoning → Acting → Observing
             consecutive_reads = 0
             iteration = 0
-            error_recovery_attempts = 0
+            consecutive_no_tool_calls = 0
+            MAX_NUDGE_ATTEMPTS = 3  # After this many nudges, treat as implicit completion
             READ_OPERATIONS = {"read_file", "list_files", "search_code"}
 
             while True:
@@ -744,25 +717,50 @@ class QueryProcessor:
                     tool_calls=tool_calls or []
                 )
 
-                # If no tool calls, check if we should attempt error recovery
+                # If no tool calls, check if we should nudge or accept implicit completion
                 if not has_tool_calls:
-                    # Check if last tool failed and we should try to recover
-                    if self._should_attempt_error_recovery(messages, error_recovery_attempts):
-                        # Add assistant's suggestion to history
+                    # Check if last tool execution failed (should nudge to retry)
+                    last_tool_failed = False
+                    for msg in reversed(messages):
+                        if msg.get("role") == "tool":
+                            content = msg.get("content", "")
+                            if content.startswith("Error:"):
+                                last_tool_failed = True
+                            break
+
+                    if last_tool_failed:
+                        # Last tool failed - nudge agent to fix and retry
+                        consecutive_no_tool_calls += 1
+
+                        if consecutive_no_tool_calls >= MAX_NUDGE_ATTEMPTS:
+                            # Exhausted nudge attempts - give up
+                            if not normalized_description:
+                                normalized_description = "Warning: could not complete after multiple attempts."
+                            self.console.print(f"\n[dim]{normalized_description}[/dim]")
+                            metadata = {}
+                            if raw_llm_content is not None:
+                                metadata["raw_content"] = raw_llm_content
+                            assistant_msg = ChatMessage(
+                                role=Role.ASSISTANT,
+                                content=normalized_description,
+                                metadata=metadata,
+                            )
+                            self.session_manager.add_message(assistant_msg, self.config.auto_save_interval)
+                            break
+
+                        # Nudge agent to fix the error and retry
                         if normalized_description:
                             messages.append({
                                 "role": "assistant",
                                 "content": raw_llm_content or normalized_description,
                             })
-                        # Inject recovery prompt
                         messages.append({
                             "role": "user",
-                            "content": "The previous command failed. Please fix the issue and try again.",
+                            "content": "The previous operation failed. Please fix the issue and try again, or call task_complete with status='failed' if you cannot proceed.",
                         })
-                        error_recovery_attempts += 1
-                        continue  # Loop back to LLM
+                        continue
 
-                    # No recovery needed - task is complete
+                    # Last tool succeeded (or no previous tool) - accept implicit completion
                     if not normalized_description:
                         normalized_description = "Warning: model returned no reply."
                     self.console.print(f"\n[dim]{normalized_description}[/dim]")
@@ -777,6 +775,9 @@ class QueryProcessor:
                     self.session_manager.add_message(assistant_msg, self.config.auto_save_interval)
                     break
 
+                # Reset counter when we have tool calls
+                consecutive_no_tool_calls = 0
+
                 # Add assistant message with tool calls to history
                 messages.append({
                     "role": "assistant",
@@ -787,6 +788,28 @@ class QueryProcessor:
                 # Track read-only operations
                 all_reads = all(tc["function"]["name"] in READ_OPERATIONS for tc in tool_calls)
                 consecutive_reads = consecutive_reads + 1 if all_reads else 0
+
+                # Check for explicit task completion
+                for tool_call in tool_calls:
+                    if tool_call["function"]["name"] == "task_complete":
+                        import json as json_mod
+                        args = json_mod.loads(tool_call["function"]["arguments"])
+                        summary = args.get("summary", "Task completed")
+                        self.console.print(f"\n[dim]{summary}[/dim]")
+                        metadata = {}
+                        if raw_llm_content is not None:
+                            metadata["raw_content"] = raw_llm_content
+                        assistant_msg = ChatMessage(
+                            role=Role.ASSISTANT,
+                            content=summary,
+                            metadata=metadata,
+                        )
+                        self.session_manager.add_message(assistant_msg, self.config.auto_save_interval)
+                        break
+
+                # Check if task_complete was called (break out of main loop)
+                if any(tc["function"]["name"] == "task_complete" for tc in tool_calls):
+                    break
 
                 # Execute tool calls
                 for tool_call in tool_calls:
@@ -912,7 +935,8 @@ class QueryProcessor:
             # ReAct loop: Reasoning → Acting → Observing
             consecutive_reads = 0
             iteration = 0
-            error_recovery_attempts = 0
+            consecutive_no_tool_calls = 0
+            MAX_NUDGE_ATTEMPTS = 3  # After this many nudges, treat as implicit completion
             READ_OPERATIONS = {"read_file", "list_files", "search_code"}
 
             while True:
@@ -971,28 +995,53 @@ class QueryProcessor:
                 if ui_callback and hasattr(ui_callback, 'on_thinking_complete'):
                     ui_callback.on_thinking_complete()
 
-                # If no tool calls, check if we should attempt error recovery
+                # If no tool calls, check if we should nudge or accept implicit completion
                 if not has_tool_calls:
-                    # Check if last tool failed and we should try to recover
-                    if self._should_attempt_error_recovery(messages, error_recovery_attempts):
-                        # Show assistant's suggestion via UI callback
+                    # Check if last tool execution failed (should nudge to retry)
+                    last_tool_failed = False
+                    for msg in reversed(messages):
+                        if msg.get("role") == "tool":
+                            content = msg.get("content", "")
+                            if content.startswith("Error:"):
+                                last_tool_failed = True
+                            break
+
+                    if last_tool_failed:
+                        # Last tool failed - nudge agent to fix and retry
+                        consecutive_no_tool_calls += 1
+
+                        if consecutive_no_tool_calls >= MAX_NUDGE_ATTEMPTS:
+                            # Exhausted nudge attempts - give up
+                            if not normalized_description:
+                                normalized_description = "Warning: could not complete after multiple attempts."
+                            if ui_callback and hasattr(ui_callback, 'on_assistant_message'):
+                                ui_callback.on_assistant_message(normalized_description)
+                            metadata = {}
+                            if raw_llm_content is not None:
+                                metadata["raw_content"] = raw_llm_content
+                            assistant_msg = ChatMessage(
+                                role=Role.ASSISTANT,
+                                content=normalized_description,
+                                metadata=metadata,
+                            )
+                            self.session_manager.add_message(assistant_msg, self.config.auto_save_interval)
+                            break
+
+                        # Nudge agent to fix the error and retry
                         if normalized_description and ui_callback and hasattr(ui_callback, 'on_assistant_message'):
                             ui_callback.on_assistant_message(normalized_description)
-                        # Add assistant's suggestion to history
                         if normalized_description:
                             messages.append({
                                 "role": "assistant",
                                 "content": raw_llm_content or normalized_description,
                             })
-                        # Inject recovery prompt
                         messages.append({
                             "role": "user",
-                            "content": "The previous command failed. Please fix the issue and try again.",
+                            "content": "The previous operation failed. Please fix the issue and try again, or call task_complete with status='failed' if you cannot proceed.",
                         })
-                        error_recovery_attempts += 1
-                        continue  # Loop back to LLM
+                        continue
 
-                    # No recovery needed - task is complete
+                    # Last tool succeeded (or no previous tool) - accept implicit completion
                     if not normalized_description:
                         normalized_description = "Warning: model returned no reply."
                     if ui_callback and hasattr(ui_callback, 'on_assistant_message'):
@@ -1007,6 +1056,9 @@ class QueryProcessor:
                     )
                     self.session_manager.add_message(assistant_msg, self.config.auto_save_interval)
                     break
+
+                # Reset counter when we have tool calls
+                consecutive_no_tool_calls = 0
 
                 # Display assistant's thinking text BEFORE tool execution
                 if llm_description and ui_callback and hasattr(ui_callback, 'on_assistant_message'):
@@ -1023,8 +1075,32 @@ class QueryProcessor:
                 all_reads = all(tc["function"]["name"] in READ_OPERATIONS for tc in tool_calls)
                 consecutive_reads = consecutive_reads + 1 if all_reads else 0
 
+                # Check for explicit task completion
+                for tool_call in tool_calls:
+                    if tool_call["function"]["name"] == "task_complete":
+                        import json as json_mod
+                        args = json_mod.loads(tool_call["function"]["arguments"])
+                        summary = args.get("summary", "Task completed")
+                        if ui_callback and hasattr(ui_callback, 'on_assistant_message'):
+                            ui_callback.on_assistant_message(summary)
+                        metadata = {}
+                        if raw_llm_content is not None:
+                            metadata["raw_content"] = raw_llm_content
+                        assistant_msg = ChatMessage(
+                            role=Role.ASSISTANT,
+                            content=summary,
+                            metadata=metadata,
+                        )
+                        self.session_manager.add_message(assistant_msg, self.config.auto_save_interval)
+                        break
+
+                # Check if task_complete was called (break out of main loop)
+                if any(tc["function"]["name"] == "task_complete" for tc in tool_calls):
+                    break
+
                 # Execute tool calls with real-time display
                 operation_cancelled = False
+                tool_results_by_id = {}  # Capture full result dicts for session storage
                 for tool_call in tool_calls:
                     tool_name = tool_call["function"]["name"]
 
@@ -1047,6 +1123,9 @@ class QueryProcessor:
                         undo_manager,
                         ui_callback=ui_callback,
                     )
+
+                    # Store full result dict for session persistence (before it's converted to string)
+                    tool_results_by_id[tool_call["id"]] = result
 
                     # Debug: Tool result
                     if ui_callback and hasattr(ui_callback, 'on_debug'):
@@ -1093,30 +1172,36 @@ class QueryProcessor:
 
                 tool_call_objects = []
                 for tc in tool_calls:
-                    tool_result = None
-                    tool_error = None
-                    for msg in reversed(messages):
-                        if msg.get("role") == "tool" and msg.get("tool_call_id") == tc["id"]:
-                            content = msg.get("content", "")
-                            if content.startswith("Error:"):
-                                tool_error = content[6:].strip()
-                            else:
-                                tool_result = content
-                            break
+                    tool_name = tc["function"]["name"]
+
+                    # Get full result dict (stored during execution) for history restoration
+                    # This preserves stdout, stderr, diff, success, etc. for proper display
+                    full_result = tool_results_by_id.get(tc["id"], {})
+
+                    # Extract error from result dict
+                    tool_error = full_result.get("error") if not full_result.get("success", True) else None
+
+                    # For LLM summary, use the string output
+                    tool_result_str = full_result.get("output", "") if full_result.get("success", True) else None
 
                     # Generate concise summary for LLM context
-                    tool_name = tc["function"]["name"]
-                    result_summary = summarize_tool_result(tool_name, tool_result, tool_error)
+                    result_summary = summarize_tool_result(tool_name, tool_result_str, tool_error)
+
+                    # Get nested tool calls from ui_callback for spawn_subagent
+                    nested_calls = []
+                    if tool_name == "spawn_subagent" and ui_callback and hasattr(ui_callback, 'get_and_clear_nested_calls'):
+                        nested_calls = ui_callback.get_and_clear_nested_calls()
 
                     tool_call_objects.append(
                         ToolCallModel(
                             id=tc["id"],
                             name=tool_name,
                             parameters=json.loads(tc["function"]["arguments"]),
-                            result=tool_result,
+                            result=full_result,  # Store FULL dict, not string
                             result_summary=result_summary,
                             error=tool_error,
                             approved=True,
+                            nested_tool_calls=nested_calls,
                         )
                     )
 

@@ -118,6 +118,9 @@ class SwecliAgent(BaseAgent):
         messages.append({"role": "user", "content": message})
 
         iteration = 0
+        consecutive_no_tool_calls = 0
+        MAX_NUDGE_ATTEMPTS = 3  # After this many nudges, treat as implicit completion
+
         while True:
             iteration += 1
 
@@ -196,15 +199,59 @@ class SwecliAgent(BaseAgent):
             messages.append(assistant_msg)
 
             if "tool_calls" not in message_data or not message_data["tool_calls"]:
+                # No tool calls - check if we should nudge or accept implicit completion
+                # Check if last tool execution failed (should nudge to retry)
+                last_tool_failed = False
+                for msg in reversed(messages):
+                    if msg.get("role") == "tool":
+                        content = msg.get("content", "")
+                        if content.startswith("Error:"):
+                            last_tool_failed = True
+                        break
+
+                if last_tool_failed:
+                    # Last tool failed - nudge agent to fix and retry
+                    consecutive_no_tool_calls += 1
+
+                    if consecutive_no_tool_calls >= MAX_NUDGE_ATTEMPTS:
+                        # Exhausted nudge attempts - give up
+                        return {
+                            "content": cleaned_content or "Could not complete after multiple attempts",
+                            "messages": messages,
+                            "success": False,
+                        }
+
+                    # Nudge agent to fix the error and retry
+                    messages.append({
+                        "role": "user",
+                        "content": "The previous operation failed. Please fix the issue and try again, or call task_complete with status='failed' if you cannot proceed.",
+                    })
+                    continue
+
+                # Last tool succeeded (or no previous tool) - accept implicit completion
                 return {
                     "content": cleaned_content or "",
                     "messages": messages,
                     "success": True,
                 }
 
+            # Reset counter when we have tool calls
+            consecutive_no_tool_calls = 0
+
             for tool_call in message_data["tool_calls"]:
                 tool_name = tool_call["function"]["name"]
                 tool_args = json.loads(tool_call["function"]["arguments"])
+
+                # Check for explicit task completion
+                if tool_name == "task_complete":
+                    summary = tool_args.get("summary", "Task completed")
+                    status = tool_args.get("status", "success")
+                    return {
+                        "content": summary,
+                        "messages": messages,
+                        "success": status != "failed",
+                        "completion_status": status,
+                    }
 
                 # Notify UI callback before tool execution
                 if ui_callback and hasattr(ui_callback, "on_tool_call"):
