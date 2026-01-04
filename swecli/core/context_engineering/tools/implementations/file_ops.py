@@ -252,7 +252,8 @@ class FileOperations:
 
         try:
             # Use ripgrep if available for better performance
-            cmd = ["rg", "--json", pattern]
+            # -F = fixed-strings (treat pattern as literal, not regex)
+            cmd = ["rg", "--json", "-F", pattern]
 
             # Add default exclusions (ripgrep respects .gitignore, but this is a safety net)
             for exclude in DEFAULT_SEARCH_EXCLUDES:
@@ -315,7 +316,8 @@ class FileOperations:
         """Fallback grep implementation using Python."""
         matches = []
         flags = re.IGNORECASE if case_insensitive else 0
-        regex = re.compile(pattern, flags)
+        # Escape pattern for literal matching (consistent with ripgrep -F)
+        regex = re.compile(re.escape(pattern), flags)
 
         # Determine search root and glob pattern
         if search_path in (None, ".", "./"):
