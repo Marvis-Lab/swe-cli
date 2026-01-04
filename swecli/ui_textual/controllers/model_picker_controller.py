@@ -11,7 +11,7 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from swecli.ui_textual.style_tokens import GREY
+from swecli.ui_textual.style_tokens import BLUE_BG_ACTIVE, BLUE_LIGHT, GREY
 
 if TYPE_CHECKING:
     from swecli.ui_textual.chat_app import SWECLIChatApp
@@ -406,7 +406,7 @@ class ModelPickerController:
         for row_index, item in enumerate(items):
             is_active = row_index == index
             pointer = "❯" if is_active else " "
-            row_style = "on #1f2d3a" if is_active else ""
+            row_style = f"on {BLUE_BG_ACTIVE}" if is_active else ""
             pointer_style = "bold bright_cyan" if is_active else "dim"
             label_style = "bold white" if is_active else "white"
             summary_style = "dim white" if is_active else "dim"
@@ -423,7 +423,7 @@ class ModelPickerController:
             "Use ↑/↓ or 1-3 to select a slot, Enter to configure, Esc to cancel.",
             style=f"italic {GREY}",
         )
-        header = Text("Select which model slot you'd like to configure.", style="#9ccffd")
+        header = Text("Select which model slot you'd like to configure.", style=BLUE_LIGHT)
         panel = Panel(
             Group(header, table, instructions),
             title="[bold]Model Configuration[/bold]",
@@ -499,7 +499,7 @@ class ModelPickerController:
 
             is_active = row_index == index
             pointer = "❯" if is_active else " "
-            row_style = "on #1f2d3a" if is_active else ""
+            row_style = f"on {BLUE_BG_ACTIVE}" if is_active else ""
             pointer_style = "bold bright_cyan" if is_active else "dim"
             label_style = "bold white" if is_active else "white"
             option_style = "bold bright_cyan" if is_active else "dim"
@@ -527,7 +527,7 @@ class ModelPickerController:
         )
         subtitle = Text(
             f"{labels.get(slot, slot.title())} · {description}",
-            style="#9ccffd",
+            style=BLUE_LIGHT,
         )
         panel = Panel(
             Group(subtitle, table, instructions),
@@ -574,7 +574,7 @@ class ModelPickerController:
                 context_k = f"{model.context_length} context"
             is_active = row_index == index
             pointer = "❯" if is_active else " "
-            row_style = "on #1f2d3a" if is_active else ""
+            row_style = f"on {BLUE_BG_ACTIVE}" if is_active else ""
             pointer_style = "bold bright_cyan" if is_active else "dim"
             label_style = "bold white" if is_active else "white"
             info_style = "dim white" if is_active else "dim"
@@ -593,7 +593,7 @@ class ModelPickerController:
         )
         subtitle = Text(
             f"{provider_entry.name} · {labels.get(slot, slot.title())}",
-            style="#9ccffd",
+            style=BLUE_LIGHT,
         )
         panel = Panel(
             Group(subtitle, table, instructions),
@@ -610,7 +610,7 @@ class ModelPickerController:
 
         table = Table(
             show_header=True,
-            header_style="bold #8ccffd",
+            header_style=f"bold {BLUE_LIGHT}",
             box=box.ROUNDED,
             expand=True,
         )
@@ -628,7 +628,7 @@ class ModelPickerController:
 
         instructions = Text("Type /models again to reopen the selector anytime.", style=f"italic {GREY}")
         panel = Panel(
-            Group(Text("Current model configuration", style="#9ccffd"), table, instructions),
+            Group(Text("Current model configuration", style=BLUE_LIGHT), table, instructions),
             title="[bold]Model Summary[/bold]",
             title_align="left",
             border_style="bright_cyan",

@@ -10,7 +10,17 @@ from rich.text import Text
 from textual.app import ComposeResult
 from textual.widgets import Footer, Static
 
-from swecli.ui_textual.style_tokens import GREY
+from swecli.ui_textual.style_tokens import (
+    BLUE_BRIGHT,
+    CYAN,
+    GREEN_BRIGHT,
+    GREEN_LIGHT,
+    GREY,
+    ORANGE,
+    ORANGE_CAUTION,
+    CYAN_VISION,
+    GOLD,
+)
 
 
 def _get_git_branch_in_thread(working_dir: str) -> str | None:
@@ -139,7 +149,7 @@ class StatusBar(Static):
 
     def update_status(self) -> None:
         """Update status bar text with mode hint, autonomy level, repo info, and spinner."""
-        mode_color = "#ff8c00" if self.mode == "normal" else "#89d185"  # Orange for NORMAL
+        mode_color = ORANGE if self.mode == "normal" else GREEN_LIGHT
         status = Text()
 
         # Mode with cycling hint
@@ -151,9 +161,9 @@ class StatusBar(Static):
         status.append("  │  ", style=GREY)
         status.append("Autonomy: ", style=GREY)
         autonomy_colors = {
-            "Manual": "#ffa500",    # Orange - caution, needs attention
-            "Semi-Auto": "#00bfff",  # Cyan - partial automation
-            "Auto": "#00ff00",       # Green - fully automated
+            "Manual": ORANGE_CAUTION,
+            "Semi-Auto": CYAN,
+            "Auto": GREEN_BRIGHT,
         }
         autonomy_color = autonomy_colors.get(self.autonomy, GREY)
         status.append(self.autonomy, style=f"bold {autonomy_color}")
@@ -163,11 +173,11 @@ class StatusBar(Static):
         repo_display = self._get_repo_display()
         if repo_display:
             status.append("  │  ", style=GREY)
-            status.append(repo_display, style="#4a9eff")
+            status.append(repo_display, style=BLUE_BRIGHT)
 
         if self.spinner_text:
             status.append("  │  ", style=GREY)
-            status.append(self.spinner_text, style="#4a9eff")
+            status.append(self.spinner_text, style=BLUE_BRIGHT)
 
         self.update(status)
 
@@ -294,9 +304,9 @@ class ModelFooter(Footer):
     def _build_model_text(self) -> Text:
         """Create comprehensive Rich text showing all models with providers."""
         base_style = GREY
-        normal_style = "#00ff00"  # Green for normal
-        thinking_style = "#FFD700"  # Gold for thinking
-        vision_style = "#00CED1"  # Cyan for vision
+        normal_style = GREEN_BRIGHT
+        thinking_style = GOLD
+        vision_style = CYAN_VISION
 
         text = Text(no_wrap=True)
 

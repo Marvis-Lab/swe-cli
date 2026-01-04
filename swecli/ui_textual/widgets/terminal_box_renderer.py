@@ -9,7 +9,13 @@ from typing import Callable, List
 
 from rich.text import Text
 
-from swecli.ui_textual.style_tokens import ERROR, GREY, PANEL_BORDER
+from swecli.ui_textual.style_tokens import (
+    BLUE_PATH,
+    ERROR,
+    GREEN_PROMPT,
+    GREY,
+    PANEL_BORDER,
+)
 
 
 @dataclass
@@ -32,8 +38,8 @@ class TerminalBoxRenderer:
 
     # Color constants for terminal box elements
     POINTER_COLOR = GREY
-    PATH_COLOR = "#58a6ff"
-    PROMPT_COLOR = "#7ee787"
+    PATH_COLOR = BLUE_PATH
+    PROMPT_COLOR = GREEN_PROMPT
     COMMAND_COLOR = GREY
     ERROR_COLOR = ERROR
     BORDER_DEFAULT = PANEL_BORDER

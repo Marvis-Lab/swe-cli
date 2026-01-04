@@ -9,7 +9,7 @@ from rich.table import Table
 from rich.text import Text
 from textual.widgets import Static
 
-from swecli.ui_textual.style_tokens import GREY
+from swecli.ui_textual.style_tokens import BLUE_BG_ACTIVE, GREY
 from swecli.ui_textual.utils.file_type_colors import FileTypeColors
 
 StateType = Tuple[Tuple[Tuple[str, str], ...], int]
@@ -90,7 +90,7 @@ class AutocompletePopupController:
             meta_style = f"bold {GREY}" if is_active else GREY
             meta_render = Text(meta, style=meta_style, overflow="ellipsis")
 
-            row_style = "on #1f2a37" if is_active else None
+            row_style = f"on {BLUE_BG_ACTIVE}" if is_active else None
             table.add_row(pointer_render, label_render, meta_render, style=row_style)
 
         renderable = Group(header_text, table)
