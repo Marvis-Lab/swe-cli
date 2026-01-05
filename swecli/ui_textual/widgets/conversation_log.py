@@ -49,20 +49,15 @@ class ConversationLog(RichLog):
         self._spinner_active = False
         self._spinner_chars = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
         self._nested_spinner_char = "⏺"  # Single character for nested/subagent tools
-        # Smooth color gradient: 12 steps for fluid pulsing (bright → dim → bright)
+        # Ultra-smooth color gradient: 24 steps for slow breathing effect
         self._nested_color_gradient = [
-            "#00ee00",  # Bright
-            "#00dd00",
-            "#00cc00",
-            "#00bb00",
-            "#00aa00",
-            "#009900",  # Dimmest
-            "#00aa00",
-            "#00bb00",
-            "#00cc00",
-            "#00dd00",
-            "#00ee00",  # Back to bright
             "#00ff00",  # Peak bright
+            "#00f500", "#00eb00", "#00e100", "#00d700", "#00cd00",
+            "#00c300", "#00b900", "#00af00", "#00a500", "#009b00",
+            "#009100",  # Dimmest
+            "#009b00", "#00a500", "#00af00", "#00b900", "#00c300",
+            "#00cd00", "#00d700", "#00e100", "#00eb00", "#00f500",
+            "#00ff00",  # Back to peak
         ]
         self._nested_color_index = 0
         self._spinner_index = 0
@@ -549,8 +544,8 @@ class ConversationLog(RichLog):
         # Render the updated line
         self._render_nested_tool_line()
 
-        # Schedule next frame with dual-timer pattern (fast for smooth gradient)
-        interval = 0.1  # 100ms per frame = smooth pulsing
+        # Schedule next frame with dual-timer pattern (slow for ultra-smooth gradient)
+        interval = 0.15  # 150ms per frame = ultra smooth breathing
 
         # Primary: Textual timer (works when event loop is free)
         self._nested_tool_timer = self.set_timer(interval, self._animate_nested_tool_spinner)
@@ -868,8 +863,10 @@ class ConversationLog(RichLog):
 
     def _write_generic_tool_result(self, text: str) -> None:
         lines = text.rstrip("\n").splitlines() or [text]
-        for raw_line in lines:
-            line = Text("  ⎿  ", style=GREY)
+        for i, raw_line in enumerate(lines):
+            # First line gets ⎿ prefix, subsequent lines get spaces for alignment
+            prefix = "    ⎿  " if i == 0 else "       "
+            line = Text(prefix, style=GREY)
             message = raw_line.rstrip("\n")
             is_error = False
             is_interrupted = False

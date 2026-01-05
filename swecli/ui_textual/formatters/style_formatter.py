@@ -168,10 +168,9 @@ class StyleFormatter:
             if diff_entries:
                 for entry_type, line_no, content in diff_entries:
                     if entry_type == "hunk":
-                        lines.append(f"{DIM}{content}{RESET}")
                         continue
 
-                    display_no = f"{line_no:>6}" if line_no is not None else "      "
+                    display_no = f"{line_no:>3}" if line_no is not None else "   "
                     sanitized = content.replace("\t", "    ")
 
                     if entry_type == "add":
