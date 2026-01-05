@@ -334,18 +334,26 @@ class TextualUICallback:
         formatted = self.formatter.format_tool_result(tool_name, normalized_args, result)
 
         # Extract the result line(s) from the formatted output
+        # Capture ALL lines after the first ⎿ line (including diff lines for edit_file)
         summary_lines: list[str] = []
         collected_lines: list[str] = []
         if isinstance(formatted, str):
             lines = formatted.splitlines()
+            in_result_section = False
             for line in lines:
                 stripped = line.strip()
                 if stripped.startswith("⎿"):
-                    # This is a result line
+                    # Start of result section
+                    in_result_section = True
                     result_text = stripped.lstrip("⎿").strip()
                     if result_text:
                         summary_lines.append(result_text)
                         collected_lines.append(result_text)
+                elif in_result_section and stripped:
+                    # Continue collecting lines after the first ⎿ line (e.g., diff lines)
+                    # Skip @@ header lines, only show actual diff content
+                    if not stripped.startswith("@@"):
+                        collected_lines.append(stripped)
         else:
             self._run_on_ui(self.conversation.write, formatted)
             if hasattr(formatted, "renderable") and hasattr(formatted, "title"):
