@@ -428,12 +428,10 @@ class TextualUICallback:
                 )
             return
 
-        # Update the nested tool call status to complete
+        # Update the nested tool call status to complete (for ALL tools including bash)
         # Use BLOCKING call_from_thread to ensure each tool's completion is displayed
         # before the next tool starts (fixes "all at once" display issue)
-        # Skip for bash commands - they use add_nested_bash_output_box instead
-        is_bash_command = tool_name in ("bash_execute", "run_command")
-        if not is_bash_command and hasattr(self.conversation, 'complete_nested_tool_call') and self._app is not None:
+        if hasattr(self.conversation, 'complete_nested_tool_call') and self._app is not None:
             success = result.get("success", False) if isinstance(result, dict) else True
             self._app.call_from_thread(
                 self.conversation.complete_nested_tool_call,
