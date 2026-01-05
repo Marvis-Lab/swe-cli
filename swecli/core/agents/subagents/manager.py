@@ -846,12 +846,21 @@ Use ONLY the filename or relative path for all file operations.
                 "content": "",
             }
         finally:
+            # Show Docker stop as a tool call (matching docker_start pattern)
+            if deployment is not None and nested_callback and hasattr(nested_callback, 'on_tool_call'):
+                nested_callback.on_tool_call("docker_stop", {"container": deployment._container_name[:12]})
+
             # Always stop the container
             if deployment is not None and loop is not None:
                 try:
                     loop.run_until_complete(deployment.stop())
                 except Exception:
                     pass  # Ignore cleanup errors
+
+                # Show Docker stop completion
+                if nested_callback and hasattr(nested_callback, 'on_tool_result'):
+                    nested_callback.on_tool_result("docker_stop", {}, {"success": True, "output": "Container terminated"})
+
             # Close the loop after all async operations
             if loop is not None:
                 try:

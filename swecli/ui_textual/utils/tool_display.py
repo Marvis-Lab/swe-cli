@@ -42,6 +42,7 @@ _TOOL_DISPLAY_PARTS: dict[str, tuple[str, str]] = {
     "list_todos": ("List", "todos"),
     "spawn_subagent": ("Spawn", "subagent"),
     "docker_start": ("Starting", "Docker container"),
+    "docker_stop": ("Stopping", "Docker container"),
     "docker_copy": ("Copying", "file to Docker"),
     "docker_input_files": ("Checking", "input files"),
     "docker_setup": ("Setting up", "Docker environment"),
@@ -291,6 +292,10 @@ def format_tool_call(tool_name: str, tool_args: Mapping[str, Any]) -> str:
     # Docker container startup
     elif tool_name == "docker_start" and tool_args:
         return "Starting Docker container"
+
+    # Docker container stop
+    elif tool_name == "docker_stop":
+        return "Stopping Docker container"
 
     # Docker file copy
     elif tool_name == "docker_copy" and tool_args:

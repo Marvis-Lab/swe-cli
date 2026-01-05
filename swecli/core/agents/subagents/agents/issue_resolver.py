@@ -4,11 +4,20 @@ Runs inside a Docker container for isolated execution.
 """
 
 from swecli.core.agents.subagents.specs import SubAgentSpec
+from swecli.core.docker.deployment import DockerConfig
 
-# System prompt for Docker execution (SWE-bench container with pre-installed repo)
+# Docker configuration for Issue Resolver
+ISSUE_RESOLVER_DOCKER_CONFIG = DockerConfig(
+    image="ghcr.io/astral-sh/uv:python3.11-bookworm",
+    memory="4g",
+    cpus="2",
+    startup_timeout=60.0,
+)
+
+# System prompt for Docker execution
 ISSUE_RESOLVER_SYSTEM_PROMPT = """You are an expert software engineer specializing in resolving GitHub issues.
 
-You are working inside a SWE-bench Docker container. The repository is pre-installed at /testbed.
+You are working inside a Docker container. The repository is cloned at /workspace.
 
 ## MANDATORY WORKFLOW - Follow These Steps IN ORDER
 
@@ -17,11 +26,9 @@ You MUST complete each step before moving to the next. Do NOT skip steps.
 ### Step 1: VERIFY SETUP (Always do this first!)
 Before doing ANYTHING else, verify your environment:
 ```bash
-cd /testbed && pwd && git status && git log -1 --oneline
+cd /workspace && pwd && git status && git log -1 --oneline
 ```
 This confirms: correct directory, git is working, you're on the right commit.
-
-The repository is already installed - no pip install needed.
 
 ### Step 2: UNDERSTAND THE PROBLEM
 Read the problem statement carefully. Identify:
@@ -44,17 +51,23 @@ Use `edit_file` to make changes:
 ### Step 5: VERIFY THE FIX (if tests are mentioned)
 If the problem mentions tests or you can identify relevant tests:
 ```bash
-cd /testbed && python -m pytest <test_file> -v
+cd /workspace && python -m pytest <test_file> -v
 ```
 If tests fail, try to fix and retry.
 
 ### Step 6: COMMIT CHANGES
 ```bash
-cd /testbed && git add -A && git status && git commit -m "fix: <description>"
+cd /workspace && git add -A && git status && git commit -m "fix: <description>"
 ```
 
 ### Step 7: PROVIDE SUMMARY
 List what files were changed and why.
+
+### Step 8: SIGNAL COMPLETION
+Call `task_complete` with a summary of what was done:
+```python
+task_complete(summary="Fixed issue by updating X in file Y", status="success")
+```
 
 ## Key Behaviors
 
@@ -70,13 +83,15 @@ List what files were changed and why.
 - **edit_file**: Make targeted changes with enough context in old_text
 - **run_command**: Execute shell commands (git, tests, etc.)
 - **list_files**: Discover project structure
+- **task_complete**: Signal completion with summary
 
 ## Important Constraints
 
-- Use ABSOLUTE PATHS starting with /testbed/ for all file operations
+- Use ABSOLUTE PATHS starting with /workspace/ for all file operations
 - Make minimal, focused changes - don't refactor unrelated code
 - Follow existing code style exactly
 - Commit your changes before finishing
+- ALWAYS call task_complete when done
 """
 
 ISSUE_RESOLVER_SUBAGENT = SubAgentSpec(
@@ -91,5 +106,7 @@ ISSUE_RESOLVER_SUBAGENT = SubAgentSpec(
         "list_files",
         "run_command",
         "spawn_subagent",  # Can delegate to Code-Explorer for research
+        "task_complete",   # Signal completion
     ],
+    docker_config=ISSUE_RESOLVER_DOCKER_CONFIG,
 )

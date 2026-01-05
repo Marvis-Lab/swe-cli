@@ -62,6 +62,12 @@ cd /workspace && git add -A && git status && git commit -m "fix: <description>"
 ### Step 7: PROVIDE SUMMARY
 List what files were changed and why.
 
+### Step 8: SIGNAL COMPLETION
+Call `task_complete` with a summary of what was done:
+```python
+task_complete(summary="Fixed issue by updating X in file Y", status="success")
+```
+
 ## Key Behaviors
 
 - **PERSIST**: Don't give up after one failure. Retry with fixes.
@@ -76,6 +82,7 @@ List what files were changed and why.
 - **edit_file**: Make targeted changes with enough context in old_text
 - **run_command**: Execute shell commands (git, tests, etc.)
 - **list_files**: Discover project structure
+- **task_complete**: Signal completion with summary
 
 ## Important Constraints
 
@@ -83,6 +90,7 @@ List what files were changed and why.
 - Make minimal, focused changes - don't refactor unrelated code
 - Follow existing code style exactly
 - Commit your changes before finishing
+- ALWAYS call task_complete when done
 """
 
 GITHUB_RESOLVER_SUBAGENT: SubAgentSpec = {
@@ -97,6 +105,7 @@ GITHUB_RESOLVER_SUBAGENT: SubAgentSpec = {
         "list_files",
         "run_command",
         "spawn_subagent",  # Can delegate to Code-Explorer for research
+        "task_complete",   # Signal completion
     ],
     "docker_config": GITHUB_RESOLVER_DOCKER_CONFIG,
 }
