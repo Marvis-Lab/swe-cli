@@ -346,6 +346,28 @@ class TextualRunner:
 
         self._history_restored = True
 
+    def _extract_result_lines(self, formatted: str) -> list[str]:
+        """Extract result lines from StyleFormatter output.
+
+        Collects lines starting with ⎿ (stripping the prefix) and all
+        continuation lines that follow.
+        """
+        lines = []
+        in_result = False
+        if not isinstance(formatted, str):
+            return lines
+        for line in formatted.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("⎿"):
+                in_result = True
+                result_text = stripped.lstrip("⎿").strip()
+                if result_text:
+                    lines.append(result_text)
+            elif in_result and stripped:
+                # Continuation line after first ⎿
+                lines.append(stripped)
+        return lines
+
     def _render_stored_tool_calls(self, conversation, tool_calls: list[Any]) -> None:
         """Replay historical tool calls using same logic as live display."""
         if not tool_calls:
@@ -407,42 +429,10 @@ class TextualRunner:
                     conversation.add_bash_output_box(combined_output, is_error, command, working_dir, 0)
                 continue
 
-            # edit_file: Use add_edit_diff_result for colored diff (mirrors ui_callback.py lines 516-533)
-            if tool_name == "edit_file" and isinstance(result, dict) and result.get("success"):
-                diff_text = result.get("diff", "")
-                if diff_text and hasattr(conversation, 'add_edit_diff_result'):
-                    file_path = parameters.get("file_path", "unknown")
-                    lines_added = result.get("lines_added", 0) or 0
-                    lines_removed = result.get("lines_removed", 0) or 0
-                    summary = f"Updated {file_path} with {lines_added} addition(s) and {lines_removed} removal(s)"
-                    conversation.add_tool_result(summary)
-                    conversation.add_edit_diff_result(diff_text, depth=0)
-                    continue
-
-            # Todo tools: Use add_todo_sub_results with symbols (mirrors ui_callback.py)
-            if tool_name == "write_todos" and isinstance(result, dict) and result.get("success"):
-                todos = parameters.get("todos", [])
-                if todos and hasattr(conversation, 'add_todo_sub_results'):
-                    items = []
-                    for todo in todos:
-                        status = todo.get("status", "pending")
-                        content = todo.get("content", "")
-                        symbol = "○" if status == "pending" else ("▶" if status == "in_progress" else "✓")
-                        items.append((symbol, content))
-                    conversation.add_todo_sub_results(items, depth=0)
-                    continue
-
-            # Other tools: use StyleFormatter (mirrors on_tool_result)
+            # All tools: use StyleFormatter (same as ui_callback.on_tool_result)
             if isinstance(result, dict):
                 formatted = formatter.format_tool_result(tool_name, parameters, result)
-                lines = []
-                if isinstance(formatted, str):
-                    for line in formatted.splitlines():
-                        stripped = line.strip()
-                        if stripped.startswith("⎿"):
-                            result_text = stripped.lstrip("⎿").strip()
-                            if result_text:
-                                lines.append(result_text)
+                lines = self._extract_result_lines(formatted)
                 if lines:
                     conversation.add_tool_result("\n".join(lines))
             else:
@@ -479,7 +469,7 @@ class TextualRunner:
             success = result.get("success", True) if isinstance(result, dict) else True
 
             if tool_name in ("bash_execute", "run_command", "Bash") and isinstance(result, dict):
-                # Bash output box
+                # Bash output box (special rendering)
                 is_error = not result.get("success", True)
                 command = parameters.get("command", "")
                 working_dir = parameters.get("working_dir", str(self.working_dir))
@@ -488,32 +478,10 @@ class TextualRunner:
                     output = (output + "\n" + result["stderr"]).strip() if output else result["stderr"]
                 if hasattr(conversation, "add_bash_output_box"):
                     conversation.add_bash_output_box(output.strip(), is_error, command, working_dir, depth)
-            elif tool_name == "edit_file" and isinstance(result, dict) and result.get("success"):
-                # Colored diff display
-                diff_text = result.get("diff", "")
-                if diff_text and hasattr(conversation, 'add_edit_diff_result'):
-                    file_path = parameters.get("file_path", "unknown")
-                    lines_added = result.get("lines_added", 0) or 0
-                    lines_removed = result.get("lines_removed", 0) or 0
-                    summary = f"Updated {file_path} with {lines_added} addition(s) and {lines_removed} removal(s)"
-                    if hasattr(conversation, "add_nested_tool_sub_results"):
-                        conversation.add_nested_tool_sub_results([summary], depth)
-                    conversation.add_edit_diff_result(diff_text, depth)
-            elif tool_name == "write_todos" and isinstance(result, dict) and result.get("success"):
-                # Todo symbols
-                todos = parameters.get("todos", [])
-                if todos and hasattr(conversation, 'add_todo_sub_results'):
-                    items = []
-                    for todo in todos:
-                        status = todo.get("status", "pending")
-                        content = todo.get("content", "")
-                        symbol = "○" if status == "pending" else ("▶" if status == "in_progress" else "✓")
-                        items.append((symbol, content))
-                    conversation.add_todo_sub_results(items, depth)
             elif isinstance(result, dict):
-                # Generic StyleFormatter
+                # All tools: use StyleFormatter (same as ui_callback.on_nested_tool_result)
                 formatted = formatter.format_tool_result(tool_name, parameters, result)
-                lines = [ln.lstrip("⎿").strip() for ln in formatted.splitlines() if ln.strip().startswith("⎿")]
+                lines = self._extract_result_lines(formatted)
                 if lines and hasattr(conversation, "add_nested_tool_sub_results"):
                     conversation.add_nested_tool_sub_results(lines, depth)
 
