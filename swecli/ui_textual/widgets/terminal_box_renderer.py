@@ -45,6 +45,12 @@ class TerminalBoxRenderer:
     BORDER_DEFAULT = PANEL_BORDER
     BORDER_ERROR = ERROR
 
+    # Truncation settings by depth (head + tail lines shown)
+    MAIN_AGENT_HEAD_LINES = 5
+    MAIN_AGENT_TAIL_LINES = 5
+    SUBAGENT_HEAD_LINES = 3
+    SUBAGENT_TAIL_LINES = 3
+
     def __init__(self, width_provider: Callable[[], int]):
         """Initialize renderer.
 
@@ -81,6 +87,35 @@ class TerminalBoxRenderer:
     def _get_content_width(self, box_width: int) -> int:
         """Get content width (space for text inside borders)."""
         return box_width - 5  # Space for "│  " (3) + " │" (2)
+
+    @staticmethod
+    def truncate_lines_head_tail(
+        lines: List[str],
+        head_count: int,
+        tail_count: int,
+    ) -> tuple:
+        """Split lines into head, tail, and count of hidden lines.
+
+        Args:
+            lines: All output lines
+            head_count: Number of lines to keep from start
+            tail_count: Number of lines to keep from end
+
+        Returns:
+            Tuple of (head_lines, tail_lines, hidden_count)
+            If no truncation needed, returns (lines, [], 0)
+        """
+        total = len(lines)
+        max_lines = head_count + tail_count
+
+        if total <= max_lines:
+            return (lines, [], 0)
+
+        head = lines[:head_count]
+        tail = lines[-tail_count:]
+        hidden = total - max_lines
+
+        return (head, tail, hidden)
 
     # --- Line rendering primitives ---
 
@@ -177,6 +212,42 @@ class TerminalBoxRenderer:
         bottom.append("\u2570" + "\u2500" * (box_width - 2) + "\u256f", style=border)
         return bottom
 
+    def render_truncation_separator(
+        self,
+        hidden_count: int,
+        config: TerminalBoxConfig,
+    ) -> Text:
+        """Render truncation separator: │  ... 42 lines hidden ...  │
+
+        Args:
+            hidden_count: Number of lines hidden
+            config: Box configuration
+
+        Returns:
+            Text object for the separator line
+        """
+        indent = self._get_indent(config)
+        border = self._get_border_color(config)
+        box_width = config.box_width
+        content_width = self._get_content_width(box_width)
+
+        # Build message
+        message = f"... {hidden_count} lines hidden ..."
+
+        # Center the message
+        padding_total = content_width - len(message)
+        left_pad = padding_total // 2
+        right_pad = padding_total - left_pad
+
+        separator = Text(f"{indent}    ")
+        separator.append("\u2502  ", style=border)
+        separator.append(" " * left_pad)
+        separator.append(message, style="dim italic")
+        separator.append(" " * right_pad)
+        separator.append(" \u2502", style=border)
+
+        return separator
+
     # --- Code block rendering (minimal header bar style) ---
 
     def render_code_block_header(self, language: str, box_width: int) -> Text:
@@ -262,7 +333,11 @@ class TerminalBoxRenderer:
         output_lines: List[str],
         config: TerminalBoxConfig,
     ) -> List[Text]:
-        """Render a complete terminal box with all lines.
+        """Render a complete terminal box with head+tail truncation.
+
+        Applies truncation based on config.depth:
+        - depth=0 (main agent): 10 lines max (5 head + 5 tail)
+        - depth>0 (subagent): 6 lines max (3 head + 3 tail)
 
         Args:
             output_lines: List of output lines to display
@@ -282,8 +357,31 @@ class TerminalBoxRenderer:
         # Prompt line
         result.append(self.render_prompt_line(config))
 
-        # Content lines
-        for line in output_lines:
+        # Determine truncation limits based on depth
+        if config.depth == 0:
+            head_count = self.MAIN_AGENT_HEAD_LINES
+            tail_count = self.MAIN_AGENT_TAIL_LINES
+        else:
+            head_count = self.SUBAGENT_HEAD_LINES
+            tail_count = self.SUBAGENT_TAIL_LINES
+
+        # Apply truncation
+        head_lines, tail_lines, hidden_count = self.truncate_lines_head_tail(
+            output_lines, head_count, tail_count
+        )
+
+        # Render head lines
+        for line in head_lines:
+            result.append(
+                self.render_content_line(line, config, apply_error_style=config.is_error)
+            )
+
+        # Render separator if truncated
+        if hidden_count > 0:
+            result.append(self.render_truncation_separator(hidden_count, config))
+
+        # Render tail lines
+        for line in tail_lines:
             result.append(
                 self.render_content_line(line, config, apply_error_style=config.is_error)
             )

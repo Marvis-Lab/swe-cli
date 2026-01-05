@@ -91,6 +91,9 @@ class ConversationLog(RichLog):
         self._pending_stop_timer: Timer | None = None  # Delayed stop for minimum visibility
         # Python threading.Timer as fallback (bypasses Textual's event loop)
         self._thinking_thread_timer: threading.Timer | None = None
+        # Thread timers for tool spinners (bypass blocked event loop during tool execution)
+        self._tool_thread_timer: threading.Timer | None = None
+        self._nested_tool_thread_timer: threading.Timer | None = None
 
     def write(self, content, *args, **kwargs) -> None:
         """Override write to track content state for spacing logic."""
@@ -376,7 +379,8 @@ class ConversationLog(RichLog):
     def stop_tool_execution(self, success: bool = True) -> None:
         self._spinner_active = False
         if self._tool_timer_start is not None:
-            self._tool_last_elapsed = max(int(time.monotonic() - self._tool_timer_start), 0)
+            elapsed_raw = time.monotonic() - self._tool_timer_start
+            self._tool_last_elapsed = max(round(elapsed_raw), 0)
         else:
             self._tool_last_elapsed = None
         self._tool_timer_start = None
@@ -386,9 +390,13 @@ class ConversationLog(RichLog):
         self._tool_display = None
         self._tool_call_start = None
         self._spinner_index = 0
+        # Cancel both Textual and thread timers
         if self._tool_spinner_timer is not None:
             self._tool_spinner_timer.stop()
             self._tool_spinner_timer = None
+        if self._tool_thread_timer is not None:
+            self._tool_thread_timer.cancel()
+            self._tool_thread_timer = None
 
     def update_progress_text(self, message: str | Text) -> None:
         """Update the current progress/tool line text in-place.
@@ -479,16 +487,46 @@ class ConversationLog(RichLog):
 
     def _start_nested_tool_timer(self) -> None:
         """Start the independent timer for nested tool spinner animation."""
+        import logging
+        _log = logging.getLogger(__name__)
+        _log.debug(f"[TIMER] _start_nested_tool_timer called, timer_start={self._nested_tool_timer_start}")
+
         if self._nested_tool_timer is not None:
             self._nested_tool_timer.stop()
+        if self._nested_tool_thread_timer is not None:
+            self._nested_tool_thread_timer.cancel()
+            self._nested_tool_thread_timer = None
         # Run first animation frame IMMEDIATELY to ensure animation shows
         # even for fast tools that complete in <100ms
         self._animate_nested_tool_spinner()
 
-    def _animate_nested_tool_spinner(self) -> None:
-        """Animate the nested tool spinner independently."""
+    def _on_nested_tool_thread_tick(self) -> None:
+        """Fallback tick via threading.Timer when Textual event loop is blocked."""
         if self._nested_tool_line is None or self._nested_tool_text is None:
             return
+        # Use call_from_thread to safely run animation on UI thread
+        try:
+            self.app.call_from_thread(self._animate_nested_tool_spinner)
+        except Exception:
+            pass  # App may be shutting down
+
+    def _animate_nested_tool_spinner(self) -> None:
+        """Animate the nested tool spinner independently."""
+        import logging
+        _log = logging.getLogger(__name__)
+
+        # Cancel thread timer if this tick came from Textual timer
+        if self._nested_tool_thread_timer is not None:
+            self._nested_tool_thread_timer.cancel()
+            self._nested_tool_thread_timer = None
+
+        if self._nested_tool_line is None or self._nested_tool_text is None:
+            return
+
+        elapsed = 0
+        if self._nested_tool_timer_start is not None:
+            elapsed = round(time.monotonic() - self._nested_tool_timer_start)
+        _log.debug(f"[TIMER] _animate_nested_tool_spinner: elapsed={elapsed}s")
 
         # Update spinner frame (flashing bullet for nested tools)
         self._nested_spinner_index = (self._nested_spinner_index + 1) % len(self._nested_spinner_chars)
@@ -496,8 +534,16 @@ class ConversationLog(RichLog):
         # Render the updated line
         self._render_nested_tool_line()
 
-        # Schedule next frame
-        self._nested_tool_timer = self.set_timer(0.12, self._animate_nested_tool_spinner)
+        # Schedule next frame with dual-timer pattern
+        interval = 0.12
+
+        # Primary: Textual timer (works when event loop is free)
+        self._nested_tool_timer = self.set_timer(interval, self._animate_nested_tool_spinner)
+
+        # Fallback: threading.Timer (bypasses blocked event loop during tool execution)
+        self._nested_tool_thread_timer = threading.Timer(interval, self._on_nested_tool_thread_tick)
+        self._nested_tool_thread_timer.daemon = True
+        self._nested_tool_thread_timer.start()
 
     def _render_nested_tool_line(self) -> None:
         """Render the nested tool line with current spinner frame and elapsed time."""
@@ -510,7 +556,7 @@ class ConversationLog(RichLog):
         # Calculate elapsed time
         elapsed = 0
         if self._nested_tool_timer_start is not None:
-            elapsed = int(time.monotonic() - self._nested_tool_timer_start)
+            elapsed = round(time.monotonic() - self._nested_tool_timer_start)
 
         # Build the animated line (flashing bullet for nested tools)
         formatted = Text()
@@ -551,10 +597,20 @@ class ConversationLog(RichLog):
             parent: Name/identifier of the parent subagent
             success: Whether the tool execution succeeded
         """
-        # Stop the nested tool timer
+        import logging
+        _log = logging.getLogger(__name__)
+        elapsed = 0
+        if self._nested_tool_timer_start is not None:
+            elapsed = round(time.monotonic() - self._nested_tool_timer_start)
+        _log.debug(f"[TIMER] complete_nested_tool_call: tool={tool_name}, elapsed={elapsed}s, timer_start={self._nested_tool_timer_start}")
+
+        # Stop both Textual and thread timers
         if self._nested_tool_timer is not None:
             self._nested_tool_timer.stop()
             self._nested_tool_timer = None
+        if self._nested_tool_thread_timer is not None:
+            self._nested_tool_thread_timer.cancel()
+            self._nested_tool_thread_timer = None
 
         # Update the line to final state (green for success, red for failure)
         if self._nested_tool_line is not None and self._nested_tool_text is not None:
@@ -567,16 +623,23 @@ class ConversationLog(RichLog):
 
     def _render_nested_tool_final(self, success: bool) -> None:
         """Render the final state of nested tool line with bullet."""
+        import logging
+        _log = logging.getLogger(__name__)
+
         if self._nested_tool_line is None or self._nested_tool_text is None:
+            _log.debug("[TIMER] _render_nested_tool_final: SKIP - nested_tool_line or nested_tool_text is None")
             return
 
         if self._nested_tool_line >= len(self.lines):
+            _log.debug(f"[TIMER] _render_nested_tool_final: SKIP - line index {self._nested_tool_line} >= {len(self.lines)}")
             return
 
         # Calculate final elapsed time
+        # Use round() instead of int() to properly round to nearest second
+        # (int() truncates, so 0.9s would show as 0s instead of 1s)
         elapsed = 0
         if self._nested_tool_timer_start is not None:
-            elapsed = int(time.monotonic() - self._nested_tool_timer_start)
+            elapsed = round(time.monotonic() - self._nested_tool_timer_start)
 
         # Build the final line with solid bullet
         formatted = Text()
@@ -888,16 +951,26 @@ class ConversationLog(RichLog):
         self._streaming_box_content_lines.append((line, is_stderr))
 
     def close_streaming_bash_box(self, is_error: bool, exit_code: int) -> None:
-        """Close box with padding and bottom border."""
+        """Close box with padding, bottom border, and apply truncation if needed."""
         config = getattr(self, '_streaming_box_config', None)
         if config is None:
             # Fallback if config not set
             config = TerminalBoxConfig(box_width=self._get_box_width())
-        
-        # Render bottom padding and border (always gray - no transition)
-        self.write(self._box_renderer.render_padding_line(config))
-        self.write(self._box_renderer.render_bottom_border(config))
-        
+
+        # Check if truncation is needed (main agent uses MAIN_AGENT limits)
+        content_lines = [line for line, _ in self._streaming_box_content_lines]
+        head_count = self._box_renderer.MAIN_AGENT_HEAD_LINES
+        tail_count = self._box_renderer.MAIN_AGENT_TAIL_LINES
+        max_lines = head_count + tail_count
+
+        if len(content_lines) > max_lines and self._streaming_box_top_line is not None:
+            # Rebuild the box with truncation
+            self._rebuild_streaming_box_with_truncation(is_error, config, content_lines)
+        else:
+            # No truncation needed - just close normally
+            self.write(self._box_renderer.render_padding_line(config))
+            self.write(self._box_renderer.render_bottom_border(config))
+
         # Reset state
         self._streaming_box_header_line = None
         self._streaming_box_top_line = None
@@ -905,6 +978,35 @@ class ConversationLog(RichLog):
         self._streaming_box_command = ""
         self._streaming_box_working_dir = "."
         self._streaming_box_content_lines = []
+
+    def _rebuild_streaming_box_with_truncation(
+        self,
+        is_error: bool,
+        config: TerminalBoxConfig,
+        content_lines: list[str],
+    ) -> None:
+        """Rebuild the streaming box with head+tail truncation.
+
+        Removes all streamed content lines and replaces them with truncated output.
+        """
+        if self._streaming_box_top_line is None:
+            return
+
+        # Remove all lines from top of box to current position
+        self._truncate_from(self._streaming_box_top_line)
+
+        # Create new config with error state
+        new_config = TerminalBoxConfig(
+            command=self._streaming_box_command,
+            working_dir=self._streaming_box_working_dir,
+            depth=0,  # Main agent streaming boxes are depth=0
+            is_error=is_error,
+            box_width=config.box_width,
+        )
+
+        # Render complete box with truncation (render_complete_box applies truncation)
+        for text_line in self._box_renderer.render_complete_box(content_lines, new_config):
+            self.write(text_line)
 
     def add_nested_bash_output_box(
         self,
@@ -1443,7 +1545,7 @@ class ConversationLog(RichLog):
 
     def _tool_elapsed_seconds(self) -> int | None:
         if self._spinner_active and self._tool_timer_start is not None:
-            return max(int(time.monotonic() - self._tool_timer_start), 0)
+            return max(round(time.monotonic() - self._tool_timer_start), 0)
         if self._tool_last_elapsed is not None:
             return self._tool_last_elapsed
         return None
@@ -1455,13 +1557,49 @@ class ConversationLog(RichLog):
         return Text(f" ({elapsed}s)", style=GREY)
 
     def _schedule_tool_spinner(self) -> None:
+        """Schedule next tool spinner animation tick with dual-timer pattern.
+
+        Uses both Textual's set_timer (for when event loop is free) and
+        threading.Timer (fallback when event loop is blocked by tool execution).
+        """
         if not self._spinner_active:
             return
+
+        # Cancel existing timers
         if self._tool_spinner_timer is not None:
             self._tool_spinner_timer.stop()
-        self._tool_spinner_timer = self.set_timer(0.12, self._animate_tool_spinner)
+        if self._tool_thread_timer is not None:
+            self._tool_thread_timer.cancel()
+            self._tool_thread_timer = None
+
+        interval = 0.12  # seconds
+
+        # Primary: Textual timer (works when event loop is free)
+        self._tool_spinner_timer = self.set_timer(interval, self._animate_tool_spinner)
+
+        # Fallback: threading.Timer (bypasses blocked event loop during tool execution)
+        self._tool_thread_timer = threading.Timer(interval, self._on_tool_thread_tick)
+        self._tool_thread_timer.daemon = True
+        self._tool_thread_timer.start()
+
+    def _on_tool_thread_tick(self) -> None:
+        """Fallback tick via threading.Timer when Textual event loop is blocked."""
+        if not self._spinner_active:
+            return
+        # Use call_from_thread to safely run animation on UI thread
+        try:
+            self.app.call_from_thread(self._animate_tool_spinner)
+        except Exception:
+            pass  # App may be shutting down
 
     def _animate_tool_spinner(self) -> None:
+        """Animate the tool spinner (advances frame, updates display)."""
+        # Cancel thread timer if this tick came from Textual timer
+        # (prevents double-tick when both timers fire)
+        if self._tool_thread_timer is not None:
+            self._tool_thread_timer.cancel()
+            self._tool_thread_timer = None
+
         if not self._spinner_active or self._tool_display is None or self._tool_call_start is None:
             return
 
