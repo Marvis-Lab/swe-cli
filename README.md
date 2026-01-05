@@ -39,10 +39,54 @@ uv pip install swe-cli
 ```
 
 ### Development Setup
+
+#### 1. Clone and install dependencies
+
 ```bash
 git clone https://github.com/swe-cli/swe-cli.git
 cd swe-cli
-uv sync
+
+# Create venv and install the package with dev dependencies
+uv venv
+uv pip install -e ".[dev]"
+```
+
+#### 2. Activate the virtual environment
+
+```bash
+source .venv/bin/activate
+```
+
+#### 3. Run the app
+
+```bash
+# After activating venv
+swecli
+
+# Or without activating
+uv run swecli
+```
+
+#### 4. Run pytest
+
+```bash
+# Run all tests
+uv run pytest
+
+# Run specific test file
+uv run pytest tests/test_terminal_box_renderer.py
+
+# Run with verbose output
+uv run pytest -v
+
+# Run with coverage
+uv run pytest --cov=swecli
+```
+
+#### Quick one-liner setup
+
+```bash
+uv venv && uv pip install -e ".[dev]" && uv run pytest
 ```
 
 ## Quick Start
