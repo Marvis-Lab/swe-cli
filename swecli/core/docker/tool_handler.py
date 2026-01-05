@@ -247,16 +247,17 @@ class DockerToolHandler:
             # Read current content
             content = await self.runtime.read_file(container_path)
 
-            # Check if old_text exists
-            if old_text not in content:
+            # Check if old_text exists (with fuzzy matching fallback)
+            found, actual_old_text = self._find_content(content, old_text)
+            if not found:
                 return {
                     "success": False,
                     "error": f"old_text not found in {container_path}",
                     "output": None,
                 }
 
-            # Perform replacement
-            new_content = content.replace(old_text, new_text, 1)
+            # Perform replacement using actual matched content
+            new_content = content.replace(actual_old_text, new_text, 1)
 
             # Calculate diff statistics before writing
             from swecli.core.context_engineering.tools.implementations.diff_preview import Diff
@@ -410,6 +411,67 @@ class DockerToolHandler:
 
         # Fallback: just use the path as-is under workspace
         return f"{self.workspace_dir}/{path}"
+
+    def _find_content(self, original: str, old_content: str) -> tuple[bool, str]:
+        """Find content in file, with fallback to normalized matching.
+
+        When exact match fails, tries to find content by normalizing whitespace
+        (stripping each line, normalizing line endings) and then locating the
+        actual content in the original file.
+
+        Args:
+            original: The original file content
+            old_content: The content to find
+
+        Returns:
+            (found, actual_content) - actual_content is what should be replaced
+        """
+        # Try exact match first (fast path)
+        if old_content in original:
+            return (True, old_content)
+
+        # Normalize: strip each line, normalize line endings
+        def normalize(s: str) -> str:
+            lines = s.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+            return "\n".join(line.strip() for line in lines)
+
+        norm_old = normalize(old_content)
+        norm_original = normalize(original)
+
+        # If normalized content not found, give up
+        if norm_old not in norm_original:
+            return (False, old_content)
+
+        # Find actual content in original by line matching
+        old_lines = [ln.strip() for ln in old_content.split("\n") if ln.strip()]
+        if not old_lines:
+            return (False, old_content)
+
+        original_lines = original.split("\n")
+
+        # Find start line that matches first stripped line
+        for i, line in enumerate(original_lines):
+            if line.strip() == old_lines[0]:
+                # Try to match all subsequent lines
+                matched_lines = []
+                j = 0  # Index into old_lines
+                for k in range(i, min(i + len(old_lines) * 2, len(original_lines))):
+                    if j >= len(old_lines):
+                        break
+                    if original_lines[k].strip() == old_lines[j]:
+                        matched_lines.append(original_lines[k])
+                        j += 1
+
+                if j == len(old_lines):
+                    # Found all lines - reconstruct actual content
+                    actual = "\n".join(matched_lines)
+                    # Check if we need trailing newline
+                    if actual in original:
+                        return (True, actual)
+                    if actual + "\n" in original:
+                        return (True, actual + "\n")
+
+        return (False, old_content)
 
     # Synchronous wrappers for use with SwecliAgent (which expects sync handlers)
 
