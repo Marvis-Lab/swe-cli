@@ -1,6 +1,9 @@
 """SubAgent specification types."""
 
-from typing import Any, NotRequired, TypedDict
+from typing import Any, NotRequired, TypedDict, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from swecli.core.docker.deployment import DockerConfig
 
 
 class SubAgentSpec(TypedDict):
@@ -28,6 +31,15 @@ class SubAgentSpec(TypedDict):
     model: NotRequired[str]
     """Override model for this subagent.
     If not specified, uses the same model as the main agent."""
+
+    docker_config: NotRequired["DockerConfig"]
+    """Optional Docker configuration for this subagent.
+    If specified, the subagent will execute in a Docker container.
+    Falls back to local execution if Docker is unavailable."""
+
+    copy_back_recursive: NotRequired[bool]
+    """If True, copy entire workspace tree from Docker to local after completion.
+    Uses docker cp for recursive directory copy. Defaults to True for Docker subagents."""
 
 
 class CompiledSubAgent(TypedDict):

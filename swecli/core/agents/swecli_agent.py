@@ -229,6 +229,29 @@ class SwecliAgent(BaseAgent):
                     continue
 
                 # Last tool succeeded (or no previous tool) - accept implicit completion
+                # For subagents: generate a summary before returning to parent
+                is_subagent = hasattr(self, "_subagent_system_prompt") and self._subagent_system_prompt is not None
+
+                if is_subagent:
+                    # Request explicit summary for better parent context
+                    summary_request = {
+                        "role": "user",
+                        "content": "Briefly summarize what you accomplished (2-3 sentences). Focus on key outcomes and results.",
+                    }
+                    messages.append(summary_request)
+
+                    summary_result = self.call_llm(messages, task_monitor)
+                    if summary_result.get("success"):
+                        summary_content = self._response_cleaner.clean(
+                            summary_result.get("content", "")
+                        )
+                        return {
+                            "content": summary_content or cleaned_content or "",
+                            "messages": messages,
+                            "success": True,
+                        }
+
+                # Main agent or summary generation failed: return as-is
                 return {
                     "content": cleaned_content or "",
                     "messages": messages,
