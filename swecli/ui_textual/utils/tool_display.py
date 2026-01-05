@@ -357,6 +357,31 @@ def format_tool_call(tool_name: str, tool_args: Mapping[str, Any]) -> str:
             return f"Run ({working_dir} {cmd_display})"
         return f"Run ({cmd_display})"
 
+    # Enhanced formatting for list_files tool - show pattern and other params
+    elif tool_name == "list_files" and tool_args:
+        path = tool_args.get("path", ".")
+        pattern = tool_args.get("pattern", "")
+        max_results = tool_args.get("max_results")
+
+        if pattern:
+            # Pattern mode: show path and pattern
+            params = f'path: "{path}", pattern: "{pattern}"'
+            if max_results and max_results != 100:
+                params += f", max_results: {max_results}"
+            return f"List({params})"
+        else:
+            # Tree mode: just show path (default behavior)
+            return f"List({path})"
+
+    # Enhanced formatting for list_directory tool - show depth
+    elif tool_name == "list_directory" and tool_args:
+        path = tool_args.get("path", ".")
+        max_depth = tool_args.get("max_depth")
+
+        if max_depth and max_depth != 2:
+            return f"List({path}, depth: {max_depth})"
+        return f"List({path})"
+
     # Default formatting for other tools
     verb, label = get_tool_display_parts(tool_name)
     summary = summarize_tool_arguments(tool_name, tool_args)
