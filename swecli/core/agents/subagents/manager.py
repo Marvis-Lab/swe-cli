@@ -240,6 +240,27 @@ class SubAgentManager:
 
         return files
 
+    def _extract_github_info(self, task: str) -> tuple[str, str, str] | None:
+        """Extract GitHub repo URL and issue number from task.
+
+        Looks for GitHub issue URLs in the format:
+        https://github.com/owner/repo/issues/123
+
+        Args:
+            task: The task description string
+
+        Returns:
+            Tuple of (repo_url, owner_repo, issue_number) or None if not found
+        """
+        import re
+        match = re.search(r'https://github\.com/([^/]+/[^/]+)/issues/(\d+)', task)
+        if match:
+            owner_repo = match.group(1)
+            issue_number = match.group(2)
+            repo_url = f"https://github.com/{owner_repo}.git"
+            return (repo_url, owner_repo, issue_number)
+        return None
+
     def _copy_files_to_docker(
         self,
         container_name: str,
@@ -698,6 +719,31 @@ Use ONLY the filename or relative path for all file operations.
             loop.run_until_complete(
                 deployment.runtime.run(f"mkdir -p {workspace_dir}")
             )
+
+            # For GitHub-Resolver: clone the repository if GitHub URL in task
+            if name == "GitHub-Resolver":
+                github_info = self._extract_github_info(task)
+                if github_info:
+                    repo_url, owner_repo, issue_number = github_info
+
+                    # Show cloning step
+                    if nested_callback and hasattr(nested_callback, 'on_tool_call'):
+                        nested_callback.on_tool_call("docker_setup", {"step": "Cloning repository..."})
+
+                    # Clone repo (shallow clone for speed)
+                    clone_cmd = f"git clone --depth=50 {repo_url} {workspace_dir}"
+                    loop.run_until_complete(deployment.runtime.run(clone_cmd))
+
+                    # Create branch for the fix
+                    branch_name = f"fix/issue-{issue_number}"
+                    branch_cmd = f"cd {workspace_dir} && git checkout -b {branch_name}"
+                    loop.run_until_complete(deployment.runtime.run(branch_cmd))
+
+                    if nested_callback and hasattr(nested_callback, 'on_tool_result'):
+                        nested_callback.on_tool_result("docker_setup", {}, {
+                            "success": True,
+                            "output": f"Repository cloned to {workspace_dir}, branch: {branch_name}",
+                        })
 
             # Create Docker tool handler with local registry fallback for tools like read_pdf
             runtime = deployment.runtime

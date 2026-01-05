@@ -4,6 +4,15 @@ Runs inside a Docker container with the repository cloned at /workspace.
 """
 
 from swecli.core.agents.subagents.specs import SubAgentSpec
+from swecli.core.docker.deployment import DockerConfig
+
+# Docker configuration for GitHub Resolver
+GITHUB_RESOLVER_DOCKER_CONFIG = DockerConfig(
+    image="swecli/resolver:latest",
+    memory="4g",
+    cpus="2",
+    startup_timeout=60.0,
+)
 
 GITHUB_RESOLVER_SYSTEM_PROMPT = """You are an expert software engineer specializing in resolving GitHub issues.
 
@@ -76,11 +85,11 @@ List what files were changed and why.
 - Commit your changes before finishing
 """
 
-GITHUB_RESOLVER_SUBAGENT = SubAgentSpec(
-    name="GitHub-Resolver",
-    description="Resolves real GitHub issues in Docker containers. Use for fixing bugs from arbitrary GitHub issue URLs.",
-    system_prompt=GITHUB_RESOLVER_SYSTEM_PROMPT,
-    tools=[
+GITHUB_RESOLVER_SUBAGENT: SubAgentSpec = {
+    "name": "GitHub-Resolver",
+    "description": "Resolves real GitHub issues in Docker containers. Use for fixing bugs from arbitrary GitHub issue URLs.",
+    "system_prompt": GITHUB_RESOLVER_SYSTEM_PROMPT,
+    "tools": [
         "read_file",
         "write_file",
         "edit_file",
@@ -89,4 +98,5 @@ GITHUB_RESOLVER_SUBAGENT = SubAgentSpec(
         "run_command",
         "spawn_subagent",  # Can delegate to Code-Explorer for research
     ],
-)
+    "docker_config": GITHUB_RESOLVER_DOCKER_CONFIG,
+}
