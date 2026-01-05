@@ -431,7 +431,9 @@ class TextualUICallback:
         # Update the nested tool call status to complete
         # Use BLOCKING call_from_thread to ensure each tool's completion is displayed
         # before the next tool starts (fixes "all at once" display issue)
-        if hasattr(self.conversation, 'complete_nested_tool_call') and self._app is not None:
+        # Skip for bash commands - they use add_nested_bash_output_box instead
+        is_bash_command = tool_name in ("bash_execute", "run_command")
+        if not is_bash_command and hasattr(self.conversation, 'complete_nested_tool_call') and self._app is not None:
             success = result.get("success", False) if isinstance(result, dict) else True
             self._app.call_from_thread(
                 self.conversation.complete_nested_tool_call,
@@ -558,6 +560,13 @@ class TextualUICallback:
             lines = self.formatter._format_process_output_result(tool_args, result)
         else:
             lines = self.formatter._format_generic_result(tool_name, tool_args, result)
+
+        # Debug logging for missing content
+        if not lines:
+            import logging
+            logging.getLogger(__name__).debug(
+                f"No display lines for nested {tool_name}: result keys={list(result.keys()) if isinstance(result, dict) else 'not dict'}"
+            )
 
         # Display each line with proper nesting
         if lines and hasattr(self.conversation, 'add_nested_tool_sub_results'):
