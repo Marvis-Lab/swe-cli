@@ -857,9 +857,10 @@ Use ONLY the filename or relative path for all file operations.
                 except Exception:
                     pass  # Ignore cleanup errors
 
-                # Show Docker stop completion
+                # Show Docker stop completion with container ID
                 if nested_callback and hasattr(nested_callback, 'on_tool_result'):
-                    nested_callback.on_tool_result("docker_stop", {}, {"success": True, "output": "Container terminated"})
+                    container_id = deployment._container_name
+                    nested_callback.on_tool_result("docker_stop", {"container": container_id}, {"success": True, "output": container_id})
 
             # Close the loop after all async operations
             if loop is not None:

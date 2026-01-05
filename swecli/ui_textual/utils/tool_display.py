@@ -295,6 +295,9 @@ def format_tool_call(tool_name: str, tool_args: Mapping[str, Any]) -> str:
 
     # Docker container stop
     elif tool_name == "docker_stop":
+        container = tool_args.get("container", "") if tool_args else ""
+        if container:
+            return f"Stopping Docker container ({container})"
         return "Stopping Docker container"
 
     # Docker file copy
