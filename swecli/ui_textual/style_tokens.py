@@ -11,7 +11,7 @@ SUBTLE = "#9aa0ac"
 ERROR = "#ff5c57"
 WARNING = "#ffb347"
 SUCCESS = "#6ad18f"
-GREY = "#a0a4ad"
+GREY = "#7a7e86"
 PANEL_BORDER = "#3a3f4b"
 
 # Blues
