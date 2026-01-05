@@ -6,6 +6,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
 
+from swecli.commands.subagent_mixin import CommandPhase, SubagentProgressMixin
+from swecli.commands.subagent_types import OutputMetadata, SubagentCommandResult
+
 if TYPE_CHECKING:
     from swecli.core.agents.subagents.manager import SubAgentManager
 
@@ -17,19 +20,14 @@ class Paper2CodeArgs:
     pdf_path: str
 
 
-@dataclass
-class Paper2CodeResult:
-    """Result of paper2code execution."""
-
-    success: bool
-    message: str
-    output_path: Optional[Path] = None
+# Backwards compatibility alias
+Paper2CodeResult = SubagentCommandResult
 
 
-class Paper2CodeCommand:
+class Paper2CodeCommand(SubagentProgressMixin):
     """Handler for Paper2Code subagent execution."""
 
-    def _verify_output(self, target_dir: Path) -> Paper2CodeResult:
+    def _verify_output(self, target_dir: Path) -> SubagentCommandResult:
         """Verify the generated project is at least minimally runnable.
 
         Checks:
@@ -41,12 +39,14 @@ class Paper2CodeCommand:
             This runs on the host (not in the subagent Docker). It is meant as a
             safety net to catch obvious cases where the agent skipped Stage 4.
         """
+        self.show_progress("Verifying output...", CommandPhase.VERIFYING)
+
         main_py = target_dir / "main.py"
         if not main_py.exists():
-            return Paper2CodeResult(
+            return SubagentCommandResult(
                 success=False,
                 message=f"Verification failed: missing entrypoint {main_py.name}",
-                output_path=target_dir,
+                metadata=OutputMetadata(output_path=target_dir),
             )
 
         # Prefer uv if available; fall back to python -m pip.
@@ -78,14 +78,14 @@ class Paper2CodeCommand:
         if not install_ok:
             # Don't dump huge logs; include a small tail.
             tail = "\n".join(last_install_output.splitlines()[-20:])
-            return Paper2CodeResult(
+            return SubagentCommandResult(
                 success=False,
                 message=(
                     "Verification failed: could not install generated project dependencies.\n"
                     "Tried: uv pip install -e . and python -m pip install -e .\n"
                     f"Output (tail):\n{tail}"
                 ),
-                output_path=target_dir,
+                metadata=OutputMetadata(output_path=target_dir),
             )
 
         # Run entrypoint.
@@ -102,22 +102,23 @@ class Paper2CodeCommand:
             if proc.returncode != 0:
                 out = (proc.stdout or "") + (proc.stderr or "")
                 tail = "\n".join(out.splitlines()[-40:])
-                return Paper2CodeResult(
+                return SubagentCommandResult(
                     success=False,
                     message=f"Verification failed: running main.py exited with {proc.returncode}.\nOutput (tail):\n{tail}",
-                    output_path=target_dir,
+                    metadata=OutputMetadata(output_path=target_dir),
                 )
         except Exception as e:  # noqa: BLE001
-            return Paper2CodeResult(
+            return SubagentCommandResult(
                 success=False,
                 message=f"Verification failed: could not run main.py ({e})",
-                output_path=target_dir,
+                metadata=OutputMetadata(output_path=target_dir),
             )
 
-        return Paper2CodeResult(
+        self.complete_progress("Verification passed")
+        return SubagentCommandResult(
             success=True,
             message="Verification succeeded",
-            output_path=target_dir,
+            metadata=OutputMetadata(output_path=target_dir),
         )
 
     def __init__(
@@ -174,19 +175,20 @@ class Paper2CodeCommand:
             pdf_path=pdf_path,
         )
 
-    def execute(self, args: Paper2CodeArgs) -> Paper2CodeResult:
+    def execute(self, args: Paper2CodeArgs) -> SubagentCommandResult:
         """Execute the paper2code subagent.
 
         Args:
             args: Parsed command arguments
 
         Returns:
-            Paper2CodeResult with success status and details
+            SubagentCommandResult with success status and details
         """
         # Resolve paths
+        self.show_progress("Resolving paths...", CommandPhase.LOADING)
         pdf_path = Path(args.pdf_path).expanduser().resolve()
         if not pdf_path.exists():
-            return Paper2CodeResult(
+            return SubagentCommandResult(
                 success=False,
                 message=f"PDF file not found: {pdf_path}",
             )
@@ -196,6 +198,7 @@ class Paper2CodeCommand:
 
         if not target_dir.exists():
             target_dir.mkdir(parents=True, exist_ok=True)
+        self.complete_progress(f"Output directory: {target_dir}")
 
         # Build task
         task = self._build_task(str(pdf_path), str(target_dir))
@@ -209,35 +212,39 @@ class Paper2CodeCommand:
             undo_manager=self.undo_manager,
         )
 
-        # Execute subagent
+        # Show spawn header and execute subagent
+        self.show_spawn_header("Paper2Code", f"Implement {pdf_path.name}")
         result = self.subagent_manager.execute_subagent(
             name="Paper2Code",
             task=task,
             deps=deps,
             ui_callback=self.ui_callback,
             working_dir=target_dir,  # Agent works in the target directory
+            show_spawn_header=False,  # We already showed it via mixin
         )
 
         if isinstance(result, dict) and not result.get("success"):
-            return Paper2CodeResult(
+            error_msg = result.get("error") or result.get("content") or "Unknown error"
+            return SubagentCommandResult(
                 success=False,
-                message=f"Subagent failed: {result.get('error', 'Unknown error')}",
+                message=f"Subagent failed: {error_msg}",
+                metadata=OutputMetadata(output_path=target_dir),
             )
 
         # Post-run verification: ensure the agent produced a runnable project.
         # This is a lightweight guardrail in case the agent skipped Stage 4.
         verification = self._verify_output(target_dir)
         if not verification.success:
-            return Paper2CodeResult(
+            return SubagentCommandResult(
                 success=False,
                 message=verification.message,
-                output_path=target_dir,
+                metadata=OutputMetadata(output_path=target_dir),
             )
 
-        return Paper2CodeResult(
+        return SubagentCommandResult(
             success=True,
             message=f"Paper implemented in {target_dir}",
-            output_path=target_dir,
+            metadata=OutputMetadata(output_path=target_dir),
         )
 
     def _build_task(self, pdf_path: str, output_dir: str) -> str:

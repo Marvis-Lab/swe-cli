@@ -14,6 +14,15 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Coroutine, Literal, Optional, TypeVar
 
+from swecli.commands.subagent_mixin import CommandPhase, SubagentProgressMixin
+from swecli.commands.subagent_types import (
+    PatchMetadata,
+    PRMetadata,
+    RepoMetadata,
+    SubagentCommandResult,
+)
+from swecli.ui_textual.nested_callback import DockerContext, create_subagent_nested_callback
+
 T = TypeVar("T")
 
 
@@ -76,20 +85,12 @@ class IssueResolverArgs:
         return self.mode == "swebench" and self.instance is None
 
 
-@dataclass
-class ResolveResult:
-    """Result of issue resolution."""
-
-    success: bool
-    message: str
-    repo_path: Optional[Path] = None
-    branch: Optional[str] = None
-    pr_url: Optional[str] = None
-    patch: Optional[str] = None
-    prediction_path: Optional[Path] = None
+# Backwards compatibility alias - ResolveResult is now SubagentCommandResult
+# Use metadata types for structured data: PatchMetadata, PRMetadata, RepoMetadata
+ResolveResult = SubagentCommandResult
 
 
-class IssueResolverCommand:
+class IssueResolverCommand(SubagentProgressMixin):
     """Docker-based issue resolver for SWE-bench and GitHub issues.
 
     Supports two modes:
@@ -211,14 +212,14 @@ class IssueResolverCommand:
             issue_url=url,
         )
 
-    def execute(self, args: IssueResolverArgs) -> ResolveResult:
+    def execute(self, args: IssueResolverArgs) -> SubagentCommandResult:
         """Execute the issue resolution in Docker container.
 
         Args:
             args: Parsed command arguments
 
         Returns:
-            ResolveResult with success status and details
+            SubagentCommandResult with success status and details
         """
         if args.mode == "swebench":
             if args.is_batch_mode:
@@ -248,7 +249,7 @@ class IssueResolverCommand:
 
         return GITHUB_RESOLVER_FALLBACK, False
 
-    def _execute_swebench_docker(self, args: IssueResolverArgs) -> ResolveResult:
+    def _execute_swebench_docker(self, args: IssueResolverArgs) -> SubagentCommandResult:
         """Execute in SWE-bench mode using Docker container.
 
         Flow:
@@ -263,7 +264,7 @@ class IssueResolverCommand:
             args: Parsed command arguments with dataset, instance, and docker settings
 
         Returns:
-            ResolveResult with success status and details
+            SubagentCommandResult with success status and details
         """
         import asyncio
 
@@ -272,20 +273,16 @@ class IssueResolverCommand:
         from .swebench_loader import load_swebench_instance
 
         # Step 1: Load dataset and check instance
-        if self.ui_callback and hasattr(self.ui_callback, "on_progress_start"):
-            self.ui_callback.on_progress_start(f"Loading {args.dataset} dataset")
+        self.show_progress(f"Loading {args.dataset} dataset", CommandPhase.LOADING)
 
         try:
             instance = load_swebench_instance(args.instance, args.dataset)
         except (ImportError, ValueError) as e:
-            if self.ui_callback and hasattr(self.ui_callback, "on_progress_complete"):
-                self.ui_callback.on_progress_complete(str(e), success=False)
-            return ResolveResult(success=False, message=str(e))
+            return SubagentCommandResult(success=False, message=str(e))
 
-        if self.ui_callback and hasattr(self.ui_callback, "on_progress_complete"):
-            self.ui_callback.on_progress_complete(
-                f"Loaded {instance.instance_id} ({instance.repo} @ {instance.base_commit[:7]})"
-            )
+        self.complete_progress(
+            f"Loaded {instance.instance_id} ({instance.repo} @ {instance.base_commit[:7]})"
+        )
 
         # Step 2: Create Docker deployment config
         # Use SWE-bench pre-built image for this instance
@@ -299,31 +296,27 @@ class IssueResolverCommand:
         deployment = DockerDeployment(config=config)
 
         # Run the async Docker workflow
-        async def run_docker_workflow() -> ResolveResult:
+        async def run_docker_workflow() -> SubagentCommandResult:
             try:
                 # SWE-bench images have repo pre-installed at /testbed
                 repo_path = "/testbed"
 
-                # Show Spawn header (like paper2code's spawn_subagent tool call)
-                spawn_args = {
-                    "subagent_type": "Issue-Resolver",
-                    "description": f"Fix {instance.instance_id}",
-                }
-                if self.ui_callback and hasattr(self.ui_callback, "on_tool_call"):
-                    self.ui_callback.on_tool_call("spawn_subagent", spawn_args)
+                # Show Spawn header using mixin method
+                self.show_spawn_header("Issue-Resolver", f"Fix {instance.instance_id}")
 
                 # Get container ID from deployment (generated in __init__ before start)
                 container_name = deployment._container_name
                 container_id = container_name.split("-")[-1]
 
-                # Create nested callback with Docker context BEFORE starting container
-                # This way docker_start appears nested under Spawn[Issue-Resolver]
-                nested_callback = self.subagent_manager.create_docker_nested_callback(
+                # Create nested callback with Docker context using factory
+                nested_callback = create_subagent_nested_callback(
                     ui_callback=self.ui_callback,
                     subagent_name="Issue-Resolver",
-                    workspace_dir=repo_path,
-                    image_name=docker_image,
-                    container_id=container_id,
+                    docker_context=DockerContext(
+                        workspace_dir=repo_path,
+                        image_name=docker_image,
+                        container_id=container_id,
+                    ),
                 )
 
                 # Show docker_start as nested tool call (like paper2code)
@@ -374,27 +367,13 @@ class IssueResolverCommand:
                 if isinstance(result, str):
                     pass  # Continue to extract patch
                 elif not result.get("success"):
-                    # Show Spawn result (failure)
-                    if self.ui_callback and hasattr(self.ui_callback, "on_tool_result"):
-                        self.ui_callback.on_tool_result("spawn_subagent", spawn_args, {
-                            "success": False,
-                            "error": result.get("error", "Unknown error"),
-                        })
-                    return ResolveResult(
+                    return SubagentCommandResult(
                         success=False,
                         message=f"Subagent failed: {result.get('error', 'Unknown error')}",
                     )
 
-                # Show Spawn result (success)
-                if self.ui_callback and hasattr(self.ui_callback, "on_tool_result"):
-                    self.ui_callback.on_tool_result("spawn_subagent", spawn_args, {
-                        "success": True,
-                        "output": result.get("content", ""),
-                    })
-
                 # Extract patch from container
-                if self.ui_callback and hasattr(self.ui_callback, "on_progress_start"):
-                    self.ui_callback.on_progress_start("Extracting patch...")
+                self.show_progress("Extracting patch...", CommandPhase.EXTRACTING)
 
                 patch_cmd = f"cd {repo_path} && git diff {instance.base_commit}"
                 obs = await runtime.run(patch_cmd, timeout=60.0)
@@ -408,27 +387,25 @@ class IssueResolverCommand:
 
                 if patch.strip():
                     patch_path.write_text(patch)
-                    if self.ui_callback and hasattr(self.ui_callback, "on_progress_complete"):
-                        self.ui_callback.on_progress_complete(f"Saved to {patch_path}")
+                    self.complete_progress(f"Saved to {patch_path}")
                 else:
                     patch_path = None
-                    if self.ui_callback and hasattr(self.ui_callback, "on_progress_complete"):
-                        self.ui_callback.on_progress_complete("No changes detected", success=False)
+                    self.complete_progress("No changes detected")
 
-                return ResolveResult(
+                return SubagentCommandResult(
                     success=True,
                     message=f"SWE-bench instance {instance.instance_id} resolved in Docker",
-                    patch=patch,
-                    prediction_path=patch_path,
+                    metadata=PatchMetadata(
+                        patch_path=patch_path,
+                        base_commit=instance.base_commit,
+                    ) if patch_path else None,
                 )
 
             finally:
                 # Step 9: Stop container
-                if self.ui_callback and hasattr(self.ui_callback, "on_progress_start"):
-                    self.ui_callback.on_progress_start("Stopping container...")
+                self.show_progress("Stopping container...", CommandPhase.COMPLETE)
                 await deployment.stop()
-                if self.ui_callback and hasattr(self.ui_callback, "on_progress_complete"):
-                    self.ui_callback.on_progress_complete("Container stopped")
+                self.complete_progress("Container stopped")
 
         # Run the async workflow
         return _run_async(run_docker_workflow())
@@ -456,7 +433,7 @@ IMPORTANT: The repository is at /testbed (SWE-bench convention).
 Use absolute paths like: /testbed/path/to/file.py
 """
 
-    def _execute_batch(self, args: IssueResolverArgs) -> ResolveResult:
+    def _execute_batch(self, args: IssueResolverArgs) -> SubagentCommandResult:
         """Execute in batch mode (whole dataset).
 
         Runs all instances in the dataset using Docker containers,
@@ -466,7 +443,7 @@ Use absolute paths like: /testbed/path/to/file.py
             args: Parsed command arguments with dataset and parallel
 
         Returns:
-            ResolveResult with batch completion status
+            SubagentCommandResult with batch completion status
         """
         from .swebench_loader import get_all_instance_ids
 
@@ -474,7 +451,7 @@ Use absolute paths like: /testbed/path/to/file.py
         try:
             all_instances = get_all_instance_ids(args.dataset)
         except (ImportError, ValueError) as e:
-            return ResolveResult(success=False, message=str(e))
+            return SubagentCommandResult(success=False, message=str(e))
 
         # Filter out completed instances (auto-skip)
         predictions_dir = self.working_dir / "swebench-benchmarks" / args.dataset
@@ -487,7 +464,7 @@ Use absolute paths like: /testbed/path/to/file.py
         skipped = total - len(pending)
 
         if not pending:
-            return ResolveResult(
+            return SubagentCommandResult(
                 success=True,
                 message=f"All {total} instances already completed. Nothing to do.",
             )
@@ -510,12 +487,12 @@ Use absolute paths like: /testbed/path/to/file.py
             else:
                 failed += 1
 
-        return ResolveResult(
+        return SubagentCommandResult(
             success=True,
             message=f"Batch complete: {succeeded} resolved, {failed} failed out of {total} total",
         )
 
-    def _execute_github_docker(self, args: IssueResolverArgs) -> ResolveResult:
+    def _execute_github_docker(self, args: IssueResolverArgs) -> SubagentCommandResult:
         """Execute GitHub issue resolution in Docker container.
 
         Flow:
@@ -530,7 +507,7 @@ Use absolute paths like: /testbed/path/to/file.py
             args: Parsed command arguments with issue_url
 
         Returns:
-            ResolveResult with success status and details
+            SubagentCommandResult with success status and details
         """
         import asyncio
 
@@ -541,20 +518,17 @@ Use absolute paths like: /testbed/path/to/file.py
         # Step 1: Parse URL
         issue_info = parse_github_issue_url(args.issue_url)
         if not issue_info:
-            return ResolveResult(
+            return SubagentCommandResult(
                 success=False,
                 message=f"Invalid GitHub issue URL: {args.issue_url}",
             )
 
         # Step 2: Ensure GitHub MCP is connected
-        if self.ui_callback and hasattr(self.ui_callback, "on_progress_start"):
-            self.ui_callback.on_progress_start("Connecting to GitHub...")
+        self.show_progress("Connecting to GitHub...", CommandPhase.LOADING)
 
         connected, msg = self.mcp_github.ensure_connected()
         if not connected:
-            if self.ui_callback and hasattr(self.ui_callback, "on_progress_complete"):
-                self.ui_callback.on_progress_complete(msg, success=False)
-            return ResolveResult(
+            return SubagentCommandResult(
                 success=False,
                 message=f"GitHub connection failed: {msg}",
             )
@@ -564,17 +538,12 @@ Use absolute paths like: /testbed/path/to/file.py
             issue_info.owner, issue_info.repo, issue_info.issue_number
         )
         if not issue:
-            if self.ui_callback and hasattr(self.ui_callback, "on_progress_complete"):
-                self.ui_callback.on_progress_complete("Failed to fetch issue", success=False)
-            return ResolveResult(
+            return SubagentCommandResult(
                 success=False,
                 message="Failed to fetch issue details from GitHub",
             )
 
-        if self.ui_callback and hasattr(self.ui_callback, "on_progress_complete"):
-            self.ui_callback.on_progress_complete(
-                f"Fetched #{issue.number}: {issue.title[:50]}..."
-            )
+        self.complete_progress(f"Fetched #{issue.number}: {issue.title[:50]}...")
 
         # Step 4: Get Docker image (template or fallback)
         docker_image, has_tools = self._get_github_docker_image()
@@ -588,29 +557,26 @@ Use absolute paths like: /testbed/path/to/file.py
         deployment = DockerDeployment(config=config)
 
         # Run the async Docker workflow
-        async def run_docker_workflow() -> ResolveResult:
+        async def run_docker_workflow() -> SubagentCommandResult:
             try:
-                # Show Spawn header FIRST (before Docker operations)
-                # This ensures all Docker operations appear nested under Spawn
-                spawn_args = {
-                    "subagent_type": "GitHub-Resolver",
-                    "description": f"Fix #{issue.number}: {issue.title[:50]}...",
-                }
-                if self.ui_callback and hasattr(self.ui_callback, "on_tool_call"):
-                    self.ui_callback.on_tool_call("spawn_subagent", spawn_args)
+                # Show Spawn header using mixin method
+                self.show_spawn_header(
+                    "GitHub-Resolver", f"Fix #{issue.number}: {issue.title[:50]}..."
+                )
 
                 # Get container ID from deployment (generated in __init__ before start)
                 container_name = deployment._container_name
                 container_id = container_name.split("-")[-1]
 
-                # Create nested callback BEFORE starting container
-                # This way docker_start appears nested under Spawn[GitHub-Resolver]
-                nested_callback = self.subagent_manager.create_docker_nested_callback(
+                # Create nested callback with Docker context using factory
+                nested_callback = create_subagent_nested_callback(
                     ui_callback=self.ui_callback,
                     subagent_name="GitHub-Resolver",
-                    workspace_dir="/workspace",
-                    image_name=docker_image,
-                    container_id=container_id,
+                    docker_context=DockerContext(
+                        workspace_dir="/workspace",
+                        image_name=docker_image,
+                        container_id=container_id,
+                    ),
                 )
 
                 # Show docker_start as nested tool call
@@ -681,27 +647,13 @@ Use absolute paths like: /testbed/path/to/file.py
                 if isinstance(result, str):
                     pass  # Continue to extract patch
                 elif not result.get("success"):
-                    # Show Spawn result (failure)
-                    if self.ui_callback and hasattr(self.ui_callback, "on_tool_result"):
-                        self.ui_callback.on_tool_result("spawn_subagent", spawn_args, {
-                            "success": False,
-                            "error": result.get("error", "Unknown error"),
-                        })
-                    return ResolveResult(
+                    return SubagentCommandResult(
                         success=False,
                         message=f"Subagent failed: {result.get('error', 'Unknown error')}",
                     )
 
-                # Show Spawn result (success)
-                if self.ui_callback and hasattr(self.ui_callback, "on_tool_result"):
-                    self.ui_callback.on_tool_result("spawn_subagent", spawn_args, {
-                        "success": True,
-                        "output": result.get("content", "") if isinstance(result, dict) else str(result),
-                    })
-
                 # Extract patch from container
-                if self.ui_callback and hasattr(self.ui_callback, "on_progress_start"):
-                    self.ui_callback.on_progress_start("Extracting patch...")
+                self.show_progress("Extracting patch...", CommandPhase.EXTRACTING)
 
                 # Get diff of all changes (committed or not)
                 patch_cmd = "cd /workspace && git diff HEAD"
@@ -721,27 +673,22 @@ Use absolute paths like: /testbed/path/to/file.py
 
                 if patch.strip():
                     patch_path.write_text(patch)
-                    if self.ui_callback and hasattr(self.ui_callback, "on_progress_complete"):
-                        self.ui_callback.on_progress_complete(f"Saved to {patch_path}")
+                    self.complete_progress(f"Saved to {patch_path}")
                 else:
                     patch_path = None
-                    if self.ui_callback and hasattr(self.ui_callback, "on_progress_complete"):
-                        self.ui_callback.on_progress_complete("No changes detected", success=False)
+                    self.complete_progress("No changes detected")
 
-                return ResolveResult(
+                return SubagentCommandResult(
                     success=True,
                     message=f"GitHub issue #{issue_info.issue_number} resolved",
-                    patch=patch,
-                    prediction_path=patch_path,
+                    metadata=PatchMetadata(patch_path=patch_path) if patch_path else None,
                 )
 
             finally:
                 # Step 13: Stop container
-                if self.ui_callback and hasattr(self.ui_callback, "on_progress_start"):
-                    self.ui_callback.on_progress_start("Stopping container...")
+                self.show_progress("Stopping container...", CommandPhase.COMPLETE)
                 await deployment.stop()
-                if self.ui_callback and hasattr(self.ui_callback, "on_progress_complete"):
-                    self.ui_callback.on_progress_complete("Container stopped")
+                self.complete_progress("Container stopped")
 
         # Run the async workflow
         return _run_async(run_docker_workflow())

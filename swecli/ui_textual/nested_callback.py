@@ -2,12 +2,35 @@
 
 from __future__ import annotations
 
+import re
+from dataclasses import dataclass
 from typing import Any, Callable, Dict, Optional
 
 from swecli.ui_textual.callback_interface import ForwardingUICallback, UICallbackProtocol
 
 # Re-export for backwards compatibility
 UICallback = UICallbackProtocol
+
+
+@dataclass
+class DockerContext:
+    """Docker execution context for path sanitization.
+
+    Used by create_subagent_nested_callback to configure Docker-aware
+    path sanitization in subagent tool call displays.
+    """
+
+    workspace_dir: str
+    """Docker workspace path (e.g., '/workspace' or '/testbed')."""
+
+    image_name: str
+    """Full Docker image name (e.g., 'ghcr.io/astral-sh/uv:python3.11')."""
+
+    container_id: str
+    """Short container ID (last 8 chars of container name)."""
+
+    local_dir: Optional[str] = None
+    """Local directory for path remapping (optional)."""
 
 
 class NestedUICallback(ForwardingUICallback):
@@ -189,3 +212,101 @@ class NestedUICallback(ForwardingUICallback):
     # - on_bash_output_line()  <- This was missing before, now auto-forwarded!
     # - on_nested_tool_call(), on_nested_tool_result()
     # - on_tool_complete()
+
+
+def _create_path_sanitizer(docker_context: DockerContext) -> Callable[[str], str]:
+    """Create a path sanitizer for Docker mode UI display.
+
+    Converts local paths to Docker workspace paths with container prefix:
+    - /Users/.../test_opencli/src/file.py → [uv:a1b2c3d4]:/workspace/src/file.py
+    - README.md → [uv:a1b2c3d4]:/workspace/README.md
+
+    Args:
+        docker_context: Docker context with workspace, image, and container info
+
+    Returns:
+        A callable that sanitizes paths for display
+    """
+    # Extract short image name: "ghcr.io/astral-sh/uv:python3.11-bookworm" → "uv"
+    short_image = docker_context.image_name.split("/")[-1].split(":")[0]
+    prefix = f"[{short_image}:{docker_context.container_id}]:"
+    workspace_dir = docker_context.workspace_dir
+    local_dir = docker_context.local_dir or ""
+
+    def sanitize(path: str) -> str:
+        # If path starts with local_dir, replace with workspace_dir
+        if local_dir and path.startswith(local_dir):
+            relative = path[len(local_dir) :].lstrip("/")
+            docker_path = f"{workspace_dir}/{relative}" if relative else workspace_dir
+            return f"{prefix}{docker_path}"
+
+        # Handle Docker-internal absolute paths (e.g., /workspace/..., /testbed/...)
+        if path.startswith(workspace_dir):
+            return f"{prefix}{path}"
+
+        # Fallback: extract filename from other absolute paths
+        match = re.match(r"^(/Users/|/home/|/var/|/tmp/).+/([^/]+)$", path)
+        if match:
+            filename = match.group(2)
+            return f"{prefix}{workspace_dir}/{filename}"
+
+        # Clean relative paths that might have leading ./
+        clean_path = path.lstrip("./")
+        if clean_path and not clean_path.startswith("/"):
+            return f"{prefix}{workspace_dir}/{clean_path}"
+
+        return path
+
+    return sanitize
+
+
+def create_subagent_nested_callback(
+    ui_callback: Any,
+    subagent_name: str,
+    docker_context: Optional[DockerContext] = None,
+) -> Optional[NestedUICallback]:
+    """Standard factory for creating subagent UI callbacks.
+
+    This factory works for both Docker and non-Docker subagents. When docker_context
+    is provided, paths in tool arguments are sanitized to show container prefixes.
+
+    Args:
+        ui_callback: Parent UI callback to wrap (can be None)
+        subagent_name: Name of the subagent for context (e.g., "Issue-Resolver")
+        docker_context: Optional Docker context for path sanitization
+
+    Returns:
+        NestedUICallback properly configured for the subagent, or None if ui_callback is None
+
+    Examples:
+        # Non-Docker subagent (e.g., Code-Reviewer)
+        nested = create_subagent_nested_callback(
+            ui_callback=self.ui_callback,
+            subagent_name="Code-Reviewer",
+        )
+
+        # Docker subagent (e.g., Issue-Resolver)
+        nested = create_subagent_nested_callback(
+            ui_callback=self.ui_callback,
+            subagent_name="Issue-Resolver",
+            docker_context=DockerContext(
+                workspace_dir="/testbed",
+                image_name="sweb.eval.x86_64.django:latest",
+                container_id="a1b2c3d4",
+                local_dir="/Users/.../project",
+            ),
+        )
+    """
+    if ui_callback is None:
+        return None
+
+    path_sanitizer = None
+    if docker_context:
+        path_sanitizer = _create_path_sanitizer(docker_context)
+
+    return NestedUICallback(
+        parent_callback=ui_callback,
+        parent_context=subagent_name,
+        depth=1,
+        path_sanitizer=path_sanitizer,
+    )
