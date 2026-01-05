@@ -925,11 +925,32 @@ class QueryProcessor:
         user_msg = ChatMessage(role=Role.USER, content=query)
         self.session_manager.add_message(user_msg, self.config.auto_save_interval)
 
+        # Debug: Show session state after adding user message
+        if ui_callback and hasattr(ui_callback, 'on_debug'):
+            session = self.session_manager.current_session
+            if session:
+                msg_count = len(session.messages)
+                ui_callback.on_debug(f"Session has {msg_count} messages after adding user msg", "SESSION")
+                last_3 = session.messages[-3:] if msg_count >= 3 else session.messages
+                for i, msg in enumerate(last_3):
+                    content = (msg.content[:50] if msg.content else '(empty)').replace('\n', ' ')
+                    has_tools = bool(getattr(msg, 'tool_calls', None))
+                    ui_callback.on_debug(f"  [{msg_count - len(last_3) + i}] {msg.role.value}: {content}... (tools={has_tools})", "SESSION")
+
         # Enhance query with file contents
         enhanced_query = self.enhance_query(query)
 
         # Prepare messages for API
         messages = self._prepare_messages(query, enhanced_query, agent)
+
+        # Debug: Show messages being sent to LLM
+        if ui_callback and hasattr(ui_callback, 'on_debug'):
+            ui_callback.on_debug(f"Sending {len(messages)} messages to LLM:", "LLM_MESSAGES")
+            for i, msg in enumerate(messages):
+                role = msg.get('role', 'unknown')
+                content = str(msg.get('content', '') or '')[:80].replace('\n', ' ')
+                has_tools = 'tool_calls' in msg
+                ui_callback.on_debug(f"  [{i}] {role}: {content}... (tools={has_tools})", "LLM_MESSAGES")
 
         try:
             # ReAct loop: Reasoning → Acting → Observing

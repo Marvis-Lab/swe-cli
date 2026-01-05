@@ -509,8 +509,17 @@ class ReActExecutor:
             if ui_callback and hasattr(ui_callback, 'on_tool_result'):
                 ui_callback.on_tool_result(tool_name, tool_args, result)
 
-            # Add tool result to messages
-            tool_result = result.get("output", "") if result["success"] else f"Error: {result.get('error', 'Tool execution failed')}"
+            # Handle separate_response for spawn_subagent (display as assistant message)
+            separate_response = result.get("separate_response")
+            if separate_response and ui_callback:
+                if hasattr(ui_callback, 'on_assistant_message'):
+                    ui_callback.on_assistant_message(separate_response)
+
+            # Add tool result to messages (use separate_response for spawn_subagent if available)
+            if result["success"]:
+                tool_result = separate_response if separate_response else result.get("output", "")
+            else:
+                tool_result = f"Error: {result.get('error', 'Tool execution failed')}"
             messages.append({
                 "role": "tool",
                 "tool_call_id": tool_call["id"],

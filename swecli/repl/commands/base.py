@@ -6,6 +6,11 @@ from typing import Any, Optional
 
 from rich.console import Console
 
+from swecli.ui_textual.formatters.result_formatter import (
+    ToolResultFormatter,
+    get_formatter,
+)
+
 
 @dataclass
 class CommandResult:
@@ -26,6 +31,10 @@ class CommandHandler(ABC):
 
     Each command handler is responsible for executing a specific
     command or group of related commands.
+    
+    Output Formatting:
+        All output methods (print_success, print_error, etc.) use
+        ToolResultFormatter to ensure consistent `⎿` prefixed display.
     """
 
     def __init__(self, console: Console):
@@ -35,6 +44,7 @@ class CommandHandler(ABC):
             console: Rich console for output
         """
         self.console = console
+        self._formatter: ToolResultFormatter = get_formatter()
 
     @abstractmethod
     def handle(self, args: str) -> CommandResult:
@@ -66,7 +76,7 @@ class CommandHandler(ABC):
         Args:
             message: Message to display
         """
-        self.console.print(f"  ⎿  [green]{message}[/green]")
+        self.console.print(self._formatter.format_success(message))
 
     def print_error(self, message: str) -> None:
         """Print error message with ⎿ prefix.
@@ -74,7 +84,7 @@ class CommandHandler(ABC):
         Args:
             message: Error message to display
         """
-        self.console.print(f"  ⎿  [red]{message}[/red]")
+        self.console.print(self._formatter.format_error(message))
 
     def print_warning(self, message: str) -> None:
         """Print warning message with ⎿ prefix.
@@ -82,7 +92,7 @@ class CommandHandler(ABC):
         Args:
             message: Warning message to display
         """
-        self.console.print(f"  ⎿  [yellow]{message}[/yellow]")
+        self.console.print(self._formatter.format_warning(message))
 
     def print_info(self, message: str) -> None:
         """Print info message with ⎿ prefix.
@@ -90,4 +100,5 @@ class CommandHandler(ABC):
         Args:
             message: Info message to display
         """
-        self.console.print(f"  ⎿  {message}")
+        self.console.print(self._formatter.format_info(message))
+

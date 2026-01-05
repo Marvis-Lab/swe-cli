@@ -23,6 +23,7 @@ class Spinner:
         self._running = False
         self._thread: Optional[threading.Thread] = None
         self._message = "Thinking..."
+        self._ready = threading.Event()
 
     def start(self, message: str = "Thinking...") -> None:
         if self._running:
@@ -30,8 +31,11 @@ class Spinner:
 
         self._running = True
         self._message = message
+        self._ready.clear()
         self._thread = threading.Thread(target=self._animate, daemon=True)
         self._thread.start()
+        # Wait for the Live context to be ready before returning
+        self._ready.wait(timeout=0.5)
 
     def stop(self) -> None:
         self._running = False
@@ -42,6 +46,8 @@ class Spinner:
     def _animate(self) -> None:
         with Live(console=self.console, auto_refresh=False, transient=True) as live:
             self.live = live
+            # Signal that the Live context is ready
+            self._ready.set()
             frame_idx = 0
 
             while self._running:
