@@ -492,19 +492,11 @@ Use absolute paths like: /testbed/path/to/file.py
                 message=f"All {total} instances already completed. Nothing to do.",
             )
 
-        # Log progress
-        if self.ui_callback and hasattr(self.ui_callback, "on_message"):
-            msg = f"Starting batch: {len(pending)} pending, {skipped} skipped (already completed)"
-            self.ui_callback.on_message(msg)
-
         # Execute instances sequentially (each gets its own Docker container)
         succeeded = 0
         failed = 0
 
-        for i, instance_id in enumerate(pending, 1):
-            if self.ui_callback and hasattr(self.ui_callback, "on_message"):
-                self.ui_callback.on_message(f"[{i}/{len(pending)}] Resolving {instance_id}...")
-
+        for instance_id in pending:
             # Create args for single instance
             single_args = IssueResolverArgs(
                 mode="swebench",
