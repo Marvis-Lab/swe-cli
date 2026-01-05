@@ -48,7 +48,23 @@ class ConversationLog(RichLog):
         self._tool_display: Text | None = None
         self._spinner_active = False
         self._spinner_chars = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
-        self._nested_spinner_chars = ("⏺", "○")  # Flashing bullet for nested/subagent tools
+        self._nested_spinner_char = "⏺"  # Single character for nested/subagent tools
+        # Smooth color gradient: 12 steps for fluid pulsing (bright → dim → bright)
+        self._nested_color_gradient = [
+            "#00ee00",  # Bright
+            "#00dd00",
+            "#00cc00",
+            "#00bb00",
+            "#00aa00",
+            "#009900",  # Dimmest
+            "#00aa00",
+            "#00bb00",
+            "#00cc00",
+            "#00dd00",
+            "#00ee00",  # Back to bright
+            "#00ff00",  # Peak bright
+        ]
+        self._nested_color_index = 0
         self._spinner_index = 0
         self._tool_call_start: int | None = None
         self._approval_start: int | None = None
@@ -65,7 +81,6 @@ class ConversationLog(RichLog):
         self._nested_pulse_counter = 0  # Counter to slow down pulse rate
         self._nested_tool_timer: Timer | None = None  # Independent timer for nested tool animation
         self._nested_tool_timer_start: float | None = None  # Start time for elapsed tracking
-        self._nested_spinner_index = 0  # Spinner frame for nested tool
         # Track if last written line has content (for blank line insertion logic)
         self._last_line_has_content = False
         # Streaming bash box state
@@ -463,11 +478,11 @@ class ConversationLog(RichLog):
             # Use dim style for nested tool calls to match nested result styling
             tool_text = Text(str(display), style="dim")
 
-        # Build indented line with spinner - START with first spinner char (flashing bullet)
+        # Build indented line with spinner - START with first color (brightest)
         formatted = Text()
         indent = "  " * depth
         formatted.append(indent)
-        formatted.append(f"{self._nested_spinner_chars[0]} ", style="green")
+        formatted.append(f"{self._nested_spinner_char} ", style=self._nested_color_gradient[0])
         formatted.append_text(tool_text)
         formatted.append(" (0s)", style=GREY)  # Initial elapsed time
 
@@ -479,7 +494,7 @@ class ConversationLog(RichLog):
         self._nested_tool_depth = depth
         self._nested_pulse_bright = False
         self._nested_pulse_counter = 0
-        self._nested_spinner_index = 0
+        self._nested_color_index = 0
         self._nested_tool_timer_start = time.monotonic()
 
         # Start independent timer for nested tool animation
@@ -528,14 +543,14 @@ class ConversationLog(RichLog):
             elapsed = round(time.monotonic() - self._nested_tool_timer_start)
         _log.debug(f"[TIMER] _animate_nested_tool_spinner: elapsed={elapsed}s")
 
-        # Update spinner frame (flashing bullet for nested tools)
-        self._nested_spinner_index = (self._nested_spinner_index + 1) % len(self._nested_spinner_chars)
+        # Update color gradient frame (smooth pulse for nested tools)
+        self._nested_color_index = (self._nested_color_index + 1) % len(self._nested_color_gradient)
 
         # Render the updated line
         self._render_nested_tool_line()
 
-        # Schedule next frame with dual-timer pattern
-        interval = 0.12
+        # Schedule next frame with dual-timer pattern (fast for smooth gradient)
+        interval = 0.1  # 100ms per frame = smooth pulsing
 
         # Primary: Textual timer (works when event loop is free)
         self._nested_tool_timer = self.set_timer(interval, self._animate_nested_tool_spinner)
@@ -558,12 +573,12 @@ class ConversationLog(RichLog):
         if self._nested_tool_timer_start is not None:
             elapsed = round(time.monotonic() - self._nested_tool_timer_start)
 
-        # Build the animated line (flashing bullet for nested tools)
+        # Build the animated line (color gradient pulse for nested tools)
         formatted = Text()
         indent = "  " * self._nested_tool_depth
         formatted.append(indent)
-        spinner_char = self._nested_spinner_chars[self._nested_spinner_index]
-        formatted.append(f"{spinner_char} ", style="green")
+        color = self._nested_color_gradient[self._nested_color_index]
+        formatted.append(f"{self._nested_spinner_char} ", style=color)
         formatted.append_text(self._nested_tool_text.copy())
         formatted.append(f" ({elapsed}s)", style=GREY)
 
