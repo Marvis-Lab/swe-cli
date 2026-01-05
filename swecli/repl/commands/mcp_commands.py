@@ -1,11 +1,14 @@
 """MCP (Model Context Protocol) commands for REPL."""
 
+import time
 from typing import TYPE_CHECKING, Optional, Callable
 
 from rich.console import Console
 from rich.table import Table
 
+from swecli.core.runtime.monitoring import TaskMonitor
 from swecli.repl.commands.base import CommandHandler, CommandResult
+from swecli.ui_textual.components.task_progress import TaskProgressDisplay
 from swecli.ui_textual.modals.mcp_viewer_modal import show_mcp_server
 
 if TYPE_CHECKING:
@@ -129,25 +132,43 @@ class MCPCommands(CommandHandler):
             self.console.print(f"  ⎿  [yellow]Already connected[/yellow]")
             return CommandResult(success=True, message="Already connected")
 
-        self.console.print(f"[cyan]⏺[/cyan] MCP ({server_name})")
-        self.console.print(f"  ⎿  Connecting...")
+        # Use same spinner mechanism as regular prompts
+        task_monitor = TaskMonitor()
+        task_monitor.start(f"MCP ({server_name})", initial_tokens=0)
+
+        progress = TaskProgressDisplay(self.console, task_monitor)
+        progress.start()
+        # Give display a moment to render (same as query_processor.py)
+        time.sleep(0.05)
+
         try:
             success = self.mcp_manager.connect_sync(server_name)
-            if success:
-                tools = self.mcp_manager.get_server_tools(server_name)
-                self.console.print(f"  ⎿  [green]Connected ({len(tools)} tools)[/green]")
-
-                # Refresh runtime tooling
-                if self.refresh_runtime:
-                    self.refresh_runtime()
-
-                return CommandResult(success=True, message=f"Connected to {server_name}")
-            else:
-                self.console.print(f"  ⎿  [red]❌ Connection failed[/red]")
-                return CommandResult(success=False, message="Connection failed")
         except Exception as e:
-            self.console.print(f"  ⎿  [red]❌ Error: {e}[/red]")
+            progress.stop()
+            task_monitor.stop()
+            elapsed = task_monitor.get_elapsed_seconds()
+            self.console.print(f"[red]⏺[/red] MCP ({server_name}) ({elapsed}s)")
+            self.console.print(f"  ⎿  [red]Error: {e}[/red]")
             return CommandResult(success=False, message=str(e))
+
+        progress.stop()
+        stats = task_monitor.stop()
+        elapsed = stats["elapsed_seconds"]
+
+        if success:
+            tools = self.mcp_manager.get_server_tools(server_name)
+            self.console.print(f"[green]⏺[/green] MCP ({server_name}) ({elapsed}s)")
+            self.console.print(f"  ⎿  [green]Connected ({len(tools)} tools)[/green]")
+
+            # Refresh runtime tooling
+            if self.refresh_runtime:
+                self.refresh_runtime()
+
+            return CommandResult(success=True, message=f"Connected to {server_name}")
+        else:
+            self.console.print(f"[red]⏺[/red] MCP ({server_name}) ({elapsed}s)")
+            self.console.print(f"  ⎿  [red]Connection failed[/red]")
+            return CommandResult(success=False, message="Connection failed")
 
     def disconnect(self, server_name: str) -> CommandResult:
         """Disconnect from a specific MCP server."""
@@ -166,7 +187,7 @@ class MCPCommands(CommandHandler):
 
             return CommandResult(success=True, message=f"Disconnected from {server_name}")
         except Exception as e:
-            self.console.print(f"  ⎿  [red]❌ Error: {e}[/red]")
+            self.console.print(f"  ⎿  [red]Error: {e}[/red]")
             return CommandResult(success=False, message=str(e))
 
     def show_tools(self, server_name: Optional[str]) -> CommandResult:

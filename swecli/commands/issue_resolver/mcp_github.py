@@ -1,8 +1,12 @@
-"""MCP GitHub wrapper for issue resolver."""
+"""MCP GitHub wrapper for issue resolver.
+
+Provides GitHub API access with MCP as primary and direct API as fallback.
+"""
 
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Optional
 
@@ -109,7 +113,7 @@ class MCPGitHub:
     def get_issue(
         self, owner: str, repo: str, issue_number: int
     ) -> Optional[GitHubIssue]:
-        """Fetch issue details via MCP.
+        """Fetch issue details via MCP, with direct API fallback.
 
         Args:
             owner: Repository owner
@@ -119,6 +123,18 @@ class MCPGitHub:
         Returns:
             GitHubIssue or None if fetch fails
         """
+        # Try MCP first
+        issue = self._get_issue_via_mcp(owner, repo, issue_number)
+        if issue:
+            return issue
+
+        # Fallback to direct API
+        return self._get_issue_direct(owner, repo, issue_number)
+
+    def _get_issue_via_mcp(
+        self, owner: str, repo: str, issue_number: int
+    ) -> Optional[GitHubIssue]:
+        """Fetch issue via MCP server."""
         result = self._call_tool(
             "issue_read",
             {
@@ -157,6 +173,54 @@ class MCPGitHub:
                 repo_name=repo,
             )
         except (json.JSONDecodeError, KeyError, TypeError):
+            return None
+
+    def _get_issue_direct(
+        self, owner: str, repo: str, issue_number: int
+    ) -> Optional[GitHubIssue]:
+        """Fetch issue via direct GitHub API (fallback).
+
+        Uses httpx to call GitHub REST API directly when MCP is unavailable.
+        """
+        try:
+            import httpx
+        except ImportError:
+            return None
+
+        token = os.environ.get("GITHUB_TOKEN", "")
+        headers = {
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+        }
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+
+        try:
+            response = httpx.get(
+                f"https://api.github.com/repos/{owner}/{repo}/issues/{issue_number}",
+                headers=headers,
+                timeout=30.0,
+            )
+            response.raise_for_status()
+            data = response.json()
+
+            return GitHubIssue(
+                number=data.get("number", issue_number),
+                title=data.get("title", ""),
+                body=data.get("body") or "",
+                labels=[
+                    label.get("name", "") if isinstance(label, dict) else str(label)
+                    for label in data.get("labels", [])
+                ],
+                state=data.get("state", "open"),
+                author=data.get("user", {}).get("login", "unknown")
+                if isinstance(data.get("user"), dict)
+                else "unknown",
+                url=data.get("html_url", f"https://github.com/{owner}/{repo}/issues/{issue_number}"),
+                repo_owner=owner,
+                repo_name=repo,
+            )
+        except Exception:
             return None
 
     def fork_repository(self, owner: str, repo: str) -> ForkResult:

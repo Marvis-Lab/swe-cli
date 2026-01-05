@@ -7,8 +7,6 @@ import threading
 import time
 from typing import TYPE_CHECKING
 
-from rich.text import Text
-
 if TYPE_CHECKING:  # pragma: no cover
     from swecli.ui_textual.chat_app import SWECLIChatApp
     from swecli.repl.repl import REPL
@@ -34,8 +32,6 @@ class MCPCommandController:
         Args:
             command: The full command (e.g., "/mcp connect github")
         """
-        from swecli.ui_textual.ui_callback import TextualUICallback
-
         try:
             parts = shlex.split(command)
         except ValueError:
@@ -52,28 +48,23 @@ class MCPCommandController:
             self.app.conversation.add_error("MCP manager not available")
             return
 
-        # Use app.conversation directly - it's already the mounted widget
-        # Avoid query_one from background thread as it can be slow
-        conversation_widget = getattr(self.app, 'conversation', None)
-        if conversation_widget is None:
+        # Get SpinnerService for unified spinner management
+        spinner_service = getattr(self.app, 'spinner_service', None)
+        if spinner_service is None:
+            self.app.conversation.add_error("Spinner service not available")
             return
 
         # Check if already connected
         if mcp_manager.is_connected(server_name):
             tools = mcp_manager.get_server_tools(server_name)
-            ui_callback = TextualUICallback(conversation_widget, self.app)
-            ui_callback.on_progress_start(f"MCP ({server_name})")
-            ui_callback.on_progress_complete(f"Already connected ({len(tools)} tools)")
+            spinner_id = spinner_service.start(f"MCP ({server_name})")
+            spinner_service.stop(spinner_id, success=True, result_message=f"Already connected ({len(tools)} tools)")
             return
 
-        # Create TextualUICallback with the CORRECT widget from DOM query
-        ui_callback = TextualUICallback(conversation_widget, self.app)
-
         # Start spinner
-        ui_callback.on_progress_start(f"MCP ({server_name})")
+        spinner_id = spinner_service.start(f"MCP ({server_name})")
 
         # Run connection (we're already in a background thread from runner's processor)
-        start_time = time.monotonic()
         try:
             success = mcp_manager.connect_sync(server_name)
             error_msg = None
@@ -81,19 +72,14 @@ class MCPCommandController:
             success = False
             error_msg = f"{type(e).__name__}: {e}"
 
-        # Ensure spinner is visible for at least 500ms
-        elapsed = time.monotonic() - start_time
-        if elapsed < 0.5:
-            time.sleep(0.5 - elapsed)
-
         # Complete progress with result
         if error_msg:
-            ui_callback.on_progress_complete(error_msg, success=False)
+            spinner_service.stop(spinner_id, success=False, result_message=error_msg)
         elif success:
             tools = mcp_manager.get_server_tools(server_name)
-            ui_callback.on_progress_complete(f"Connected ({len(tools)} tools)")
+            spinner_service.stop(spinner_id, success=True, result_message=f"Connected ({len(tools)} tools)")
         else:
-            ui_callback.on_progress_complete("Connection failed", success=False)
+            spinner_service.stop(spinner_id, success=False, result_message="Connection failed")
 
         if success and hasattr(self.repl, '_refresh_runtime_tooling'):
             self.repl._refresh_runtime_tooling()

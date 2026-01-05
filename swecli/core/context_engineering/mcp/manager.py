@@ -171,7 +171,8 @@ class MCPManager:
         """Run event loop in background thread."""
         self._event_loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self._event_loop)
-        self._loop_started.set()  # Signal that loop is ready
+        # Schedule signal AFTER loop starts - ensures run_forever() is active
+        self._event_loop.call_soon(self._loop_started.set)
         try:
             self._event_loop.run_forever()
         finally:
@@ -260,8 +261,7 @@ class MCPManager:
 
             return True
 
-        except Exception as e:
-            print(f"Error connecting to MCP server '{server_name}': {e}")
+        except Exception:
             return False
 
     async def _disconnect_internal(self, server_name: str) -> None:
