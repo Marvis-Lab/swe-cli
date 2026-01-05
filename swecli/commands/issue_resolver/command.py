@@ -593,49 +593,79 @@ Use absolute paths like: /testbed/path/to/file.py
             cpus=args.docker_cpus,
         )
 
-        def on_docker_status(msg: str) -> None:
-            if self.ui_callback and hasattr(self.ui_callback, "on_progress_update"):
-                self.ui_callback.on_progress_update(f"Docker: {msg}")
-
-        deployment = DockerDeployment(config=config, on_status=on_docker_status)
+        deployment = DockerDeployment(config=config)
 
         # Run the async Docker workflow
         async def run_docker_workflow() -> ResolveResult:
             try:
-                # Step 5: Start container
-                if self.ui_callback and hasattr(self.ui_callback, "on_progress_start"):
-                    self.ui_callback.on_progress_start(f"Docker: Starting {docker_image}...")
+                # Show Spawn header FIRST (before Docker operations)
+                # This ensures all Docker operations appear nested under Spawn
+                spawn_args = {
+                    "subagent_type": "GitHub-Resolver",
+                    "description": f"Fix #{issue.number}: {issue.title[:50]}...",
+                }
+                if self.ui_callback and hasattr(self.ui_callback, "on_tool_call"):
+                    self.ui_callback.on_tool_call("spawn_subagent", spawn_args)
+
+                # Get container ID from deployment (generated in __init__ before start)
+                container_name = deployment._container_name
+                container_id = container_name.split("-")[-1]
+
+                # Create nested callback BEFORE starting container
+                # This way docker_start appears nested under Spawn[GitHub-Resolver]
+                nested_callback = self.subagent_manager.create_docker_nested_callback(
+                    ui_callback=self.ui_callback,
+                    subagent_name="GitHub-Resolver",
+                    workspace_dir="/workspace",
+                    image_name=docker_image,
+                    container_id=container_id,
+                )
+
+                # Show docker_start as nested tool call
+                if nested_callback and hasattr(nested_callback, "on_tool_call"):
+                    nested_callback.on_tool_call("docker_start", {"image": docker_image})
 
                 await deployment.start()
-                container_name = deployment._container_name
                 runtime = deployment.runtime
 
-                # Step 6: Install git only if using fallback image
-                if not has_tools:
-                    if self.ui_callback and hasattr(self.ui_callback, "on_progress_update"):
-                        self.ui_callback.on_progress_update("Docker: Installing git...")
-                    await runtime.run("apt-get update && apt-get install -y git", timeout=120.0)
+                # Show docker_start completion
+                if nested_callback and hasattr(nested_callback, "on_tool_result"):
+                    nested_callback.on_tool_result("docker_start", {"image": docker_image}, {
+                        "success": True,
+                        "output": docker_image,
+                    })
 
-                # Step 7: Clone repo inside container
-                if self.ui_callback and hasattr(self.ui_callback, "on_progress_update"):
-                    self.ui_callback.on_progress_update("Docker: Cloning repository...")
+                # Install git only if using fallback image (nested under Spawn)
+                if not has_tools:
+                    if nested_callback and hasattr(nested_callback, "on_tool_call"):
+                        nested_callback.on_tool_call("docker_setup", {"step": "Installing git..."})
+                    await runtime.run("apt-get update && apt-get install -y git", timeout=120.0)
+                    if nested_callback and hasattr(nested_callback, "on_tool_result"):
+                        nested_callback.on_tool_result("docker_setup", {}, {"success": True, "output": "Git installed"})
+
+                # Clone repo inside container (nested under Spawn)
+                if nested_callback and hasattr(nested_callback, "on_tool_call"):
+                    nested_callback.on_tool_call("docker_setup", {"step": "Cloning repository..."})
 
                 repo_url = f"https://github.com/{issue_info.owner}/{issue_info.repo}.git"
                 clone_cmd = f"git clone --depth 1 {repo_url} /workspace"
                 await runtime.run(clone_cmd, timeout=120.0)
 
-                # Step 8: Create fix branch
+                # Create fix branch
                 branch_name = f"fix/issue-{issue_info.issue_number}"
                 branch_cmd = f"cd /workspace && git checkout -b {branch_name}"
                 await runtime.run(branch_cmd, timeout=30.0)
 
-                if self.ui_callback and hasattr(self.ui_callback, "on_progress_complete"):
-                    self.ui_callback.on_progress_complete(f"{container_name} ready")
+                if nested_callback and hasattr(nested_callback, "on_tool_result"):
+                    nested_callback.on_tool_result("docker_setup", {}, {
+                        "success": True,
+                        "output": f"Repository cloned to /workspace, branch: {branch_name}",
+                    })
 
-                # Step 9: Create Docker tool handler
+                # Create Docker tool handler
                 docker_handler = DockerToolHandler(runtime, workspace_dir="/workspace")
 
-                # Step 10: Build task for subagent
+                # Build task for subagent
                 task = self._build_github_task(issue, issue_info, branch_name)
 
                 # Step 11: Execute the GitHub-Resolver subagent
@@ -651,7 +681,7 @@ Use absolute paths like: /testbed/path/to/file.py
                     name="GitHub-Resolver",
                     task=task,
                     deps=deps,
-                    ui_callback=self.ui_callback,
+                    ui_callback=nested_callback,
                     docker_handler=docker_handler,
                 )
 
@@ -659,12 +689,25 @@ Use absolute paths like: /testbed/path/to/file.py
                 if isinstance(result, str):
                     pass  # Continue to extract patch
                 elif not result.get("success"):
+                    # Show Spawn result (failure)
+                    if self.ui_callback and hasattr(self.ui_callback, "on_tool_result"):
+                        self.ui_callback.on_tool_result("spawn_subagent", spawn_args, {
+                            "success": False,
+                            "error": result.get("error", "Unknown error"),
+                        })
                     return ResolveResult(
                         success=False,
                         message=f"Subagent failed: {result.get('error', 'Unknown error')}",
                     )
 
-                # Step 12: Extract patch from container
+                # Show Spawn result (success)
+                if self.ui_callback and hasattr(self.ui_callback, "on_tool_result"):
+                    self.ui_callback.on_tool_result("spawn_subagent", spawn_args, {
+                        "success": True,
+                        "output": result.get("content", "") if isinstance(result, dict) else str(result),
+                    })
+
+                # Extract patch from container
                 if self.ui_callback and hasattr(self.ui_callback, "on_progress_start"):
                     self.ui_callback.on_progress_start("Extracting patch...")
 

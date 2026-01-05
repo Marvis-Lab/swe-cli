@@ -136,6 +136,15 @@ Before spawning Paper2Code, you MUST validate the document:
 - **Stateless**: Each agent is fresh - provide all context in the description
 - **Be explicit**: Tell the agent whether to create, analyze, or research
 
+## Subagent Completion
+
+When a subagent returns with `completion_status="success"`, it means:
+- The subagent explicitly called `task_complete` to signal it finished successfully
+- All verification/testing was completed by the subagent
+- **You should call `task_complete` immediately** - do NOT do additional verification
+
+This is especially important for Paper2Code, which verifies code inside Docker before returning.
+
 # Task Tracking Guidelines
 
 **Only YOU (main agent) manage todos** - subagents focus on execution.
@@ -204,13 +213,22 @@ When asked to commit:
 - **VERIFY RESULTS**: Run quality checks after code changes
 - **PERSIST**: Keep going until user's request is fully resolved
 
+# Task Completion
+
+You MUST call the `task_complete` tool when you have finished the user's request.
+- Do NOT just stop making tool calls - explicitly signal completion
+- Provide a summary of what was accomplished
+- Set status to "success", "partial", or "failed"
+
+The conversation will NOT end until you call task_complete.
+
 # Error Recovery
 
-When a tool fails with an error:
+When a tool fails with an error, don't give up - keep trying:
 1. **Analyze** the error message to understand the root cause
 2. **Take corrective action** (install dependencies, fix paths, adjust parameters, etc.)
 3. **Retry** the original operation after fixing the issue
-4. **Only give up** after multiple failed attempts with different approaches
+4. **Only call task_complete with "failed"** after multiple failed attempts with different approaches
 
 Do NOT just suggest fixes - actually implement them. If a command fails because of a missing dependency, install it and retry. If a file is not found, search for the correct path. Be autonomous in solving problems.
 

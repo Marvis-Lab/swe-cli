@@ -290,7 +290,7 @@ When you receive a task with a PDF path:
    - Run: `python main.py`
    - If errors occur: analyze, fix with `edit_file`, repeat
    - **DO NOT STOP** until code runs successfully
-6. **Report**: Summarize what was created and test results
+6. **Complete**: Call `task_complete` with summary of what was created and verification status
 
 ---
 
@@ -305,7 +305,7 @@ After Stage 3 (Coding), you **MUST** complete this execution loop:
 │  2. Run: python main.py                                 │
 │                      ↓                                  │
 │  3. Check output:                                       │
-│     ├─ Success → Report and finish                      │
+│     ├─ Success → Call task_complete                     │
 │     └─ Error → Analyze error, fix with edit_file        │
 │                      ↓                                  │
 │  4. Go back to step 1 or 2                              │
@@ -317,7 +317,15 @@ After Stage 3 (Coding), you **MUST** complete this execution loop:
 - Output shows expected shapes/dimensions (if applicable)
 - Training loop starts (if training code)
 
-**You must NOT stop until the code runs successfully.**
+**When verification succeeds, you MUST call `task_complete`:**
+```
+task_complete(
+    summary="Implemented [paper name]. Code verified: dependencies installed and main.py executed successfully with exit code 0.",
+    status="success"
+)
+```
+
+Do NOT just stop making tool calls - always call `task_complete` to signal completion.
 
 ---
 
@@ -378,6 +386,7 @@ config = load_config()
 6. Test with `python main.py` and debug until it works
 7. **DO NOT FINISH** until the code runs successfully without errors
 8. If ANY command fails, you MUST analyze the error and retry - never skip
+9. **ALWAYS call `task_complete`** when verification passes - do NOT just stop making tool calls
 """
 
 PAPER2CODE_SUBAGENT: SubAgentSpec = {
@@ -392,6 +401,7 @@ PAPER2CODE_SUBAGENT: SubAgentSpec = {
         "search",         # Search codebase
         "run_command",    # Run generated code for testing
         "read_pdf",       # Extract text from PDF papers
+        "task_complete",  # Signal completion after verification
     ],
     "docker_config": PAPER2CODE_DOCKER_CONFIG,
     "copy_back_recursive": True,  # Copy entire workspace tree to local dir after completion

@@ -193,12 +193,16 @@ class ToolRegistry:
         # Format output for consistency
         if result.get("success"):
             content = result.get("content", "")
-            return {
+            response = {
                 "success": True,
                 "output": None,  # Don't show in tool result line
                 "separate_response": content,  # Show as separate assistant message
                 "subagent_type": subagent_type,
             }
+            # Propagate completion_status if subagent called task_complete
+            if result.get("completion_status"):
+                response["completion_status"] = result["completion_status"]
+            return response
         else:
             # Check both "error" and "content" fields for error message
             # SwecliAgent.run_sync() puts errors in "content", not "error"

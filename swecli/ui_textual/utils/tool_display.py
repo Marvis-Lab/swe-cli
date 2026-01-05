@@ -43,6 +43,8 @@ _TOOL_DISPLAY_PARTS: dict[str, tuple[str, str]] = {
     "spawn_subagent": ("Spawn", "subagent"),
     "docker_start": ("Starting", "Docker container"),
     "docker_copy": ("Copying", "file to Docker"),
+    "docker_input_files": ("Checking", "input files"),
+    "docker_setup": ("Setting up", "Docker environment"),
 }
 
 _PATH_HINT_KEYS = {"file_path", "path", "directory", "dir", "image_path", "working_dir", "target"}
@@ -294,6 +296,22 @@ def format_tool_call(tool_name: str, tool_args: Mapping[str, Any]) -> str:
     elif tool_name == "docker_copy" and tool_args:
         filename = tool_args.get("file", "file")
         return f"Copying {filename} to Docker"
+
+    # Docker input files check (always shown for transparency)
+    elif tool_name == "docker_input_files" and tool_args:
+        count = tool_args.get("count", 0)
+        if count > 0:
+            files = tool_args.get("files", [])
+            file_list = ", ".join(files[:3])  # Limit to first 3 files
+            if len(files) > 3:
+                file_list += f" (+{len(files) - 3} more)"
+            return f"Copying {count} file(s) to Docker: {file_list}"
+        return "Checking input files"
+
+    # Docker setup steps (git install, clone, etc.)
+    elif tool_name == "docker_setup" and tool_args:
+        step = tool_args.get("step", "Setting up...")
+        return step
 
     # Enhanced formatting for update_todo tool - show todo-N format
     elif tool_name == "update_todo" and tool_args:
