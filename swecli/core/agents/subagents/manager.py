@@ -284,9 +284,18 @@ class SubAgentManager:
         path_mapping: dict[str, str] = {}
 
         for local_file in files:
-            # Show copy progress
-            if ui_callback and hasattr(ui_callback, 'on_tool_call'):
-                ui_callback.on_tool_call("docker_copy", {"file": local_file.name})
+            # Show copy progress - use on_nested_tool_call for proper display
+            if ui_callback:
+                if hasattr(ui_callback, 'on_nested_tool_call'):
+                    # Direct nested callback - use proper method
+                    ui_callback.on_nested_tool_call(
+                        "docker_copy",
+                        {"file": local_file.name},
+                        depth=getattr(ui_callback, '_depth', 1),
+                        parent=getattr(ui_callback, '_context', 'Docker'),
+                    )
+                elif hasattr(ui_callback, 'on_tool_call'):
+                    ui_callback.on_tool_call("docker_copy", {"file": local_file.name})
 
             try:
                 docker_target = f"{workspace_dir}/{local_file.name}"
@@ -306,19 +315,33 @@ class SubAgentManager:
                 # Store mapping: Docker path → local path
                 path_mapping[docker_target] = str(local_file)
 
-                # Show completion
-                if ui_callback and hasattr(ui_callback, 'on_tool_result'):
-                    ui_callback.on_tool_result("docker_copy", {"file": local_file.name}, {
-                        "success": True,
-                        "output": f"Copied to {docker_target}",
-                    })
+                # Show completion - use on_nested_tool_result for proper display
+                if ui_callback:
+                    result_data = {"success": True, "output": f"Copied to {docker_target}"}
+                    if hasattr(ui_callback, 'on_nested_tool_result'):
+                        ui_callback.on_nested_tool_result(
+                            "docker_copy",
+                            {"file": local_file.name},
+                            result_data,
+                            depth=getattr(ui_callback, '_depth', 1),
+                            parent=getattr(ui_callback, '_context', 'Docker'),
+                        )
+                    elif hasattr(ui_callback, 'on_tool_result'):
+                        ui_callback.on_tool_result("docker_copy", {"file": local_file.name}, result_data)
 
             except Exception as e:
-                if ui_callback and hasattr(ui_callback, 'on_tool_result'):
-                    ui_callback.on_tool_result("docker_copy", {"file": local_file.name}, {
-                        "success": False,
-                        "error": str(e),
-                    })
+                if ui_callback:
+                    result_data = {"success": False, "error": str(e)}
+                    if hasattr(ui_callback, 'on_nested_tool_result'):
+                        ui_callback.on_nested_tool_result(
+                            "docker_copy",
+                            {"file": local_file.name},
+                            result_data,
+                            depth=getattr(ui_callback, '_depth', 1),
+                            parent=getattr(ui_callback, '_context', 'Docker'),
+                        )
+                    elif hasattr(ui_callback, 'on_tool_result'):
+                        ui_callback.on_tool_result("docker_copy", {"file": local_file.name}, result_data)
 
         return path_mapping
 

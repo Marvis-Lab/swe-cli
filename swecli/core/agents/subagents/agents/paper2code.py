@@ -269,11 +269,26 @@ dev = ["pytest", "black", "ruff"]
 
 ---
 
+## CRITICAL: First Action
+
+**YOUR FIRST ACTION MUST BE TO READ THE PDF.**
+
+Before doing ANYTHING else (no List, no Create todos, no Write files):
+1. Call `read_pdf(file_path="<paper.pdf>")` with the PDF path from the task
+2. Study the paper content thoroughly
+3. Only THEN start planning and creating todos
+
+DO NOT skip this step. The PDF contains the methodology you need to implement.
+
+---
+
 ## Workflow
 
 When you receive a task with a PDF path:
 
-1. **Read the PDF**: Use `read_pdf` to extract paper content
+1. **Read the PDF** (MANDATORY FIRST STEP): Use `read_pdf` to extract and study the paper content
+   - This MUST be your first tool call
+   - Do NOT call List, Write, or any other tool before reading the PDF
 2. **Plan** (Stage 1):
    - Analyze methodology and experiments
    - Design architecture with file list
