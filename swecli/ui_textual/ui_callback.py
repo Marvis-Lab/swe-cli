@@ -474,11 +474,11 @@ class TextualUICallback:
                 output = (output + "\n" + stderr.strip()) if output else stderr.strip()
 
             if hasattr(self.conversation, 'add_nested_bash_output_box'):
+                # Signature: (output, is_error, command, working_dir, depth)
                 self._run_on_ui(
                     self.conversation.add_nested_bash_output_box,
                     output,
                     is_error,
-                    exit_code,
                     command,
                     working_dir,
                     depth,

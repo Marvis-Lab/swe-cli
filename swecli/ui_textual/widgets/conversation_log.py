@@ -252,6 +252,18 @@ class ConversationLog(RichLog):
     ) -> None:
         self._tool_renderer.add_nested_tool_call(display, depth, parent)
 
+    def add_nested_tool_sub_results(self, lines: list, depth: int, is_last_parent: bool = True) -> None:
+        """Add tool result lines for nested subagent tools."""
+        self._tool_renderer.add_nested_tool_sub_results(lines, depth, is_last_parent)
+
+    def add_todo_sub_result(self, text: str, depth: int, is_last_parent: bool = True) -> None:
+        """Add a single sub-result line for todo operations."""
+        self._tool_renderer.add_todo_sub_result(text, depth, is_last_parent)
+
+    def add_todo_sub_results(self, items: list, depth: int, is_last_parent: bool = True) -> None:
+        """Add multiple sub-result lines for todo list operations."""
+        self._tool_renderer.add_todo_sub_results(items, depth, is_last_parent)
+
     def _truncate_from(self, index: int) -> None:
         if index >= len(self.lines):
             return
