@@ -25,6 +25,7 @@ from swecli.ui_textual.widgets.terminal_box_renderer import (
 from swecli.ui_textual.widgets.conversation.spinner_manager import DefaultSpinnerManager
 from swecli.ui_textual.widgets.conversation.message_renderer import DefaultMessageRenderer
 from swecli.ui_textual.widgets.conversation.tool_renderer import DefaultToolRenderer
+from swecli.ui_textual.widgets.conversation.scroll_controller import DefaultScrollController
 
 
 class ConversationLog(RichLog):
@@ -42,12 +43,12 @@ class ConversationLog(RichLog):
             auto_scroll=True,
             max_lines=10000,
         )
-        self._user_scrolled = False
-        self._user_scrolled = False
-        self._last_assistant_rendered: str | None = None
+        self._scroll_controller = DefaultScrollController(self, None)
         self._spinner_manager = DefaultSpinnerManager(self, None)
         self._message_renderer = DefaultMessageRenderer(self, None)
         self._tool_renderer = DefaultToolRenderer(self, None)
+        self._last_assistant_rendered: str | None = None
+        self._spinner_active = False # Still used for main spinner? Checked usage.
         # self._tool_display: Text | None = None  # Moved to ToolRenderer
         # self._tool_spinner_timer: Timer | None = None # Moved
         self._spinner_active = False # Still used for main spinner? Checked usage.
@@ -134,9 +135,11 @@ class ConversationLog(RichLog):
             self._spinner_manager.app = self.app
             self._message_renderer.app = self.app
             self._tool_renderer.app = self.app
+            self._scroll_controller.app = self.app
         return
 
     def on_unmount(self) -> None:
+        self._scroll_controller.cleanup()
         self._tool_renderer.cleanup()
         self._spinner_manager.cleanup()
         
@@ -190,151 +193,22 @@ class ConversationLog(RichLog):
             self._protected_lines = valid_lines
 
     async def on_key(self, event) -> None:
-        """Handle key events, delegating to overlays if active, else scrolling."""
-        
-        # Check for active overlays (Approval Prompt or Model Picker)
-        app = getattr(self, "app", None)
-        if app:
-            # 1. Approval Prompt
-            approval_controller = getattr(app, "_approval_controller", None)
-            if approval_controller and getattr(approval_controller, "active", False):
-                if event.key == "up":
-                    event.stop()
-                    event.prevent_default()
-                    if hasattr(app, "_approval_move"):
-                        app._approval_move(-1)
-                    return
-                if event.key == "down":
-                    event.stop()
-                    event.prevent_default()
-                    if hasattr(app, "_approval_move"):
-                        app._approval_move(1)
-                    return
-                if event.key in {"enter", "return"} and "+" not in event.key:
-                    event.stop()
-                    event.prevent_default()
-                    if hasattr(app, "_approval_confirm"):
-                        app._approval_confirm()
-                    return
-                if event.key in {"escape", "ctrl+c"}:
-                    event.stop()
-                    event.prevent_default()
-                    if hasattr(app, "_approval_cancel"):
-                        app._approval_cancel()
-                    return
-                return  # Swallow other keys in approval mode? Or let them pass?
-
-            # 2. Model Picker
-            model_picker = getattr(app, "_model_picker", None)
-            if model_picker and getattr(model_picker, "active", False):
-                if event.key == "up":
-                    event.stop()
-                    event.prevent_default()
-                    if hasattr(app, "_model_picker_move"):
-                        app._model_picker_move(-1)
-                    return
-                if event.key == "down":
-                    event.stop()
-                    event.prevent_default()
-                    if hasattr(app, "_model_picker_move"):
-                        app._model_picker_move(1)
-                    return
-                if event.key in {"enter", "return"} and "+" not in event.key:
-                    event.stop()
-                    event.prevent_default()
-                    confirm = getattr(app, "_model_picker_confirm", None)
-                    if confirm is not None:
-                        result = confirm()
-                        import inspect
-                        if inspect.isawaitable(result):
-                            await result
-                    return
-                if event.key in {"escape", "ctrl+c"}:
-                    event.stop()
-                    event.prevent_default()
-                    if hasattr(app, "_model_picker_cancel"):
-                        app._model_picker_cancel()
-                    return
-                if event.character and event.character.lower() == "b":
-                    event.stop()
-                    event.prevent_default()
-                    if hasattr(app, "_model_picker_back"):
-                        app._model_picker_back()
-                    return
-
-        # Default scrolling behavior
-        # Handle Page Up/Down (or Fn+Up/Down) with a smaller stride for finer control
-        if event.key == "pageup":
-            self.scroll_partial_page(direction=-1)
-            event.prevent_default()
-            return
-
-        elif event.key == "pagedown":
-            self.scroll_partial_page(direction=1)
-            event.prevent_default()
-            return
-
-        # For other scroll keys (arrows, home, end), mark as user-scrolled
-        # The default behavior will handle the actual scrolling
-        elif event.key in ("up", "down", "home", "end"):
-            self._user_scrolled = True
-            self.auto_scroll = False
-
-    def scroll_partial_page(self, direction: int) -> None:
-        """Scroll a fraction of the viewport instead of a full page."""
-        self._user_scrolled = True
-        self.auto_scroll = False
-        stride = max(self.size.height // 10, 3)  # 10% of viewport per page
-        self.scroll_relative(y=direction * stride)
+        """Forward key events to scroll controller."""
+        self._scroll_controller.on_key(event)
 
     def on_mouse_scroll_down(self, event: MouseScrollDown) -> None:
-        """Handle mouse scroll down (wheel down / two-finger swipe down)."""
-        # When Option (meta) key is pressed, allow default behavior for text selection scrolling
-        if event.meta:
-            return  # Don't stop event, let terminal handle it
-        self._user_scrolled = True
-        self.auto_scroll = False
-        self.scroll_relative(y=3)  # Scroll 3 lines per tick
-        event.stop()
+        self._scroll_controller.on_mouse_scroll_down(event)
 
     def on_mouse_scroll_up(self, event: MouseScrollUp) -> None:
-        """Handle mouse scroll up (wheel up / two-finger swipe up)."""
-        # When Option (meta) key is pressed, allow default behavior for text selection scrolling
-        if event.meta:
-            return  # Don't stop event, let terminal handle it
-        self._user_scrolled = True
-        self.auto_scroll = False
-        self.scroll_relative(y=-3)  # Scroll 3 lines per tick
-        self._reset_auto_scroll()  # Re-enable auto-scroll if at bottom
-        event.stop()
-
+        self._scroll_controller.on_mouse_scroll_up(event)
+    
     def on_mouse_down(self, event: MouseDown) -> None:
-        """Track mouse down for drag detection."""
-        self._mouse_down_pos = (event.x, event.y)
+        self._scroll_controller.on_mouse_down(event)
 
     def on_mouse_move(self, event: MouseMove) -> None:
-        """Detect drag without Shift and show selection tip."""
-        if self._mouse_down_pos and not event.shift:
-            # User is dragging without Shift - show selection tip
-            if hasattr(self.app, 'show_selection_tip'):
-                self.app.show_selection_tip()
-            self._mouse_down_pos = None  # Only show once per drag
-
+        self._scroll_controller.on_mouse_move(event)
     def on_mouse_up(self, event: MouseUp) -> None:
-        """Clear mouse down tracking."""
-        self._mouse_down_pos = None
-
-    def _reset_auto_scroll(self) -> None:
-        """Reset auto-scroll when new content arrives."""
-        # When new content arrives, check if we should re-enable auto-scroll
-        # If user hasn't manually scrolled away, enable auto-scroll
-        if not self._user_scrolled:
-            self.auto_scroll = True
-
-        # If we're back at the bottom (within 2 lines), re-enable auto-scroll
-        if self.scroll_offset.y >= self.max_scroll_y - 2:
-            self._user_scrolled = False
-            self.auto_scroll = True
+        self._scroll_controller.on_mouse_up(event)
 
     def add_user_message(self, message: str) -> None:
         self._message_renderer.add_user_message(message)
@@ -349,6 +223,27 @@ class ConversationLog(RichLog):
         """Render an error message with a red bullet and clear any active spinner."""
         self.stop_spinner()  # Retain state change logic here
         self._message_renderer.add_error(message)
+
+    def render_approval_prompt(self, renderables: list[Any]) -> None:
+        """Render the approval prompt panel."""
+        # Clear existing if any
+        if self._approval_start is not None:
+            self.clear_approval_prompt()
+
+        self._approval_start = len(self.lines)
+        for renderable in renderables:
+            self.write(renderable)
+
+    def clear_approval_prompt(self) -> None:
+        """Remove the approval prompt from the log."""
+        if self._approval_start is None:
+            return
+
+        if self._approval_start < len(self.lines):
+             del self.lines[self._approval_start:]
+             self.refresh()
+        
+        self._approval_start = None
 
     def add_tool_call(self, display: Text | str, *_: Any) -> None:
         self._tool_renderer.add_tool_call(display)
