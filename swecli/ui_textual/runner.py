@@ -34,8 +34,7 @@ def _reset_terminal_mouse_mode() -> None:
 # Register cleanup to run on exit
 atexit.register(_reset_terminal_mouse_mode)
 
-from rich.ansi import AnsiDecoder
-from rich.text import Text
+
 
 from swecli.core.agents.components import extract_plan_from_response
 from swecli.ui_textual.style_tokens import ERROR
@@ -47,7 +46,7 @@ from swecli.ui_textual.managers.approval_manager import ChatApprovalManager
 from swecli.ui_textual.chat_app import create_chat_app
 from swecli.ui_textual.constants import TOOL_ERROR_SENTINEL
 from swecli.ui_textual.utils import build_tool_call_text
-from swecli.ui_textual.runner_components import HistoryHydrator, ToolRenderer, ModelConfigManager, CommandRouter, MessageProcessor
+from swecli.ui_textual.runner_components import HistoryHydrator, ToolRenderer, ModelConfigManager, CommandRouter, MessageProcessor, ConsoleBridge
 
 # Approval phrases for plan execution
 PLAN_APPROVAL_PHRASES = {
@@ -113,12 +112,14 @@ class TextualRunner:
         self._history_hydrator.snapshot_history()
 
         self.model_config_manager = ModelConfigManager(self.config_manager, self.repl)
-        
+        self.console_bridge = ConsoleBridge(self.repl.console)
+        self.console_bridge.install()
+
         self.command_router = CommandRouter(
             self.repl,
             self.working_dir,
             callbacks={
-                "enqueue_console_text": self._enqueue_console_text,
+                "enqueue_console_text": self.console_bridge.enqueue_text,
                 "start_mcp_connect_thread": self._start_mcp_connect_thread,
                 "refresh_ui_config": self.model_config_manager.refresh_ui_config,
             }
@@ -161,6 +162,7 @@ class TextualRunner:
             self.model_config_manager.set_app(self.app)
             self.command_router.set_app(self.app)
             self.message_processor.set_app(self.app)
+            self.console_bridge.set_app(self.app)
             self._history_hydrator.start_async_hydration(self.app)
             if downstream_on_ready:
                 downstream_on_ready()
@@ -188,16 +190,10 @@ class TextualRunner:
         # Store runner reference on app for queue indicator updates
         self.app._runner = self
 
-        self._console_queue: asyncio.Queue[str] = asyncio.Queue()
-        self._ansi_decoder = AnsiDecoder()
-        self._install_console_bridge()
+
         self._loop = asyncio.new_event_loop()
         self._console_task: asyncio.Task[None] | None = None
         self._connect_inflight = False
-        self._last_console_line: str | None = None
-        self._last_assistant_message: str | None = None
-        self._suppress_console_duplicate = False
-        self._last_assistant_message_normalized: str | None = None
 
         # Set up queue indicator callback
         self._queue_update_callback: Callable[[int], None] | None = self.app.update_queue_indicator
@@ -300,15 +296,8 @@ class TextualRunner:
 
             # Temporarily disable console bridge to prevent duplicate rendering
             # All relevant messages are already in session.messages
-            console = self.repl.console
-            original_print = console.print
-            original_log = getattr(console, "log", None)
-
-            # Restore original print/log functions (bypass bridge)
-            console.print = self._original_console_print
-            if original_log and self._original_console_log:
-                console.log = self._original_console_log
-
+            self.console_bridge.uninstall()
+            
             try:
                 # Process query with UI callback for real-time display
                 if hasattr(self.repl, '_process_query_with_callback'):
@@ -318,9 +307,7 @@ class TextualRunner:
                     self.repl._process_query(message)
             finally:
                 # Restore bridge
-                console.print = original_print
-                if original_log:
-                    console.log = original_log
+                self.console_bridge.install()
 
             session = self.session_manager.get_current_session()
             if not session:
@@ -335,7 +322,7 @@ class TextualRunner:
             return new_messages
         except Exception as e:
             error_msg = f"[ERROR] Query processing failed: {str(e)}\n{traceback.format_exc()}"
-            self._enqueue_console_text(error_msg)
+            self.console_bridge.enqueue_text(error_msg)
             return []
 
     def _check_and_execute_plan_approval(self, message: str) -> bool:
@@ -482,9 +469,9 @@ Work through each implementation step in order. Mark each todo item as 'in_progr
                     normalized = self.app._normalize_paragraph(content)
                     if normalized:
                         self.app._pending_assistant_normalized = normalized
-                        self._last_assistant_message_normalized = normalized
+                        self.console_bridge.set_last_assistant_message(normalized)
                 else:
-                    self._last_assistant_message_normalized = content if content else None
+                    self.console_bridge.set_last_assistant_message(content if content else None)
 
                 # Only render assistant messages that DON'T have tool calls
                 # Messages with tool calls were already displayed in real-time by callbacks
@@ -499,10 +486,11 @@ Work through each implementation step in order. Mark each todo item as 'in_progr
                         self.app.conversation.refresh()
                     if hasattr(self.app, "record_assistant_message"):
                         self.app.record_assistant_message(msg.content)
-                    if hasattr(self.app, "_last_rendered_assistant"):
-                        self.app._last_rendered_assistant = content
-                    self._last_assistant_message = content
-                    self._suppress_console_duplicate = True
+                    if hasattr(self.app, "record_assistant_message"):
+                        self.app.record_assistant_message(msg.content)
+                    
+                    self.console_bridge.set_last_assistant_message(content)
+                    self.console_bridge.set_suppress_duplicate(True)
                     assistant_text_rendered = True
 
                 # Skip rendering messages with tool calls - already shown in real-time
@@ -513,98 +501,7 @@ Work through each implementation step in order. Mark each todo item as 'in_progr
         if buffer_started and hasattr(self.app, "stop_console_buffer"):
             self.app.stop_console_buffer()
 
-    def _render_console_output(self, text: str) -> None:
-        """Render console output captured from REPL commands/processings."""
 
-        normalized = self._normalize_console_text(text)
-        renderables = list(self._ansi_decoder.decode(normalized))
-        if not renderables:
-            return
-        for renderable in renderables:
-            if isinstance(renderable, Text):
-                plain = renderable.plain.strip()
-                if not plain:
-                    continue
-                if self._is_spinner_text(plain) or self._is_spinner_tip(plain):
-                    continue
-                normalized_plain = plain.strip()
-                if hasattr(self.app, "_normalize_paragraph"):
-                    normalized_plain = self.app._normalize_paragraph(plain)
-                pending = getattr(self.app, "_pending_assistant_normalized", None)
-                targets = [value for value in (pending, self._last_assistant_message_normalized) if value]
-                if self._suppress_console_duplicate and normalized_plain and targets:
-                    if any(normalized_plain == target for target in targets):
-                        continue
-                if plain == self._last_console_line:
-                    continue
-                self._last_console_line = plain
-            else:
-                self._last_console_line = None
-
-            if hasattr(self.app, "render_console_output"):
-                self.app.render_console_output(renderable)
-            else:
-                self.app.conversation.write(renderable)
-        if not isinstance(renderables[-1], Text):
-            self._last_console_line = None
-        if self._suppress_console_duplicate:
-            self._suppress_console_duplicate = False
-
-        if hasattr(self.app, "stop_console_buffer"):
-            self.app.stop_console_buffer()
-
-    @staticmethod
-    def _normalize_console_text(text: str) -> str:
-        """Collapse carriage-return spinner updates into a single line."""
-
-        if "\r" not in text:
-            return text
-
-        lines = text.split("\n")
-        for index, line in enumerate(lines):
-            if "\r" in line:
-                lines[index] = line.split("\r")[-1]
-        return "\n".join(lines)
-
-    @staticmethod
-    def _clean_tool_summary(summary: str) -> str:
-        """Normalize tool summary text for assistant follow-up."""
-
-        cleaned = summary.strip()
-        if not cleaned:
-            return ""
-
-        if cleaned.lower().startswith("found") and ":" in cleaned:
-            cleaned = cleaned.split(":", 1)[1].strip()
-
-        cleaned = cleaned.strip(". ")
-        if cleaned:
-            return cleaned
-        return summary.strip()
-
-    @staticmethod
-    def _is_spinner_text(plain: str) -> bool:
-        """Return True if the console line appears to be a spinner update."""
-
-        if not plain:
-            return False
-
-        first = plain[0]
-        # Braille spinner characters live in the Unicode Braille block.
-        if 0x2800 <= ord(first) <= 0x28FF:
-            return True
-
-        return False
-
-    @staticmethod
-    def _is_spinner_tip(plain: str) -> bool:
-        """Return True if line looks like a spinner tip."""
-
-        if not plain:
-            return False
-
-        normalized = plain.replace("⎿", "").strip().lower()
-        return normalized.startswith("tip:")
 
     def run(self) -> None:
         """Launch the Textual application and background consumer."""
@@ -655,7 +552,7 @@ Work through each implementation step in order. Mark each todo item as 'in_progr
             "Run /mcp autoconnect to connect in the background "
             "or /mcp connect <name> for a specific server."
         )
-        self._enqueue_console_text(message)
+        self.console_bridge.enqueue_text(message)
 
     def _start_mcp_connect_thread(self, force: bool = False) -> None:
         """Queue MCP auto-connect after the UI has rendered."""
@@ -684,12 +581,12 @@ Work through each implementation step in order. Mark each todo item as 'in_progr
             def finalize() -> None:
                 self._connect_inflight = False
                 if result is None:
-                    self._enqueue_console_text(
+                    self.console_bridge.enqueue_text(
                         "[yellow]Warning: MCP auto-connect failed.[/yellow]"
                     )
                     return
                 if not result:
-                    self._enqueue_console_text(
+                    self.console_bridge.enqueue_text(
                         "[dim]MCP auto-connect completed; no enabled servers were found.[/dim]"
                     )
                     return
@@ -709,7 +606,7 @@ Work through each implementation step in order. Mark each todo item as 'in_progr
                             + ", ".join(failures)
                         )
                     if lines:
-                        self._enqueue_console_text("\n".join(lines))
+                        self.console_bridge.enqueue_text("\n".join(lines))
 
                     refresh_cb = getattr(self.repl, "_refresh_runtime_tooling", None)
                     if callable(refresh_cb):
@@ -722,66 +619,11 @@ Work through each implementation step in order. Mark each todo item as 'in_progr
             manager.connect_enabled_servers_background(on_complete=handle_completion)
         except Exception as exc:  # pragma: no cover - defensive
             self._connect_inflight = False
-            self._enqueue_console_text(
+            self.console_bridge.enqueue_text(
                 f"[yellow]Warning: MCP auto-connect could not start ({exc}).[/yellow]"
             )
 
-    def _install_console_bridge(self) -> None:
-        """Mirror console prints/logs into the Textual conversation."""
 
-        console = self.repl.console
-        self._original_console_print = getattr(console, "print")
-        self._original_console_log = getattr(console, "log", None)
-
-        def bridge_print(*args, **kwargs):
-            with console.capture() as capture:
-                self._original_console_print(*args, **kwargs)
-            text = capture.get()
-            if text.strip():
-                self._enqueue_console_text(text)
-
-        console.print = bridge_print  # type: ignore[assignment]
-
-        if self._original_console_log is not None:
-            def bridge_log(*args, **kwargs):
-                with console.capture() as capture:
-                    self._original_console_log(*args, **kwargs)
-                text = capture.get()
-                if text.strip():
-                    self._enqueue_console_text(text)
-
-            console.log = bridge_log  # type: ignore[assignment]
-
-    def _enqueue_console_text(self, text: str) -> None:
-        if not text:
-            return
-
-        if hasattr(self.app, "_normalize_paragraph"):
-            normalized = self.app._normalize_paragraph(text)
-            last_assistant = getattr(self.app, "_last_assistant_normalized", None)
-            if normalized and last_assistant and normalized == last_assistant:
-                return
-
-        try:
-            running_loop = asyncio.get_running_loop()
-        except RuntimeError:
-            running_loop = None
-
-        if running_loop is self._loop:
-            self._console_queue.put_nowait(text)
-        elif self._loop.is_running():
-            self._loop.call_soon_threadsafe(self._console_queue.put_nowait, text)
-        else:
-            self._console_queue.put_nowait(text)
-
-    async def _drain_console_queue(self) -> None:
-        try:
-            while True:
-                text = await self._console_queue.get()
-                self._render_console_output(text)
-                self._console_queue.task_done()
-        except asyncio.CancelledError:  # pragma: no cover - task shutdown
-            return
 
 
 def launch_textual_cli(message=None, **kwargs) -> None:

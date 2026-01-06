@@ -89,9 +89,9 @@ def test_textual_runner_process_query(tmp_path):
 
     assert [m.role for m in messages] == [Role.USER, Role.ASSISTANT]
     assert messages[-1].content == "echo:hello"
-    assert runner._console_queue.empty()
+    assert runner.console_bridge._console_queue.empty()
     assert repl.approval_manager.chat_app is runner.app
 
     runner._run_command("/help")
-    queued = runner._console_queue.get_nowait()
+    queued = runner.console_bridge._console_queue.get_nowait()
     assert "handled /help" in queued

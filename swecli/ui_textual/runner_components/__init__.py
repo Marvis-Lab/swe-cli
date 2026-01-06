@@ -9,6 +9,7 @@ from swecli.ui_textual.runner_components.tool_renderer import ToolRenderer
 from swecli.ui_textual.runner_components.model_config_manager import ModelConfigManager
 from swecli.ui_textual.runner_components.command_router import CommandRouter
 from swecli.ui_textual.runner_components.message_processor import MessageProcessor
+from swecli.ui_textual.runner_components.console_bridge import ConsoleBridge
 
 __all__ = [
     "HistoryHydrator",
@@ -16,4 +17,5 @@ __all__ = [
     "ModelConfigManager",
     "CommandRouter",
     "MessageProcessor",
+    "ConsoleBridge",
 ]
