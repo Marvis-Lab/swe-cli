@@ -1,18 +1,11 @@
 """Query processing for REPL."""
 
 import json
-import os
-import random
-from datetime import datetime
 from typing import TYPE_CHECKING, Iterable
 
 from swecli.core.context_engineering.memory import (
-    Playbook,
-    AgentResponse,
     Reflector,
     Curator,
-    ReflectorOutput,
-    CuratorOutput,
 )
 from swecli.ui_textual.utils.tool_display import format_tool_call
 
