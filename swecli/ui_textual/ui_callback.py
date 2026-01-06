@@ -305,22 +305,14 @@ class TextualUICallback:
                 import os
                 command = self._normalize_arguments(tool_args).get("command", "")
                 working_dir = os.getcwd()
-                # Combine stdout and stderr for display
-                output_parts = []
-                if result.get("stdout"):
-                    output_parts.append(result["stdout"])
-                if result.get("stderr"):
-                    output_parts.append(result["stderr"])
-                combined_output = "\n".join(output_parts).strip()
-                # Fall back to "output" key if stdout/stderr are empty
-                if not combined_output and result.get("output"):
-                    output_value = result["output"].strip()
-                    # Filter out placeholder messages
-                    if output_value not in ("Command executed", "Command execution failed"):
-                        combined_output = output_value
+                # Use "output" key which already has combined stdout+stderr from process_handlers
+                # Filter out placeholder messages
+                output = result.get("output", "") or ""
+                if output in ("Command executed", "Command execution failed"):
+                    output = ""
                 self._run_on_ui(
                     self.conversation.add_bash_output_box,
-                    combined_output,
+                    output,
                     is_error,
                     command,
                     working_dir,

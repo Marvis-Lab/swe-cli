@@ -13,7 +13,16 @@ from textual.strip import Strip
 from textual.timer import Timer
 
 from swecli.ui_textual.constants import TOOL_ERROR_SENTINEL
-from swecli.ui_textual.style_tokens import GREY, GREEN_BRIGHT, ERROR, PRIMARY, SUBTLE, SUCCESS
+from swecli.ui_textual.style_tokens import (
+    BLUE_PATH,
+    ERROR,
+    GREEN_BRIGHT,
+    GREEN_PROMPT,
+    GREY,
+    PRIMARY,
+    SUBTLE,
+    SUCCESS,
+)
 from swecli.ui_textual.widgets.terminal_box_renderer import (
     TerminalBoxConfig,
     TerminalBoxRenderer,
@@ -305,28 +314,41 @@ class DefaultToolRenderer:
     def _rebuild_streaming_box_with_truncation(
         self,
         is_error: bool,
-        config: TerminalBoxConfig,
         content_lines: list[str],
     ) -> None:
-        """Rebuild the streaming box with head+tail truncation."""
+        """Rebuild the streaming output with head+tail truncation."""
         if self._streaming_box_top_line is None:
             return
 
-        # Remove all lines from top of box to current position
+        # Remove all lines from top of output to current position
         self._truncate_from(self._streaming_box_top_line)
 
-        # Create new config with error state
-        new_config = TerminalBoxConfig(
-            command=self._streaming_box_command,
-            working_dir=self._streaming_box_working_dir,
-            depth=0,
-            is_error=is_error,
-            box_width=config.box_width,
+        # Apply truncation
+        head_count = self._box_renderer.MAIN_AGENT_HEAD_LINES
+        tail_count = self._box_renderer.MAIN_AGENT_TAIL_LINES
+        head_lines, tail_lines, hidden_count = self._box_renderer.truncate_lines_head_tail(
+            content_lines, head_count, tail_count
         )
 
-        # Render complete box with truncation (render_complete_box applies truncation)
-        for text_line in self._box_renderer.render_complete_box(content_lines, new_config):
-            self.log.write(text_line)
+        # Re-render prompt line with ⎿ prefix
+        formatted_path = self._box_renderer.format_path(self._streaming_box_working_dir)
+        cmd_normalized = self._streaming_box_command.replace("\n", " ").replace("  ", " ").strip()
+        prompt = Text("    \u23bf  ", style=GREY)
+        prompt.append(formatted_path, style=BLUE_PATH)
+        prompt.append(" $ ", style=GREEN_PROMPT)
+        prompt.append(cmd_normalized, style=GREY)
+        self.log.write(prompt)
+
+        # Output lines with truncation
+        for line in head_lines:
+            self._write_bash_output_line(line, "", is_error)
+
+        if hidden_count > 0:
+            hidden_text = Text(f"       ... {hidden_count} lines hidden ...", style=f"{SUBTLE} italic")
+            self.log.write(hidden_text)
+
+        for line in tail_lines:
+            self._write_bash_output_line(line, "", is_error)
 
     def _truncate_from(self, index: int) -> None:
         if index >= len(self.log.lines):
@@ -547,59 +569,86 @@ class DefaultToolRenderer:
         working_dir: str = ".",
         depth: int = 0,
     ) -> None:
+        """Render bash output with minimal style matching Edit display."""
         lines = output.rstrip("\n").splitlines()
-        config = TerminalBoxConfig(
-            command=command,
-            working_dir=working_dir,
-            depth=depth,
-            is_error=is_error,
-            box_width=self._get_box_width(),
+
+        # Apply truncation based on depth
+        if depth == 0:
+            head_count = self._box_renderer.MAIN_AGENT_HEAD_LINES
+            tail_count = self._box_renderer.MAIN_AGENT_TAIL_LINES
+        else:
+            head_count = self._box_renderer.SUBAGENT_HEAD_LINES
+            tail_count = self._box_renderer.SUBAGENT_TAIL_LINES
+
+        head_lines, tail_lines, hidden_count = self._box_renderer.truncate_lines_head_tail(
+            lines, head_count, tail_count
         )
-        for text_line in self._box_renderer.render_complete_box(lines, config):
-            self.log.write(text_line)
+
+        indent = "  " * depth
+
+        # Prompt line with ⎿ prefix
+        formatted_path = self._box_renderer.format_path(working_dir)
+        cmd_normalized = command.replace("\n", " ").replace("  ", " ").strip()
+        prompt = Text(f"{indent}    \u23bf  ", style=GREY)
+        prompt.append(formatted_path, style=BLUE_PATH)
+        prompt.append(" $ ", style=GREEN_PROMPT)
+        prompt.append(cmd_normalized, style=GREY)
+        self.log.write(prompt)
+
+        # Output lines with space prefix for alignment
+        for line in head_lines:
+            self._write_bash_output_line(line, indent, is_error)
+
+        if hidden_count > 0:
+            hidden_text = Text(f"{indent}       ... {hidden_count} lines hidden ...", style=f"{SUBTLE} italic")
+            self.log.write(hidden_text)
+
+        for line in tail_lines:
+            self._write_bash_output_line(line, indent, is_error)
+
+        # Add blank line for spacing after output
+        self.log.write(Text(""))
+
+    def _write_bash_output_line(self, line: str, indent: str, is_error: bool) -> None:
+        """Write a single bash output line with proper indentation."""
+        normalized = self._box_renderer.normalize_line(line)
+        output_line = Text(f"{indent}       ")
+        output_line.append(normalized, style=ERROR if is_error else GREY)
+        self.log.write(output_line)
 
     def start_streaming_bash_box(self, command: str = "", working_dir: str = ".") -> None:
-        config = TerminalBoxConfig(
-            command=command,
-            working_dir=working_dir,
-            depth=0,
-            is_error=False,
-            box_width=self._get_box_width(),
-        )
-        self._streaming_box_config = config
+        """Start streaming bash output with minimal style."""
         self._streaming_box_command = command
         self._streaming_box_working_dir = working_dir
         self._streaming_box_content_lines = []
-        
-        # Render header (top border + padding + prompt)
+
+        # Write prompt line with ⎿ prefix
         self.log.write(Text(""))  # Spacing
         self._streaming_box_top_line = len(self.log.lines)
-        
-        self.log.write(self._box_renderer.render_top_border(config))
-        self.log.write(self._box_renderer.render_padding_line(config))
-        self.log.write(self._box_renderer.render_prompt_line(config))
-        
+
+        formatted_path = self._box_renderer.format_path(working_dir)
+        cmd_normalized = command.replace("\n", " ").replace("  ", " ").strip()
+        prompt = Text("    \u23bf  ", style=GREY)
+        prompt.append(formatted_path, style=BLUE_PATH)
+        prompt.append(" $ ", style=GREEN_PROMPT)
+        prompt.append(cmd_normalized, style=GREY)
+        self.log.write(prompt)
+
         self._streaming_box_header_line = len(self.log.lines) - 1
 
     def append_to_streaming_box(self, line: str, is_stderr: bool = False) -> None:
-        """Append a content line to the streaming box."""
+        """Append a content line to the streaming output."""
         if self._streaming_box_header_line is None:
             return
 
         # Store for rebuild
         self._streaming_box_content_lines.append((line, is_stderr))
-            
-        # Write to log
-        config = self._streaming_box_config
-        if config:
-            rendered = self._box_renderer.render_content_line(line, config)
-            self.log.write(rendered)
+
+        # Write output line with space prefix for alignment
+        self._write_bash_output_line(line, "", is_stderr)
 
     def close_streaming_bash_box(self, is_error: bool, exit_code: int) -> None:
-        config = self._streaming_box_config
-        if not config:
-             return
-
+        """Close streaming bash output, applying truncation if needed."""
         # Check if truncation is needed (main agent uses MAIN_AGENT limits)
         content_lines = [line for line, _ in self._streaming_box_content_lines]
         head_count = self._box_renderer.MAIN_AGENT_HEAD_LINES
@@ -607,12 +656,9 @@ class DefaultToolRenderer:
         max_lines = head_count + tail_count
 
         if len(content_lines) > max_lines and self._streaming_box_top_line is not None:
-            # Rebuild the box with truncation
-            self._rebuild_streaming_box_with_truncation(is_error, config, content_lines)
-        else:
-            # No truncation needed - just close normally
-            self.log.write(self._box_renderer.render_padding_line(config))
-            self.log.write(self._box_renderer.render_bottom_border(config))
+            # Rebuild with truncation
+            self._rebuild_streaming_box_with_truncation(is_error, content_lines)
+        # No bottom border needed for minimal style
 
         # Reset state
         self._streaming_box_header_line = None
@@ -621,4 +667,16 @@ class DefaultToolRenderer:
         self._streaming_box_command = ""
         self._streaming_box_working_dir = "."
         self._streaming_box_content_lines = []
+
+    def add_nested_bash_output_box(
+        self,
+        output: str,
+        is_error: bool = False,
+        command: str = "",
+        working_dir: str = "",
+        depth: int = 1,
+    ) -> None:
+        """Render nested bash output with minimal style."""
+        # Use the same add_bash_output_box with depth parameter
+        self.add_bash_output_box(output, is_error, command, working_dir, depth)
 

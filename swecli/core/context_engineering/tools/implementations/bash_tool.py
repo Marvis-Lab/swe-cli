@@ -304,23 +304,15 @@ class BashTool(BaseTool):
                 if operation:
                     operation.mark_success()
 
-                # Return captured startup output with clear background process indication
+                # Return captured startup output
                 stdout_text = "".join(stdout_lines).rstrip()
                 stderr_text = "".join(stderr_lines).rstrip()
-
-                # Add clear indication that process is running in background
-                background_notice = (
-                    f"\n\n[Process started successfully and is running in the background (PID {process.pid})]\n"
-                    f"[Use 'list_processes' to check status, 'kill_process' to stop]\n"
-                    f"[No further action needed - the server/process is now running]"
-                )
-                stdout_text = stdout_text + background_notice if stdout_text else background_notice.strip()
 
                 return BashResult(
                     success=True,
                     command=command,
                     exit_code=0,  # Process started
-                    stdout=stdout_text,  # Return captured startup output with background notice
+                    stdout=stdout_text,
                     stderr=stderr_text,
                     duration=time.time() - start_time,
                     operation_id=operation.id if operation else None,
