@@ -24,6 +24,7 @@ from swecli.ui_textual.widgets.terminal_box_renderer import (
     TerminalBoxRenderer,
 )
 from swecli.ui_textual.widgets.conversation.spinner_manager import DefaultSpinnerManager
+from swecli.ui_textual.widgets.conversation.message_renderer import DefaultMessageRenderer
 
 
 class ConversationLog(RichLog):
@@ -42,8 +43,10 @@ class ConversationLog(RichLog):
             max_lines=10000,
         )
         self._user_scrolled = False
+        self._user_scrolled = False
         self._last_assistant_rendered: str | None = None
         self._spinner_manager = DefaultSpinnerManager(self, None)
+        self._message_renderer = DefaultMessageRenderer(self, None)
         self._tool_display: Text | None = None
         self._tool_spinner_timer: Timer | None = None
         self._spinner_active = False
@@ -130,6 +133,7 @@ class ConversationLog(RichLog):
     def on_mount(self) -> None:
         if self.app:
             self._spinner_manager.app = self.app
+            self._message_renderer.app = self.app
         return
 
     def on_unmount(self) -> None:
@@ -337,53 +341,18 @@ class ConversationLog(RichLog):
             self.auto_scroll = True
 
     def add_user_message(self, message: str) -> None:
-        # Add blank line before user prompt if previous line has content
-        if self.lines and hasattr(self.lines[-1], 'plain'):
-            last_plain = self.lines[-1].plain.strip() if self.lines[-1].plain else ""
-            if last_plain:
-                self.write(Text(""))
-        self.write(Text(f"› {message}", style="bold white"))
-        self.write(Text(""))
+        self._message_renderer.add_user_message(message)
 
     def add_assistant_message(self, message: str) -> None:
-        normalized = self._normalize_text(message)
-        if normalized and normalized == self._last_assistant_rendered:
-            return
-
-        self._last_assistant_rendered = normalized
-        segments = self._split_code_blocks(message)
-        text_output = False
-        leading_used = False
-
-        for _, segment in enumerate(segments):
-            if segment["type"] == "code":
-                self._write_code_block(segment)
-            else:
-                content = segment["content"]
-                if not content:
-                    continue
-                renderables, wrote = render_markdown_text_segment(
-                    content,
-                    leading=(not text_output and not leading_used),
-                )
-                for renderable in renderables:
-                    self.write(renderable)
-                if wrote:
-                    text_output = True
-                    leading_used = True
-
-        self.write(Text(""))
+        self._message_renderer.add_assistant_message(message)
 
     def add_system_message(self, message: str) -> None:
-        self.write(Text(message, style="dim italic"))
+        self._message_renderer.add_system_message(message)
 
     def add_error(self, message: str) -> None:
         """Render an error message with a red bullet and clear any active spinner."""
-        self.stop_spinner()
-        bullet = Text("⦿ ", style=f"bold {ERROR}")
-        bullet.append(message, style=ERROR)
-        self.write(bullet)
-        self.write(Text(""))
+        self.stop_spinner()  # Retain state change logic here
+        self._message_renderer.add_error(message)
 
     def add_tool_call(self, display: Text | str, *_: Any) -> None:
         # Add blank line before tool call if previous line has content
@@ -866,25 +835,6 @@ class ConversationLog(RichLog):
         self._approval_start = None
 
     # --- Private helpers -------------------------------------------------
-
-    def _write_code_block(self, segment: dict[str, str]) -> None:
-        code = segment["content"].strip("\n")
-        if not code:
-            return
-        language = segment.get("language") or "text"
-
-        # Add indentation to each line of code
-        indented_code = "\n".join("  " + line for line in code.splitlines())
-
-        syntax = Syntax(
-            indented_code,
-            language,
-            theme="monokai",
-            line_numbers=False,
-            word_wrap=False,
-            indent_guides=True,
-        )
-        self.write(syntax)
 
     def _write_generic_tool_result(self, text: str) -> None:
         lines = text.rstrip("\n").splitlines() or [text]
@@ -1378,38 +1328,6 @@ class ConversationLog(RichLog):
             self.scroll_end(animate=False)
 
         self.refresh()
-
-    # --- Markdown helpers ------------------------------------------------
-
-    def _split_code_blocks(self, message: str) -> list[dict[str, str]]:
-        pattern = re.compile(r"```(\w+)?\n?(.*?)```", re.DOTALL)
-        segments: list[dict[str, str]] = []
-        last_end = 0
-
-        for match in pattern.finditer(message):
-            start, end = match.span()
-            if start > last_end:
-                segments.append({"type": "text", "content": message[last_end:start]})
-
-            language = match.group(1) or ""
-            code = match.group(2) or ""
-            segments.append({"type": "code", "language": language, "content": code})
-            last_end = end
-
-        if last_end < len(message):
-            segments.append({"type": "text", "content": message[last_end:]})
-
-        if not segments:
-            segments.append({"type": "text", "content": message})
-
-        return segments
-
-    @staticmethod
-    def _normalize_text(message: str) -> str:
-        cleaned = re.sub(r"\x1b\[[0-9;]*m", "", message)
-        cleaned = cleaned.replace("⏺", " ")
-        cleaned = re.sub(r"\s+", " ", cleaned)
-        return cleaned.strip()
 
     def start_spinner(self, message: Text | str) -> None:
         """Show thinking spinner (delegated to SpinnerManager)."""
