@@ -56,7 +56,22 @@ PLAN_APPROVAL_PHRASES = {
 
 
 class TextualRunner:
-    """Orchestrates the Textual chat UI with the core SWE-CLI runtime."""
+    """Orchestrates the Textual chat UI with the core SWE-CLI runtime.
+
+    This class serves as the main entry point and controller for the UI-based
+    interaction mode. It coordinates:
+    
+    1. **Core Runtime**: REPL, ConfigManager, SessionManager
+    2. **UI Components**: Textual App, History Hydration, Tool Rendering
+    3. **Background Services**: Message Processing, Console Bridging, MCP Auto-connect
+
+    The runner manages the lifecycle of the Textual application (`create_chat_app`)
+    and bridges standard I/O (console print/logs) into the UI conversation log.
+
+    Usage:
+        runner = TextualRunner(working_dir=Path("."))
+        runner.run()
+    """
 
     def __init__(
         self,
@@ -70,20 +85,57 @@ class TextualRunner:
         auto_connect_mcp: bool = False,
     ) -> None:
         self.working_dir = Path(working_dir or Path.cwd()).resolve()
+        
+        # 1. Setup Core Runtime (Config, REPL, Session)
+        self._setup_runtime(
+            resume_session=resume_session,
+            continue_session=continue_session,
+            repl=repl,
+            config_manager=config_manager,
+            session_manager=session_manager,
+            auto_connect_mcp=auto_connect_mcp,
+        )
 
+        # 2. Setup Runner Components
+        self._setup_components(auto_connect_mcp)
+
+        # 3. Setup Textual App
+        self._setup_app()
+
+        # 4. Finalize
+        self._loop = asyncio.new_event_loop()
+        self._console_task: asyncio.Task[None] | None = None
+        self._queue_update_callback: Callable[[int], None] | None = getattr(self.app, "update_queue_indicator", None)
+
+    def _setup_runtime(
+        self,
+        resume_session: Optional[str],
+        continue_session: bool,
+        repl: Optional[REPL],
+        config_manager: Optional[ConfigManager],
+        session_manager: Optional[SessionManager],
+        auto_connect_mcp: bool,
+    ) -> None:
+        """Initialize the core SWE-CLI runtime (REPL, Config, Session)."""
         if repl is not None:
             self.repl = repl
             self.config_manager = config_manager or getattr(repl, "config_manager", ConfigManager(self.working_dir))
             self.config = getattr(repl, "config", None) or self.config_manager.get_config()
             self.session_manager = session_manager or getattr(repl, "session_manager", None)
+            
             if self.session_manager is None:
                 raise ValueError("SessionManager is required when providing a custom REPL")
+            
+            # Ensure config consistency
             if not hasattr(self.repl, "config"):
                 self.repl.config = self.config
+            
+            # Sync bash permissions
             if hasattr(self.repl.config, "permissions") and hasattr(self.repl.config.permissions, "bash"):
                 self.repl.config.permissions.bash.enabled = True
             elif hasattr(self.repl.config, "enable_bash"):
                 self.repl.config.enable_bash = True
+                
             self._auto_connect_mcp = auto_connect_mcp and hasattr(self.repl, "mcp_manager")
         else:
             self.config_manager = config_manager or ConfigManager(self.working_dir)
@@ -97,12 +149,16 @@ class TextualRunner:
             self.repl = REPL(self.config_manager, self.session_manager)
             self.repl.mode_manager.set_mode(OperationMode.NORMAL)
             self.repl.approval_manager = ChatApprovalManager(self.repl.console)
+            
             if hasattr(self.repl.config, "permissions") and hasattr(self.repl.config.permissions, "bash"):
                 self.repl.config.permissions.bash.enabled = True
             elif hasattr(self.repl.config, "enable_bash"):
                 self.repl.config.enable_bash = True
+                
             self._auto_connect_mcp = auto_connect_mcp and hasattr(self.repl, "mcp_manager")
 
+    def _setup_components(self, auto_connect_mcp: bool) -> None:
+        """Initialize helper components (History, DOM, MCP, etc)."""
         self._history_hydrator = HistoryHydrator(
             session_manager=self.session_manager,
             working_dir=self.working_dir,
@@ -145,6 +201,8 @@ class TextualRunner:
             }
         )
 
+    def _setup_app(self) -> None:
+        """Initialize the Textual application instance."""
         # Get model display name and slot summaries from config
         model_display = f"{self.config.model_provider}/{self.config.model}"
         model_slots = self.model_config_manager._build_model_slots()
@@ -161,8 +219,8 @@ class TextualRunner:
             "working_dir": str(self.working_dir),
             "todo_handler": getattr(self.repl.tool_registry, "todo_handler", None) if hasattr(self.repl, "tool_registry") else None,
         }
+        
         if self._auto_connect_mcp:
-            # Wrap in lambda because start_autoconnect_thread needs loop
             downstream_on_ready = lambda: self.mcp_controller.start_autoconnect_thread(self._loop)
         else:
             downstream_on_ready = self.mcp_controller.notify_manual_connect
@@ -191,23 +249,21 @@ class TextualRunner:
                 "completer": getattr(self.repl, "completer", None),
             }
             self.app = create_chat_app(**legacy_kwargs)
+            
         if hasattr(self.repl.approval_manager, "chat_app"):
             self.repl.approval_manager.chat_app = self.app
+            
         # Store approval manager reference on the app for action_cycle_autonomy
         self.app._approval_manager = self.repl.approval_manager
+        
         if hasattr(self.repl, "config_commands"):
             self.repl.config_commands.chat_app = self.app
 
         # Store runner reference on app for queue indicator updates
         self.app._runner = self
         
+        # Link console bridge to app for rendering
         self.console_bridge.set_app(self.app)
-
-        self._loop = asyncio.new_event_loop()
-        self._console_task: asyncio.Task[None] | None = None
-
-        # Set up queue indicator callback
-        self._queue_update_callback: Callable[[int], None] | None = self.app.update_queue_indicator
 
 
     def _configure_session(self, resume: Optional[str], continue_session: bool) -> None:
