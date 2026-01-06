@@ -46,7 +46,7 @@ from swecli.ui_textual.managers.approval_manager import ChatApprovalManager
 from swecli.ui_textual.chat_app import create_chat_app
 from swecli.ui_textual.constants import TOOL_ERROR_SENTINEL
 from swecli.ui_textual.utils import build_tool_call_text
-from swecli.ui_textual.runner_components import HistoryHydrator, ToolRenderer, ModelConfigManager, CommandRouter, MessageProcessor, ConsoleBridge
+from swecli.ui_textual.runner_components import HistoryHydrator, ToolRenderer, ModelConfigManager, CommandRouter, MessageProcessor, ConsoleBridge, MCPController
 
 # Approval phrases for plan execution
 PLAN_APPROVAL_PHRASES = {
@@ -115,12 +115,21 @@ class TextualRunner:
         self.console_bridge = ConsoleBridge(self.repl.console)
         self.console_bridge.install()
 
+        self.mcp_controller = MCPController(
+            self.repl,
+            callbacks={
+                "enqueue_console_text": self.console_bridge.enqueue_text,
+                "refresh_ui_config": self.model_config_manager.refresh_ui_config,
+            }
+        )
+        self.mcp_controller.set_auto_connect(auto_connect_mcp)
+
         self.command_router = CommandRouter(
             self.repl,
             self.working_dir,
             callbacks={
                 "enqueue_console_text": self.console_bridge.enqueue_text,
-                "start_mcp_connect_thread": self._start_mcp_connect_thread,
+                "start_mcp_connect_thread": self.mcp_controller.start_autoconnect_thread,
                 "refresh_ui_config": self.model_config_manager.refresh_ui_config,
             }
         )
@@ -153,9 +162,10 @@ class TextualRunner:
             "todo_handler": getattr(self.repl.tool_registry, "todo_handler", None) if hasattr(self.repl, "tool_registry") else None,
         }
         if self._auto_connect_mcp:
-            downstream_on_ready = self._start_mcp_connect_thread
+            # Wrap in lambda because start_autoconnect_thread needs loop
+            downstream_on_ready = lambda: self.mcp_controller.start_autoconnect_thread(self._loop)
         else:
-            downstream_on_ready = self._notify_manual_mcp_connect
+            downstream_on_ready = self.mcp_controller.notify_manual_connect
 
         # Create on_ready callback that hydrates history then calls downstream
         def _on_ready_with_hydration() -> None:
@@ -163,6 +173,7 @@ class TextualRunner:
             self.command_router.set_app(self.app)
             self.message_processor.set_app(self.app)
             self.console_bridge.set_app(self.app)
+            self.mcp_controller.set_app(self.app)
             self._history_hydrator.start_async_hydration(self.app)
             if downstream_on_ready:
                 downstream_on_ready()
@@ -189,11 +200,11 @@ class TextualRunner:
 
         # Store runner reference on app for queue indicator updates
         self.app._runner = self
-
+        
+        self.console_bridge.set_app(self.app)
 
         self._loop = asyncio.new_event_loop()
         self._console_task: asyncio.Task[None] | None = None
-        self._connect_inflight = False
 
         # Set up queue indicator callback
         self._queue_update_callback: Callable[[int], None] | None = self.app.update_queue_indicator
@@ -534,93 +545,14 @@ Work through each implementation step in order. Mark each todo item as 'in_progr
             # Stop console bridge task
             self.console_bridge.stop()
 
-    def _notify_manual_mcp_connect(self) -> None:
-        """Inform users how to connect MCP servers when auto-connect is disabled."""
-        manager = getattr(self.repl, "mcp_manager", None)
-        has_servers = False
-        if manager is not None:
-            try:
-                has_servers = bool(manager.list_servers())
-            except Exception:
-                has_servers = False
-        if not has_servers:
-            return
-
-        message = (
-            "Tip: MCP servers are not auto-connected. "
-            "Run /mcp autoconnect to connect in the background "
-            "or /mcp connect <name> for a specific server."
-        )
-        self.console_bridge.enqueue_text(message)
-
-    def _start_mcp_connect_thread(self, force: bool = False) -> None:
-        """Queue MCP auto-connect after the UI has rendered."""
-        if (not self._auto_connect_mcp and not force) or self._connect_inflight:
-            return
-
-        self._connect_inflight = True
-
-        delay = 0.5 if not force else 0.0
-        try:
-            if delay > 0:
-                self._loop.call_later(delay, self._launch_mcp_autoconnect)
-            else:
-                self._loop.call_soon(self._launch_mcp_autoconnect)
-        except RuntimeError:
-            self._launch_mcp_autoconnect()
-
-    def _launch_mcp_autoconnect(self) -> None:
-        """Trigger MCP auto-connect using the manager's background loop."""
-        manager = getattr(self.repl, "mcp_manager", None)
-        if manager is None:
-            self._connect_inflight = False
-            return
-
-        def handle_completion(result: Optional[dict[str, bool]]) -> None:
-            def finalize() -> None:
-                self._connect_inflight = False
-                if result is None:
-                    self.console_bridge.enqueue_text(
-                        "[yellow]Warning: MCP auto-connect failed.[/yellow]"
-                    )
-                    return
-                if not result:
-                    self.console_bridge.enqueue_text(
-                        "[dim]MCP auto-connect completed; no enabled servers were found.[/dim]"
-                    )
-                    return
-
-                if result:
-                    successes = [name for name, ok in result.items() if ok]
-                    failures = [name for name, ok in result.items() if not ok]
-                    lines: list[str] = []
-                    if successes:
-                        lines.append(
-                            "[green]✓ Connected MCP servers:[/green] "
-                            + ", ".join(successes)
-                        )
-                    if failures:
-                        lines.append(
-                            "[red]✗ Failed MCP servers:[/red] "
-                            + ", ".join(failures)
-                        )
-                    if lines:
-                        self.console_bridge.enqueue_text("\n".join(lines))
-
-                    refresh_cb = getattr(self.repl, "_refresh_runtime_tooling", None)
-                    if callable(refresh_cb):
-                        refresh_cb()
-                    self._refresh_ui_config()
-
-            self._loop.call_soon_threadsafe(finalize)
-
-        try:
-            manager.connect_enabled_servers_background(on_complete=handle_completion)
-        except Exception as exc:  # pragma: no cover - defensive
-            self._connect_inflight = False
-            self.console_bridge.enqueue_text(
-                f"[yellow]Warning: MCP auto-connect could not start ({exc}).[/yellow]"
-            )
+    def _on_app_mounted(self) -> None:
+        """Called when the Textual app is fully mounted and ready."""
+        # Schedule MCP auto-connect if enabled
+        self.mcp_controller.start_autoconnect_thread(self._loop)
+        
+        # If auto-connect isn't enabled, show tip
+        if not self.mcp_controller._auto_connect_enabled:
+             self.mcp_controller.notify_manual_connect()
 
 
 

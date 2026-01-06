@@ -10,6 +10,7 @@ from swecli.ui_textual.runner_components.model_config_manager import ModelConfig
 from swecli.ui_textual.runner_components.command_router import CommandRouter
 from swecli.ui_textual.runner_components.message_processor import MessageProcessor
 from swecli.ui_textual.runner_components.console_bridge import ConsoleBridge
+from swecli.ui_textual.runner_components.mcp_controller import MCPController
 
 __all__ = [
     "HistoryHydrator",
@@ -18,4 +19,5 @@ __all__ = [
     "CommandRouter",
     "MessageProcessor",
     "ConsoleBridge",
+    "MCPController",
 ]
