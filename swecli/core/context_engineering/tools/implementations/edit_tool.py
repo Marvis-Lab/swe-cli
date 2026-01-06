@@ -179,8 +179,21 @@ class EditTool(BaseTool):
             old_content = actual_old_content
 
             # Check if old_content is unique (if not match_all)
-            if not match_all and original.count(old_content) > 1:
-                error = f"Content appears {original.count(old_content)} times. Use match_all=True or provide more specific content"
+            count = original.count(old_content)
+            if not match_all and count > 1:
+                # Find line numbers of each occurrence to help LLM provide more context
+                occurrences = []
+                search_pos = 0
+                for _ in range(count):
+                    pos = original.find(old_content, search_pos)
+                    if pos == -1:
+                        break
+                    line_num = original[:pos].count('\n') + 1
+                    occurrences.append(line_num)
+                    search_pos = pos + 1
+
+                locations = ", ".join(f"line {n}" for n in occurrences)
+                error = f"Content appears {count} times at {locations}. Provide more surrounding context in old_content to uniquely identify which occurrence to edit."
                 if operation:
                     operation.mark_failed(error)
                 return EditResult(
