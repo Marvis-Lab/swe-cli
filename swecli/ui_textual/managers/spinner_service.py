@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING, Any, Callable, Dict, Optional
 
 from rich.text import Text
 
-from swecli.ui_textual.style_tokens import GREY
+from swecli.ui_textual.style_tokens import GREY, PRIMARY, GREEN_BRIGHT, BLUE_BRIGHT, WARNING
 
 if TYPE_CHECKING:
     from textual.app import App
@@ -52,23 +52,23 @@ SPINNER_CONFIGS: Dict[SpinnerType, SpinnerConfig] = {
     SpinnerType.TOOL: SpinnerConfig(
         chars=("⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"),
         interval_ms=120,
-        style="bright_cyan",
+        style=BLUE_BRIGHT,
     ),
     SpinnerType.THINKING: SpinnerConfig(
         chars=("⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"),
         interval_ms=120,
-        style="bright_cyan",
+        style=BLUE_BRIGHT,
         min_visible_ms=300,
     ),
     SpinnerType.NESTED: SpinnerConfig(
         chars=("⏺", "○"),
         interval_ms=300,
-        style="green",  # Flashing animation uses green (not cyan like spinners)
+        style=GREEN_BRIGHT,  # Flashing animation uses green (not cyan like spinners)
     ),
     SpinnerType.TODO: SpinnerConfig(
         chars=("←", "↖", "↑", "↗", "→", "↘", "↓", "↙"),
         interval_ms=150,
-        style="yellow",
+        style=WARNING,
     ),
 }
 
@@ -199,7 +199,7 @@ class SpinnerService:
 
         # Convert to Text if string
         if isinstance(message, str):
-            display_text = Text(message, style="white")
+            display_text = Text(message, style=PRIMARY)
         else:
             display_text = message.copy()
 
@@ -229,7 +229,7 @@ class SpinnerService:
 
         # Convert to Text if string
         if isinstance(message, str):
-            display_text = Text(message, style="white")
+            display_text = Text(message, style=PRIMARY)
         else:
             display_text = message.copy()
 
@@ -309,7 +309,7 @@ class SpinnerService:
 
         # Convert message to Text if string
         if isinstance(message, str):
-            msg_text = Text(message, style="white")
+            msg_text = Text(message, style=PRIMARY)
         elif message is not None:
             msg_text = message.copy()
         else:
@@ -349,7 +349,7 @@ class SpinnerService:
                 return
 
             if isinstance(message, str):
-                instance.message = Text(message, style="white")
+                instance.message = Text(message, style=PRIMARY)
             else:
                 instance.message = message.copy()
 

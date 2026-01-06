@@ -25,8 +25,7 @@ class QueryEnhancer:
     def enhance_query(self, query: str) -> str:
         """Enhance query with file contents if referenced.
 
-        Root cause fix: ANY @file reference automatically triggers content injection.
-        No keyword matching needed - deterministic and universal.
+        Includes safeguards against large files or binary formats (PDFs, images).
 
         Args:
             query: Original query
@@ -34,24 +33,39 @@ class QueryEnhancer:
         Returns:
             Enhanced query with file contents or @ references stripped
         """
+        # Safe extensions to auto-inject
+        SAFE_EXTENSIONS = {
+            ".py", ".js", ".ts", ".jsx", ".tsx", ".java", ".go", ".rs", 
+            ".c", ".cpp", ".h", ".hpp", ".cs", ".rb", ".php", ".swift",
+            ".md", ".txt", ".json", ".yaml", ".yml", ".toml", ".xml", ".html", ".css", ".sh",
+            ".gitignore", ".dockerignore", "Dockerfile", "Makefile"
+        }
+        MAX_INJECTION_SIZE = 50 * 1024  # 50KB limit for auto-injection
+
         # Extract all @file references BEFORE stripping @ symbols
-        # This captures the actual file references the user intended
         file_refs = re.findall(r'@([a-zA-Z0-9_./\-]+)', query)
 
         # Strip @ prefix so agent understands the query
         enhanced = re.sub(r'@([a-zA-Z0-9_./\-]+)', r'\1', query)
 
-        # For EACH @file reference, try to inject its content
-        # This is deterministic - no keyword matching, no heuristics
         file_contents = []
         for file_ref in file_refs:
+            # 1. Check extension
+            _, ext = os.path.splitext(file_ref)
+            if ext and ext.lower() not in SAFE_EXTENSIONS and os.path.basename(file_ref) not in SAFE_EXTENSIONS:
+                 # Skip unsafe/binary files (like .pdf)
+                 continue
+
             try:
                 content = self.file_ops.read_file(file_ref)
-                file_contents.append(f"File contents of {file_ref}:\n```\n{content}\n```")
+                
+                # 2. Check size limit
+                if len(content) > MAX_INJECTION_SIZE:
+                    file_contents.append(f"Note: File '{file_ref}' referenced but too large to auto-inject ({len(content)} chars).")
+                else:
+                    file_contents.append(f"File contents of {file_ref}:\n```\n{content}\n```")
             except Exception:
-                # File doesn't exist or can't be read
-                # Add a note so the agent knows we tried to read it
-                file_contents.append(f"Note: Could not read file '{file_ref}' - it may not exist in the workspace.")
+                file_contents.append(f"Note: Could not read file '{file_ref}'.")
 
         # Inject file contents at the end of the query if any were found
         if file_contents:

@@ -18,7 +18,7 @@ from rich.table import Table
 from rich.text import Text
 
 from swecli.repl.repl import REPL
-from swecli.ui_textual.style_tokens import ERROR
+from swecli.ui_textual.style_tokens import ERROR, PRIMARY, ACCENT, SUBTLE, CYAN, GREEN_BRIGHT, BLUE_BRIGHT
 
 
 class CommandRouter:
@@ -114,7 +114,7 @@ class CommandRouter:
         start_cb = self._callbacks.get("start_mcp_connect_thread")
         if start_cb:
             self._enqueue_console_text(
-                "[cyan]Starting MCP auto-connect in the background...[/cyan]"
+                f"[{CYAN}]Starting MCP auto-connect in the background...[/{CYAN}]"
             )
             # force=True
             start_cb(True)
@@ -166,9 +166,9 @@ class CommandRouter:
         info_table.add_column("Value")
 
         status_text = (
-            Text("Connected", style="bold green")
+            Text("Connected", style=f"bold {GREEN_BRIGHT}")
             if is_connected
-            else Text("Disconnected", style="dim")
+            else Text("Disconnected", style=SUBTLE)
         )
         info_table.add_row("Status", status_text)
 
@@ -209,16 +209,16 @@ class CommandRouter:
             info_table.add_row("Capabilities", " · ".join(capabilities))
 
         enabled_text = (
-            Text("Yes", style="green")
+            Text("Yes", style=GREEN_BRIGHT)
             if server_config.enabled
             else Text("No", style=ERROR)
         )
         info_table.add_row("Enabled", enabled_text)
 
         auto_start_text = (
-            Text("Yes", style="green")
+            Text("Yes", style=GREEN_BRIGHT)
             if server_config.auto_start
-            else Text("No", style="dim")
+            else Text("No", style=SUBTLE)
         )
         info_table.add_row("Auto-start", auto_start_text)
 
@@ -232,8 +232,8 @@ class CommandRouter:
         tools_content = None
         if is_connected and tools:
             tools_table = Table(show_header=True, box=box.SIMPLE, padding=(0, 1))
-            tools_table.add_column("Tool Name", style="cyan")
-            tools_table.add_column("Description", style="white")
+            tools_table.add_column("Tool Name", style=CYAN)
+            tools_table.add_column("Description", style=PRIMARY)
 
             for tool in tools[:10]:
                 tool_name = tool.get("name", "unknown")
@@ -243,7 +243,7 @@ class CommandRouter:
                 tools_table.add_row(tool_name, tool_desc)
 
             if len(tools) > 10:
-                tools_table.add_row(f"... and {len(tools) - 10} more", "", style="dim")
+                tools_table.add_row(f"... and {len(tools) - 10} more", "", style=SUBTLE)
 
             tools_content = tools_table
 
@@ -252,7 +252,7 @@ class CommandRouter:
             info_table,
             title=title,
             title_align="left",
-            border_style="bright_cyan",
+            border_style=BLUE_BRIGHT,
             box=box.ROUNDED,
             padding=(1, 2),
         )
@@ -269,7 +269,7 @@ class CommandRouter:
                 tools_content,
                 title="Available Tools",
                 title_align="left",
-                border_style="green",
+                border_style=GREEN_BRIGHT,
                 box=box.ROUNDED,
                 padding=(1, 2),
             )

@@ -43,5 +43,25 @@ SUCCESS_ICON = "✓"
 HINT_ICON = "›"
 INLINE_ARROW = "⎿"
 
+# Tool icons
+TOOL_ICONS = {
+    "write_file": "📝",
+    "edit_file": "✏️",
+    "read_file": "📖",
+    "list_directory": "📁",
+    "delete_file": "🗑️",
+    "bash_execute": "⚡",
+    "git_commit": "💾",
+    "git_branch": "🌿",
+}
+
+# Status icons
+STATUS_ICONS = {
+    "success": "✓",
+    "error": "✗",
+    "warning": "⚠",
+    "info": "ℹ",
+}
+
 # Common helper strings
 UNKNOWN_COMMAND_HINT = "Type /help for available commands"

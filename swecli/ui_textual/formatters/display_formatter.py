@@ -11,10 +11,10 @@ class DisplayFormatter:
 
     def format_error(self, primary: str, secondary: Optional[str] = None) -> Text:
         """Formats an error message."""
-        text = Text.from_markup(f"  [red]⎿  {primary}[/red]")
+        text = Text.from_markup(f"  [{style_tokens.ERROR}]⎿  {primary}[/{style_tokens.ERROR}]")
         if secondary:
             text.append("\n  ⎿  ")
-            text.append(secondary, style="dim")
+            text.append(secondary, style=style_tokens.SUBTLE)
         return text
 
     def format_info(self, primary: str, secondary: Optional[str] = None) -> Text:
@@ -22,15 +22,15 @@ class DisplayFormatter:
         text = Text.from_markup(f"  ⎿  {primary}")
         if secondary:
             text.append("\n  ⎿  ")
-            text.append(secondary, style="dim")
+            text.append(secondary, style=style_tokens.SUBTLE)
         return text
 
     def format_warning(self, primary: str, secondary: Optional[str] = None) -> Text:
         """Formats a warning message."""
-        text = Text.from_markup(f"  [yellow]⎿  {primary}[/yellow]")
+        text = Text.from_markup(f"  [{style_tokens.WARNING}]⎿  {primary}[/{style_tokens.WARNING}]")
         if secondary:
             text.append("\n  ⎿  ")
-            text.append(secondary, style="dim")
+            text.append(secondary, style=style_tokens.SUBTLE)
         return text
 
     def format_usage(self, primary: str, secondary: Optional[str] = None, title: Optional[str] = None) -> Panel:
@@ -48,20 +48,20 @@ class DisplayFormatter:
             if lower.startswith("usage:"):
                 usage = stripped[len("usage:"):].strip()
                 line = Text()
-                line.append("Usage", style="bold white")
+                line.append("Usage", style=f"bold {style_tokens.PRIMARY}")
                 if usage:
-                    line.append(": ", style="bold white")
+                    line.append(": ", style=f"bold {style_tokens.PRIMARY}")
                     line.append(usage, style=f"bold {style_tokens.ACCENT}")
                 renderables.append(line)
                 continue
 
             if lower.startswith("key subcommands"):
-                line = Text(stripped, style="bold white")
+                line = Text(stripped, style=f"bold {style_tokens.PRIMARY}")
                 renderables.append(line)
                 continue
 
             if lower.startswith("more:"):
-                line = Text(stripped, style="dim")
+                line = Text(stripped, style=style_tokens.SUBTLE)
                 renderables.append(line)
                 continue
 
@@ -72,14 +72,14 @@ class DisplayFormatter:
                 line.append(parts[0].strip(), style="bold " + style_tokens.ACCENT)
                 if len(parts) > 1:
                     line.append("  ")
-                    line.append(parts[1].strip(), style="dim")
+                    line.append(parts[1].strip(), style=style_tokens.SUBTLE)
                 renderables.append(line)
                 continue
 
-            renderables.append(Text(stripped, style="white"))
+            renderables.append(Text(stripped, style=style_tokens.PRIMARY))
 
         if secondary:
-            renderables.append(Text(secondary, style="dim"))
+            renderables.append(Text(secondary, style=style_tokens.SUBTLE))
 
         panel_title = title or "Command"
         return Panel(

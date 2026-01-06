@@ -10,6 +10,7 @@ from rich.text import Text
 from textual.events import MouseDown, MouseMove, MouseScrollDown, MouseScrollUp, MouseUp
 from textual.geometry import Size
 from textual.widgets import RichLog
+from swecli.ui_textual.style_tokens import SUBTLE, CYAN
 
 from swecli.ui_textual.widgets.conversation.spinner_manager import DefaultSpinnerManager
 from swecli.ui_textual.widgets.conversation.message_renderer import DefaultMessageRenderer
@@ -78,8 +79,8 @@ class ConversationLog(RichLog):
         if not self._debug_enabled:
             return
         debug_text = Text()
-        debug_text.append(f"  [{prefix}] ", style="dim cyan")
-        debug_text.append(message, style="dim")
+        debug_text.append(f"  [{prefix}] ", style=f"{SUBTLE} {CYAN}")
+        debug_text.append(message, style=SUBTLE)
         self.write(debug_text)
 
         # Mark this line as protected from truncation
@@ -112,6 +113,14 @@ class ConversationLog(RichLog):
     async def on_key(self, event) -> None:
         """Forward key events to scroll controller."""
         self._scroll_controller.on_key(event)
+
+    def scroll_partial_page(self, direction: int) -> None:
+        """Scroll a fraction of the viewport.
+        
+        Args:
+           direction: -1 for up, 1 for down
+        """
+        self._scroll_controller.scroll_partial_page(direction)
 
     def on_mouse_scroll_down(self, event: MouseScrollDown) -> None:
         self._scroll_controller.on_mouse_scroll_down(event)

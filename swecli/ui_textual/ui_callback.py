@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from swecli.ui_textual.formatters.style_formatter import StyleFormatter
-from swecli.ui_textual.style_tokens import GREY
+from swecli.ui_textual.style_tokens import GREY, PRIMARY
 from swecli.ui_textual.utils.tool_display import build_tool_call_text
 from swecli.models.message import ToolCall
 
@@ -106,7 +106,7 @@ class TextualUICallback:
             # Fallback to direct calls if SpinnerService not available
             from rich.text import Text
 
-            display_text = Text(message, style="white")
+            display_text = Text(message, style=PRIMARY)
             if hasattr(self.conversation, 'add_tool_call') and self._app is not None:
                 self._app.call_from_thread(self.conversation.add_tool_call, display_text)
             if hasattr(self.conversation, 'start_tool_execution') and self._app is not None:
@@ -128,7 +128,7 @@ class TextualUICallback:
             # Fallback to direct calls if SpinnerService not available
             from rich.text import Text
 
-            display_text = Text(message, style="white")
+            display_text = Text(message, style=PRIMARY)
             if hasattr(self.conversation, 'update_progress_text'):
                 self._run_on_ui(self.conversation.update_progress_text, display_text)
 

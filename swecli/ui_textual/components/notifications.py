@@ -10,6 +10,8 @@ from typing import Deque, List, Sequence, Union
 from rich.console import Console
 from rich.table import Table
 
+from swecli.ui_textual import style_tokens
+
 
 @dataclass
 class Notification:
@@ -50,13 +52,13 @@ class NotificationCenter:
     def render(self, limit: Union[int, None] = None) -> None:
         """Render the notification table to the console."""
         if not self._items:
-            self.console.print("[dim]No notifications yet.[/dim]")
+            self.console.print(f"[{style_tokens.SUBTLE}]No notifications yet.[/{style_tokens.SUBTLE}]")
             return
 
         rows: Sequence[Notification] = self._items if limit is None else list(self._items)[:limit]
 
-        table = Table(title="Notification Center", header_style="bold cyan")
-        table.add_column("Time", style="dim", width=9)
+        table = Table(title="Notification Center", header_style=f"bold {style_tokens.ACCENT}")
+        table.add_column("Time", style=style_tokens.SUBTLE, width=9)
         table.add_column("Level", style="magenta", width=8)
         table.add_column("Message", overflow="fold")
 

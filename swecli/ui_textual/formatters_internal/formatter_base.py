@@ -7,25 +7,9 @@ from rich.console import Console
 from rich.panel import Panel
 
 
-# Tool icons
-TOOL_ICONS = {
-    "write_file": "📝",
-    "edit_file": "✏️",
-    "read_file": "📖",
-    "list_directory": "📁",
-    "delete_file": "🗑️",
-    "bash_execute": "⚡",
-    "git_commit": "💾",
-    "git_branch": "🌿",
-}
+from rich.panel import Panel
 
-# Status icons
-STATUS_ICONS = {
-    "success": "✓",
-    "error": "✗",
-    "warning": "⚠",
-    "info": "ℹ",
-}
+from swecli.ui_textual.style_tokens import STATUS_ICONS, TOOL_ICONS
 
 # Action hints displayed in tool result panels
 ACTION_HINTS = "r rerun • e export • y copy"

@@ -15,6 +15,7 @@ except ImportError:
     PYNPUT_AVAILABLE = False
 
 from swecli.core.runtime.monitoring import TaskMonitor
+from swecli.ui_textual import style_tokens
 from swecli.ui_textual.formatters_internal.markdown_formatter import markdown_to_plain_text
 
 
@@ -119,12 +120,12 @@ class TaskProgressDisplay:
 
         # Animated spinner using Braille dots
         spinner_char = self.SPINNER_FRAMES[self._frame_index % len(self.SPINNER_FRAMES)]
-        text.append(f"{spinner_char} ", style="dim")
+        text.append(f"{spinner_char} ", style=style_tokens.SUBTLE)
         self._frame_index += 1  # Advance to next frame
 
         # Task description
         task_desc = self.task_monitor.get_task_description()
-        text.append(f"{task_desc}… ", style="dim")
+        text.append(f"{task_desc}… ", style=style_tokens.SUBTLE)
 
         # Build info section: (esc to interrupt · XXs · ↓/↑ XXk tokens)
         info_parts = []
@@ -145,7 +146,7 @@ class TaskProgressDisplay:
         # Combine info parts
         if info_parts:
             info_str = " · ".join(info_parts)
-            text.append(f"({info_str})", style="dim yellow")
+            text.append(f"({info_str})", style=f"{style_tokens.SUBTLE} yellow")
 
         return text
 
@@ -184,10 +185,10 @@ class TaskProgressDisplay:
                 lines = [symbol]
             message = "\n".join(lines)
             self.console.print(Text(message))
-            status_line = Text(f"{symbol} {', '.join(info_parts)}", style="dim")
+            status_line = Text(f"{symbol} {', '.join(info_parts)}", style=style_tokens.SUBTLE)
             self.console.print(status_line)
         else:
             message_text = stats["task_description"] or status
-            status_msg = Text(f"{symbol} {message_text}", style="dim")
-            status_msg.append(f" ({', '.join(info_parts)})", style="dim")
+            status_msg = Text(f"{symbol} {message_text}", style=style_tokens.SUBTLE)
+            status_msg.append(f" ({', '.join(info_parts)})", style=style_tokens.SUBTLE)
             self.console.print(status_msg)

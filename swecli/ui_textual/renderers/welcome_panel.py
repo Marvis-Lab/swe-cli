@@ -12,6 +12,7 @@ from rich.text import Text
 
 from swecli.core.runtime import OperationMode
 from swecli.ui_textual.components import WelcomeMessage
+from swecli.ui_textual.style_tokens import BLUE_BRIGHT, SUBTLE, GREEN_BRIGHT, PRIMARY, CYAN
 
 
 def render_welcome_panel(
@@ -38,19 +39,19 @@ def render_welcome_panel(
             conversation.write(Text.from_ansi(line))
 
     else:
-        heading = Text("SWE-CLI (Preview)", style="bold bright_cyan")
-        subheading = Text("Textual POC interface", style="dim")
+        heading = Text("SWE-CLI (Preview)", style=f"bold {BLUE_BRIGHT}")
+        subheading = Text("Textual POC interface", style=SUBTLE)
         body = Text(
             "Use this playground to explore the upcoming Textual UI.\n"
             "Core flows are stubbed; use /help, /demo, or /scroll to interact."
         )
 
         shortcuts = Text()
-        shortcuts.append("Enter", style="bold green")
+        shortcuts.append("Enter", style=f"bold {GREEN_BRIGHT}")
         shortcuts.append(" send   •   ")
-        shortcuts.append("Shift+Enter", style="bold green")
+        shortcuts.append("Shift+Enter", style=f"bold {GREEN_BRIGHT}")
         shortcuts.append(" new line   •   ")
-        shortcuts.append("/help", style="bold cyan")
+        shortcuts.append("/help", style=f"bold {CYAN}")
         shortcuts.append(" commands")
 
         content = Text.assemble(
@@ -65,7 +66,7 @@ def render_welcome_panel(
 
         panel = Panel(
             Align.center(content, vertical="middle"),
-            border_style="bright_cyan",
+            border_style=BLUE_BRIGHT,
             padding=(1, 3),
             title="Welcome",
             subtitle="swecli",

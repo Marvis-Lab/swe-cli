@@ -5,9 +5,9 @@ from typing import Any, Dict, Optional
 from rich.panel import Panel
 from rich.tree import Tree
 
-from swecli.ui_textual.style_tokens import ERROR
+from swecli.ui_textual.style_tokens import ERROR, SUBTLE, GREEN_BRIGHT, STATUS_ICONS
 
-from .formatter_base import BaseFormatter, STATUS_ICONS
+from .formatter_base import BaseFormatter
 
 
 class DirectoryFormatter(BaseFormatter):
@@ -35,13 +35,13 @@ class DirectoryFormatter(BaseFormatter):
                 tree.add(f"📄 {item}")
 
         if len(files) > 20:
-            tree.add(f"[dim]... ({len(files) - 20} more items)[/dim]")
+            tree.add(f"[{SUBTLE}]... ({len(files) - 20} more items)[/{SUBTLE}]")
 
         return Panel(
             tree,
             title=STATUS_ICONS["success"],
             title_align="left",
-            border_style="green",
+            border_style=GREEN_BRIGHT,
         )
 
     def _create_fallback_display(
@@ -69,7 +69,7 @@ class DirectoryFormatter(BaseFormatter):
             "\n".join(lines),
             title=status_icon,
             title_align="left",
-            border_style="green",
+            border_style=GREEN_BRIGHT,
         )
 
     def format_list_directory(
@@ -84,7 +84,7 @@ class DirectoryFormatter(BaseFormatter):
 
         if not result.get("success"):
             error = result.get("error", "Unknown error")
-            content_text = f"{status_icon} [bold]{directory}[/bold]\n[red]{error}[/red]"
+            content_text = f"{status_icon} [bold]{directory}[/bold]\n[{ERROR}]{error}[/{ERROR}]"
             return Panel(content_text, title=status_icon, title_align="left", border_style=ERROR)
 
         output = result.get("output", "")

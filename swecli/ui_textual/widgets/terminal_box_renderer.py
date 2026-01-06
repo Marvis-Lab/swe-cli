@@ -15,6 +15,7 @@ from swecli.ui_textual.style_tokens import (
     GREEN_PROMPT,
     GREY,
     PANEL_BORDER,
+    SUBTLE,
 )
 
 
@@ -242,7 +243,7 @@ class TerminalBoxRenderer:
         separator = Text(f"{indent}    ")
         separator.append("\u2502  ", style=border)
         separator.append(" " * left_pad)
-        separator.append(message, style="dim italic")
+        separator.append(message, style=f"{SUBTLE} italic")
         separator.append(" " * right_pad)
         separator.append(" \u2502", style=border)
 

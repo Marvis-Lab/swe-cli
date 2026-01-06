@@ -7,6 +7,7 @@ from rich.syntax import Syntax
 from rich.text import Text
 
 from .formatter_base import BaseFormatter, STATUS_ICONS
+from swecli.ui_textual.style_tokens import ERROR, SUBTLE, SUCCESS, GREEN_BRIGHT, PANEL_BORDER, PRIMARY
 
 
 class FileFormatter(BaseFormatter):
@@ -44,7 +45,7 @@ class FileFormatter(BaseFormatter):
                 syntax,
                 title=STATUS_ICONS["success"],
                 title_align="left",
-                border_style="green",
+                border_style=GREEN_BRIGHT,
             )
         return None
 
@@ -63,10 +64,10 @@ class FileFormatter(BaseFormatter):
         """
         preview_lines = content.split("\n")[:5]
         for i, line in enumerate(preview_lines, 1):
-            lines.append(f"  [dim]{i:2d} │[/dim] {line[:60]}")
+            lines.append(f"  [{SUBTLE}]{i:2d} │[/{SUBTLE}] {line[:60]}")
 
         if num_lines > 5:
-            lines.append(f"[dim]  ... ({num_lines - 5} more lines)[/dim]")
+            lines.append(f"[{SUBTLE}]  ... ({num_lines - 5} more lines)[/{SUBTLE}]")
 
     def format_write_file(
         self,
@@ -87,12 +88,12 @@ class FileFormatter(BaseFormatter):
             size = len(content)
             num_lines = content.count("\n") + 1 if content else 0
             size_display = self._format_size(size)
-            lines.append(f"[dim]Created • {size_display} • {num_lines} lines[/dim]")
+            lines.append(f"[{SUBTLE}]Created • {size_display} • {num_lines} lines[/{SUBTLE}]")
 
             # Show preview
             if content:
                 lines.append("")
-                lines.append("[dim]Preview:[/dim]")
+                lines.append(f"[{SUBTLE}]Preview:[/{SUBTLE}]")
 
                 # Try syntax-highlighted preview first
                 syntax_panel = self._create_file_preview(content, file_path, num_lines)
@@ -103,9 +104,9 @@ class FileFormatter(BaseFormatter):
                 self._add_plain_preview_lines(lines, content, num_lines)
         else:
             error = result.get("error", "Unknown error")
-            lines.append(f"[red]{error}[/red]")
+            lines.append(f"[{ERROR}]{error}[/{ERROR}]")
 
-        border_style = "green" if result.get("success") else "red"
+        border_style = GREEN_BRIGHT if result.get("success") else ERROR
         return Panel(
             "\n".join(lines),
             title=status_icon,
@@ -125,20 +126,20 @@ class FileFormatter(BaseFormatter):
             Formatted Text object
         """
         if entry_type == "hunk":
-            return Text(f"  {content}\n", style="dim")
+            return Text(f"  {content}\n", style=SUBTLE)
 
         display_no = f"{line_no:>6}" if line_no is not None else "      "
         sanitized = content.replace("\t", "    ")
 
         if entry_type == "add":
-            prefix, style = "+", "green"
+            prefix, style = "+", GREEN_BRIGHT
         elif entry_type == "del":
-            prefix, style = "-", "red"
+            prefix, style = "-", ERROR
         else:
-            prefix, style = " ", "dim"
+            prefix, style = " ", SUBTLE
 
         line_text = Text("  ")
-        line_text.append(display_no, style="dim")
+        line_text.append(display_no, style=SUBTLE)
         line_text.append(" ")
         line_text.append(prefix, style=style)
         line_text.append(" ")
@@ -206,11 +207,11 @@ class FileFormatter(BaseFormatter):
         file_path = tool_args.get("file_path", "unknown")
         success = result.get("success", False)
         status_icon = STATUS_ICONS["success"] if success else STATUS_ICONS["error"]
-        border_style = "green" if success else "red"
+        border_style = GREEN_BRIGHT if success else ERROR
 
         if not success:
             error = result.get("error", "Unknown error")
-            content = f"{status_icon} [bold]{file_path}[/bold]\n[red]{error}[/red]"
+            content = f"{status_icon} [bold]{file_path}[/bold]\n[{ERROR}]{error}[/{ERROR}]"
             return Panel(content, title=status_icon, title_align="left", border_style=border_style)
 
         lines_added = result.get("lines_added", 0) or 0
@@ -225,7 +226,7 @@ class FileFormatter(BaseFormatter):
 
         body = Text()
         body.append(header + "\n", style="bold")
-        body.append(summary + "\n", style="dim")
+        body.append(summary + "\n", style=SUBTLE)
 
         diff_entries: List[Tuple[str, Optional[int], str]] = []
         if diff_text:
@@ -237,7 +238,7 @@ class FileFormatter(BaseFormatter):
                 line_text = self._format_diff_entry(entry_type, line_no, content)
                 body.append(line_text)
         else:
-            body.append("\n[dim](Diff preview unavailable)[/dim]\n")
+            body.append(f"\n[{SUBTLE}](Diff preview unavailable)[/{SUBTLE}]\n")
 
         return Panel(body, title=status_icon, title_align="left", border_style=border_style)
 
@@ -264,23 +265,23 @@ class FileFormatter(BaseFormatter):
             num_lines = output.count("\n") + 1 if output else 0
 
             size_display = self._format_size(size)
-            lines.append(f"[dim]Read • {size_display} • {num_lines} lines[/dim]")
+            lines.append(f"[{SUBTLE}]Read • {size_display} • {num_lines} lines[/{SUBTLE}]")
 
             # Show truncated content
             if len(output) > 500:
                 lines.append("")
-                lines.append(f"[dim](Content too long, showing first 500 chars)[/dim]")
+                lines.append(f"[{SUBTLE}](Content too long, showing first 500 chars)[/{SUBTLE}]")
                 preview = output[:500] + "..."
-                lines.append(f"[dim]{preview}[/dim]")
+                lines.append(f"[{SUBTLE}]{preview}[/{SUBTLE}]")
             else:
                 lines.append("")
-                lines.append(f"[dim]{output}[/dim]")
+                lines.append(f"[{SUBTLE}]{output}[/{SUBTLE}]")
         else:
             error = result.get("error", "Unknown error")
-            lines.append(f"[red]{error}[/red]")
+            lines.append(f"[{ERROR}]{error}[/{ERROR}]")
 
         content_text = "\n".join(lines)
-        border_style = "green" if result.get("success") else "red"
+        border_style = GREEN_BRIGHT if result.get("success") else ERROR
 
         return Panel(
             content_text,

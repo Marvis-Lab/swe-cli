@@ -10,6 +10,8 @@ from rich.console import Console
 from rich.live import Live
 from rich.text import Text
 
+from swecli.ui_textual import style_tokens
+
 
 class Spinner:
     """Animated spinner for prompt_toolkit REPL loading states."""
@@ -52,7 +54,7 @@ class Spinner:
 
             while self._running:
                 frame = self.FRAMES[frame_idx % len(self.FRAMES)]
-                text = Text(f"{frame} {self._message}", style="dim")
+                text = Text(f"{frame} {self._message}", style=style_tokens.SUBTLE)
                 live.update(text)
                 live.refresh()
                 frame_idx += 1
@@ -95,8 +97,8 @@ class FlashingSymbol:
             while self._running:
                 frame = self.FRAMES[frame_idx % len(self.FRAMES)]
                 text = Text()
-                text.append(f"\n{frame} ", style="cyan")
-                text.append(self._tool_call_text, style="cyan")
+                text.append(f"\n{frame} ", style=style_tokens.ACCENT)
+                text.append(self._tool_call_text, style=style_tokens.ACCENT)
                 live.update(text)
                 live.refresh()
                 frame_idx += 1
@@ -143,9 +145,9 @@ class ProgressIndicator:
                 if elapsed >= 2.0:
                     spinner = spinner_frames[frame_idx % len(spinner_frames)]
                     text = Text()
-                    text.append(f"  {self._message} ", style="dim")
-                    text.append(f"({elapsed:.0f}s elapsed)", style="dim yellow")
-                    text.append(f" {spinner}", style="dim")
+                    text.append(f"  {self._message} ", style=style_tokens.SUBTLE)
+                    text.append(f"({elapsed:.0f}s elapsed)", style=f"{style_tokens.SUBTLE} yellow")
+                    text.append(f" {spinner}", style=style_tokens.SUBTLE)
                     live.update(text)
                     live.refresh()
 

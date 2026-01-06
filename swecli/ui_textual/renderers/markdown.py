@@ -8,6 +8,8 @@ from typing import List, Tuple
 from rich.console import RenderableType
 from rich.text import Text
 
+from swecli.ui_textual.style_tokens import SUBTLE, PRIMARY, GREEN_BRIGHT, ACCENT
+
 
 def render_markdown_text_segment(content: str, *, leading: bool = False) -> Tuple[List[RenderableType], bool]:
     """Convert markdown text into Rich renderables.
@@ -77,7 +79,7 @@ def render_markdown_text_segment(content: str, *, leading: bool = False) -> Tupl
             continue
 
         if re.fullmatch(r"^[\-\*_]{3,}$", stripped):
-            hr = Text("─" * 40, style="dim")
+            hr = Text("─" * 40, style=SUBTLE)
             emit(hr, allow_leading=False)
             index += 1
             continue
@@ -99,7 +101,7 @@ def render_markdown_text_segment(content: str, *, leading: bool = False) -> Tupl
             quote_text = " ".join(quote_lines).strip()
             if quote_text:
                 rendered = _render_inline_markdown(quote_text)
-                quote_line = Text("❝ ", style="dim")
+                quote_line = Text("❝ ", style=SUBTLE)
                 rendered.stylize("dim italic")
                 quote_line.append_text(rendered)
                 emit(quote_line, allow_leading=False)
@@ -184,7 +186,7 @@ def _render_inline_markdown(text: str) -> Text:
             elif token.startswith(("*", "_")):
                 result.append(inner, style="italic")
             elif token.startswith("`"):
-                result.append(inner, style="green")
+                result.append(inner, style=GREEN_BRIGHT)
             else:
                 result.append(inner)
             cursor = token_match.end()
@@ -196,9 +198,9 @@ def _render_inline_markdown(text: str) -> Text:
         if match.start() > cursor:
             append_with_style(text[cursor : match.start()])
         label, url = match.group(1), match.group(2)
-        result.append(label, style="bold cyan")
+        result.append(label, style=f"bold {ACCENT}")
         if url:
-            result.append(f" ({url})", style="dim")
+            result.append(f" ({url})", style=SUBTLE)
         cursor = match.end()
 
     if cursor < len(text):

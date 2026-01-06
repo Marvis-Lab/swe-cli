@@ -30,7 +30,7 @@ from typing import Optional
 from rich.text import Text
 
 from swecli.ui_textual import style_tokens
-from swecli.ui_textual.style_tokens import GREY
+from swecli.ui_textual import style_tokens
 
 
 class ResultType(Enum):
@@ -87,7 +87,7 @@ class ToolResultFormatter:
 
         if secondary:
             text.append(f"\n{RESULT_PREFIX}", style=GREY)
-            text.append(secondary, style="dim")
+            text.append(secondary, style=style_tokens.SUBTLE)
         
         return text
     
