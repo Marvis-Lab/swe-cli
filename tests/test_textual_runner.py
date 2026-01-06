@@ -40,7 +40,12 @@ class DummyRepl:
         self.config_manager = config_manager
         self.config = config_manager.get_config()
         self.session_manager = session_manager
-        self.mode_manager = SimpleNamespace(set_mode=lambda mode: None)
+        from swecli.core.runtime import OperationMode
+        self.mode_manager = SimpleNamespace(
+            set_mode=lambda mode: None,
+            current_mode=OperationMode.NORMAL,
+            has_pending_plan=lambda: False,
+        )
         self.approval_manager = SimpleNamespace(chat_app=None, pre_approved_commands=set())
         self.output_formatter = SimpleNamespace(
             format_tool_result=lambda **_: "tool-output"

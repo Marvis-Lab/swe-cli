@@ -47,6 +47,7 @@ from swecli.ui_textual.managers.approval_manager import ChatApprovalManager
 from swecli.ui_textual.chat_app import create_chat_app
 from swecli.ui_textual.constants import TOOL_ERROR_SENTINEL
 from swecli.ui_textual.utils import build_tool_call_text
+from swecli.ui_textual.runner_components import HistoryHydrator, ToolRenderer, ModelConfigManager, CommandRouter
 
 # Approval phrases for plan execution
 PLAN_APPROVAL_PHRASES = {
@@ -70,8 +71,6 @@ class TextualRunner:
         auto_connect_mcp: bool = False,
     ) -> None:
         self.working_dir = Path(working_dir or Path.cwd()).resolve()
-        self._initial_messages: list[ChatMessage] = []
-        self._history_restored = False
 
         if repl is not None:
             self.repl = repl
@@ -105,11 +104,29 @@ class TextualRunner:
                 self.repl.config.enable_bash = True
             self._auto_connect_mcp = auto_connect_mcp and hasattr(self.repl, "mcp_manager")
 
-        self._initial_messages = self._snapshot_session_history()
+        self._history_hydrator = HistoryHydrator(
+            session_manager=self.session_manager,
+            working_dir=self.working_dir,
+        )
+        self._tool_renderer = ToolRenderer(self.working_dir)
+        self._history_hydrator.set_tool_renderer(self._tool_renderer)
+        self._history_hydrator.snapshot_history()
+
+        self.model_config_manager = ModelConfigManager(self.config_manager, self.repl)
+        
+        self.command_router = CommandRouter(
+            self.repl,
+            self.working_dir,
+            callbacks={
+                "enqueue_console_text": self._enqueue_console_text,
+                "start_mcp_connect_thread": self._start_mcp_connect_thread,
+                "refresh_ui_config": self.model_config_manager.refresh_ui_config,
+            }
+        )
 
         # Get model display name and slot summaries from config
         model_display = f"{self.config.model_provider}/{self.config.model}"
-        model_slots = self._build_model_slots()
+        model_slots = self.model_config_manager._build_model_slots()
 
         create_kwargs = {
             "on_message": self.enqueue_message,
@@ -117,17 +134,26 @@ class TextualRunner:
             "model_slots": model_slots,
             "on_cycle_mode": self._cycle_mode,
             "completer": getattr(self.repl, "completer", None),
-            "on_model_selected": self._apply_model_selection,
-            "get_model_config": self._get_model_config_snapshot,
+            "on_model_selected": self.model_config_manager.apply_model_selection,
+            "get_model_config": self.model_config_manager.get_model_config_snapshot,
             "on_interrupt": self._handle_interrupt,
             "working_dir": str(self.working_dir),
             "todo_handler": getattr(self.repl.tool_registry, "todo_handler", None) if hasattr(self.repl, "tool_registry") else None,
         }
         if self._auto_connect_mcp:
-            create_kwargs["on_ready"] = self._start_mcp_connect_thread
+            downstream_on_ready = self._start_mcp_connect_thread
         else:
-            create_kwargs["on_ready"] = self._notify_manual_mcp_connect
-        create_kwargs["on_ready"] = self._wrap_on_ready_callback(create_kwargs.get("on_ready"))
+            downstream_on_ready = self._notify_manual_mcp_connect
+
+        # Create on_ready callback that hydrates history then calls downstream
+        def _on_ready_with_hydration() -> None:
+            self.model_config_manager.set_app(self.app)
+            self.command_router.set_app(self.app)
+            self._history_hydrator.start_async_hydration(self.app)
+            if downstream_on_ready:
+                downstream_on_ready()
+
+        create_kwargs["on_ready"] = _on_ready_with_hydration
 
         try:
             self.app = create_chat_app(**create_kwargs)
@@ -170,468 +196,6 @@ class TextualRunner:
         # Set up queue indicator callback
         self._queue_update_callback: Callable[[int], None] | None = self.app.update_queue_indicator
 
-    def _snapshot_session_history(self) -> list[ChatMessage]:
-        """Capture a copy of existing session messages for later hydration."""
-        manager = getattr(self, "session_manager", None)
-        if manager is None:
-            return []
-        session = manager.get_current_session()
-        if session is None or not session.messages:
-            return []
-        return [message.model_copy(deep=True) for message in session.messages]
-
-    def _wrap_on_ready_callback(
-        self,
-        downstream: Optional[Callable[[], None]],
-    ) -> Callable[[], None]:
-        """Ensure history hydration runs before any existing on_ready hook."""
-
-        def _callback() -> None:
-            # Start async history hydration in background - don't block UI
-            self._start_async_history_hydration()
-            if downstream:
-                downstream()
-
-        return _callback
-
-    def _start_async_history_hydration(self) -> None:
-        """Start hydrating conversation history in background batches."""
-        if self._history_restored or not self._initial_messages:
-            self._history_restored = True
-            return
-
-        # Run hydration in a worker to not block the UI thread
-        import threading
-
-        def hydrate_in_batches():
-            conversation = getattr(self.app, "conversation", None)
-            if conversation is None:
-                self._history_restored = True
-                return
-
-            # Clear and prepare - do this on UI thread
-            self.app.call_from_thread(conversation.clear)
-
-            history = getattr(self.app, "_history", None)
-            record_assistant = getattr(self.app, "record_assistant_message", None)
-
-            # Process messages in batches to keep UI responsive
-            BATCH_SIZE = 5
-            messages = self._initial_messages
-
-            for i in range(0, len(messages), BATCH_SIZE):
-                batch = messages[i:i + BATCH_SIZE]
-
-                # Process batch on UI thread
-                def process_batch(batch_messages=batch):
-                    for message in batch_messages:
-                        content = (message.content or "").strip()
-                        if message.role == Role.USER:
-                            if not content:
-                                continue
-                            conversation.add_user_message(content)
-                            if history is not None and hasattr(history, "record"):
-                                history.record(content)
-                        elif message.role == Role.ASSISTANT:
-                            if content:
-                                conversation.add_assistant_message(content)
-                                if callable(record_assistant):
-                                    record_assistant(content)
-                            if getattr(message, "tool_calls", None):
-                                self._render_stored_tool_calls(conversation, message.tool_calls)
-                            elif not content:
-                                continue
-                        elif message.role == Role.SYSTEM:
-                            if not content:
-                                continue
-                            conversation.add_system_message(content)
-
-                self.app.call_from_thread(process_batch)
-
-                # Small delay between batches to let UI breathe
-                import time
-                time.sleep(0.01)
-
-            self._history_restored = True
-
-        thread = threading.Thread(target=hydrate_in_batches, daemon=True)
-        thread.start()
-
-    def _build_model_slots(self) -> dict[str, tuple[str, str]]:
-        """Prepare formatted model slot information for the footer."""
-
-        def format_model(
-            provider: Optional[str],
-            model_id: Optional[str],
-        ) -> tuple[str, str] | None:
-            if not model_id:
-                return None
-            provider_display = provider.capitalize() if provider else "Unknown"
-            return provider_display, model_id
-
-        config = self.config
-        slots: dict[str, tuple[str, str]] = {}
-
-        normal = format_model(config.model_provider, config.model)
-        if normal:
-            slots["normal"] = normal
-
-        if config.model_thinking and config.model_thinking != config.model:
-            thinking = format_model(
-                config.model_thinking_provider,
-                config.model_thinking,
-            )
-            if thinking:
-                slots["thinking"] = thinking
-
-        if config.model_vlm and config.model_vlm != config.model:
-            vision = format_model(
-                config.model_vlm_provider,
-                config.model_vlm,
-            )
-            if vision:
-                slots["vision"] = vision
-
-        return slots
-
-    def _refresh_ui_config(self) -> None:
-        """Refresh cached config-driven UI indicators after config changes."""
-        # Refresh cached config instance (commands may mutate or reload it)
-        self.config = self.config_manager.get_config()
-        model_display = f"{self.config.model_provider}/{self.config.model}"
-        if hasattr(self.app, "update_primary_model"):
-            self.app.update_primary_model(model_display)
-        if hasattr(self.app, "update_model_slots"):
-            self.app.update_model_slots(self._build_model_slots())
-
-    def _hydrate_conversation_history(self) -> None:
-        """Replay the persisted session transcript into the Textual conversation log."""
-
-        if self._history_restored:
-            return
-
-        if not self._initial_messages:
-            self._history_restored = True
-            return
-
-        conversation = getattr(self.app, "conversation", None)
-        if conversation is None:
-            return
-
-        conversation.clear()
-        history = getattr(self.app, "_history", None)
-        record_assistant = getattr(self.app, "record_assistant_message", None)
-
-        for message in self._initial_messages:
-            content = (message.content or "").strip()
-            if message.role == Role.USER:
-                if not content:
-                    continue
-                conversation.add_user_message(content)
-                if history is not None and hasattr(history, "record"):
-                    history.record(content)
-            elif message.role == Role.ASSISTANT:
-                if content:
-                    conversation.add_assistant_message(content)
-                    if callable(record_assistant):
-                        record_assistant(content)
-                if getattr(message, "tool_calls", None):
-                    self._render_stored_tool_calls(conversation, message.tool_calls)
-                elif not content:
-                    continue
-            elif message.role == Role.SYSTEM:
-                if not content:
-                    continue
-                conversation.add_system_message(content)
-
-        self._history_restored = True
-
-    def _extract_result_lines(self, formatted: str) -> list[str]:
-        """Extract result lines from StyleFormatter output.
-
-        Collects lines starting with ⎿ (stripping the prefix) and all
-        continuation lines that follow.
-        """
-        lines = []
-        in_result = False
-        if not isinstance(formatted, str):
-            return lines
-        for line in formatted.splitlines():
-            stripped = line.strip()
-            if stripped.startswith("⎿"):
-                in_result = True
-                result_text = stripped.lstrip("⎿").strip()
-                if result_text:
-                    lines.append(result_text)
-            elif in_result and stripped:
-                # Continuation line after first ⎿
-                lines.append(stripped)
-        return lines
-
-    def _render_stored_tool_calls(self, conversation, tool_calls: list[Any]) -> None:
-        """Replay historical tool calls using same logic as live display."""
-        if not tool_calls:
-            return
-
-        from swecli.ui_textual.formatters.style_formatter import StyleFormatter
-        formatter = StyleFormatter()
-
-        for tool_call in tool_calls:
-            tool_name = getattr(tool_call, "name", "tool")
-            try:
-                parameters = self._coerce_tool_parameters(getattr(tool_call, "parameters", {}))
-            except Exception:
-                parameters = {}
-            result = getattr(tool_call, "result", None)
-
-            # Resolve paths for display (same as ui_callback._resolve_paths_in_args)
-            display_params = self._resolve_paths_for_display(parameters)
-
-            # Display tool call header (same as on_tool_call)
-            display = build_tool_call_text(tool_name, display_params)
-            conversation.add_tool_call(display)
-            if hasattr(conversation, "stop_tool_execution"):
-                conversation.stop_tool_execution()
-
-            # Handle result using same logic as on_tool_result() in ui_callback.py
-            if isinstance(result, str):
-                result = {"success": True, "output": result}
-
-            # Skip interrupted operations (same as live display - ui_callback.py line 402)
-            if isinstance(result, dict) and result.get("interrupted"):
-                continue
-
-            # Handle spawn_subagent with nested tool calls
-            if tool_name == "spawn_subagent":
-                nested = getattr(tool_call, "nested_tool_calls", [])
-                if nested:
-                    self._render_nested_tool_calls(conversation, nested, formatter)
-                continue
-
-            # Bash commands: use add_bash_output_box (mirrors on_tool_result)
-            if tool_name in ("bash_execute", "run_command", "Bash") and isinstance(result, dict):
-                is_error = not result.get("success", True)
-                command = parameters.get("command", "")
-                working_dir = str(self.working_dir)
-
-                output_parts = []
-                if result.get("stdout"):
-                    output_parts.append(result["stdout"])
-                if result.get("stderr"):
-                    output_parts.append(result["stderr"])
-                combined_output = "\n".join(output_parts).strip()
-                if not combined_output and result.get("output"):
-                    output_value = result["output"].strip()
-                    if output_value not in ("Command executed", "Command execution failed"):
-                        combined_output = output_value
-
-                if hasattr(conversation, "add_bash_output_box"):
-                    conversation.add_bash_output_box(combined_output, is_error, command, working_dir, 0)
-                continue
-
-            # All tools: use StyleFormatter (same as ui_callback.on_tool_result)
-            if isinstance(result, dict):
-                formatted = formatter.format_tool_result(tool_name, parameters, result)
-                lines = self._extract_result_lines(formatted)
-                if lines:
-                    conversation.add_tool_result("\n".join(lines))
-            else:
-                # Fallback for non-dict results
-                fallback_lines = self._format_tool_history_lines(tool_call)
-                if fallback_lines:
-                    conversation.add_tool_result("\n".join(fallback_lines))
-
-    def _render_nested_tool_calls(self, conversation, nested_calls: list[Any], formatter: Any) -> None:
-        """Render nested tool calls using existing conversation log methods."""
-        for nested in nested_calls:
-            tool_name = getattr(nested, "name", "tool")
-            parameters = self._coerce_tool_parameters(getattr(nested, "parameters", {}))
-            result = getattr(nested, "result", None)
-            depth = 1
-
-            # Convert string result to dict
-            if isinstance(result, str):
-                result = {"success": True, "output": result}
-
-            # Skip interrupted operations
-            if isinstance(result, dict) and result.get("interrupted"):
-                continue
-
-            # Resolve paths for display (same as ui_callback._resolve_paths_in_args)
-            display_params = self._resolve_paths_for_display(parameters)
-
-            # Display nested tool call header
-            display = build_tool_call_text(tool_name, display_params)
-            if hasattr(conversation, "add_nested_tool_call"):
-                conversation.add_nested_tool_call(display, depth, "subagent")
-
-            # Display result FIRST, then complete
-            success = result.get("success", True) if isinstance(result, dict) else True
-
-            if tool_name in ("bash_execute", "run_command", "Bash") and isinstance(result, dict):
-                # Bash output box (special rendering)
-                is_error = not result.get("success", True)
-                command = parameters.get("command", "")
-                working_dir = parameters.get("working_dir", str(self.working_dir))
-                output = result.get("stdout", "") or result.get("output", "")
-                if result.get("stderr"):
-                    output = (output + "\n" + result["stderr"]).strip() if output else result["stderr"]
-                if hasattr(conversation, "add_bash_output_box"):
-                    conversation.add_bash_output_box(output.strip(), is_error, command, working_dir, depth)
-            elif isinstance(result, dict):
-                # All tools: use StyleFormatter (same as ui_callback.on_nested_tool_result)
-                formatted = formatter.format_tool_result(tool_name, parameters, result)
-                lines = self._extract_result_lines(formatted)
-                if lines and hasattr(conversation, "add_nested_tool_sub_results"):
-                    conversation.add_nested_tool_sub_results(lines, depth)
-
-            # Complete AFTER result display
-            if hasattr(conversation, "complete_nested_tool_call"):
-                conversation.complete_nested_tool_call(tool_name, depth, "subagent", success)
-
-    @staticmethod
-    def _coerce_tool_parameters(raw: Any) -> dict[str, Any]:
-        if isinstance(raw, dict):
-            return raw
-        return {}
-
-    def _resolve_paths_for_display(self, params: dict) -> dict:
-        """Resolve relative paths to absolute for display (same as ui_callback._resolve_paths_in_args)."""
-        PATH_KEYS = {"path", "file_path", "working_dir", "directory", "dir", "target"}
-        result = dict(params)
-        for key in PATH_KEYS:
-            if key in result and isinstance(result[key], str):
-                path = result[key]
-                # Skip if already absolute or has special prefix (like docker://[...]:)
-                if path.startswith("/") or path.startswith("["):
-                    continue
-                # Resolve relative path
-                if path == "." or path == "":
-                    result[key] = str(self.working_dir)
-                else:
-                    clean_path = path.lstrip("./")
-                    result[key] = str(self.working_dir / clean_path)
-        return result
-
-    def _format_tool_history_lines(self, tool_call: Any) -> list[str]:
-        """Convert stored ToolCall data into RichLog-friendly summary lines."""
-
-        lines: list[str] = []
-        seen: set[str] = set()
-
-        def add_line(value: str) -> None:
-            normalized = value.strip()
-            if not normalized or normalized in seen:
-                return
-            lines.append(normalized)
-            seen.add(normalized)
-
-        error = getattr(tool_call, "error", None)
-        if error:
-            add_line(f"{TOOL_ERROR_SENTINEL} {str(error).strip()}")
-
-        summary = getattr(tool_call, "result_summary", None)
-        if summary:
-            # Use result_summary (matches real-time display from StyleFormatter)
-            add_line(str(summary).strip())
-        else:
-            # Only fall back to truncated raw_result if no summary available
-            raw_result = getattr(tool_call, "result", None)
-            snippet = self._truncate_tool_output(raw_result)
-            if snippet:
-                add_line(snippet)
-
-        if not lines:
-            add_line("✓ Tool completed")
-        return lines
-
-    @staticmethod
-    def _truncate_tool_output(raw_result: Any, max_lines: int = 6, max_chars: int = 400) -> str:
-        """Trim long stored tool outputs for concise replay."""
-
-        if raw_result is None:
-            return ""
-
-        text = str(raw_result).strip()
-        if not text:
-            return ""
-
-        lines = [line.rstrip() for line in text.splitlines()]
-        truncated = False
-        if len(lines) > max_lines:
-            lines = lines[:max_lines]
-            truncated = True
-        snippet = "\n".join(lines)
-        if len(snippet) > max_chars:
-            snippet = snippet[:max_chars].rstrip()
-            truncated = True
-        if truncated:
-            snippet = f"{snippet}\n... (truncated)"
-        return snippet.strip()
-
-    def _get_model_config_snapshot(self) -> dict[str, dict[str, str]]:
-        """Return current model configuration details for the UI."""
-        config = self.config_manager.get_config()
-
-        try:
-            from swecli.config import get_model_registry
-
-            registry = get_model_registry()
-        except Exception:  # pragma: no cover - defensive
-            registry = None
-
-        def resolve(provider_id: Optional[str], model_id: Optional[str]) -> dict[str, str]:
-            if not provider_id or not model_id:
-                return {}
-
-            provider_display = provider_id.capitalize()
-            model_display = model_id
-
-            if registry is not None:
-                provider_info = registry.get_provider(provider_id)
-                if provider_info:
-                    provider_display = provider_info.name
-                found = registry.find_model_by_id(model_id)
-                if found:
-                    _, _, model_info = found
-                    model_display = model_info.name
-            else:
-                if "/" in model_id:
-                    model_display = model_id.split("/")[-1]
-
-            return {
-                "provider": provider_id,
-                "provider_display": provider_display,
-                "model": model_id,
-                "model_display": model_display,
-            }
-
-        snapshot: dict[str, dict[str, str]] = {}
-        snapshot["normal"] = resolve(config.model_provider, config.model)
-
-        thinking_entry = resolve(config.model_thinking_provider, config.model_thinking)
-        if thinking_entry:
-            snapshot["thinking"] = thinking_entry
-
-        vision_entry = resolve(config.model_vlm_provider, config.model_vlm)
-        if vision_entry:
-            snapshot["vision"] = vision_entry
-
-        return snapshot
-
-    async def _apply_model_selection(self, slot: str, provider_id: str, model_id: str):
-        """Apply a model selection coming from the Textual UI."""
-        result = await asyncio.to_thread(
-            self.repl.config_commands._switch_to_model,
-            provider_id,
-            model_id,
-            slot,
-        )
-        if result.success:
-            # Rebuild agents with new config (needed for API key changes)
-            await asyncio.to_thread(self.repl.rebuild_agents)
-            self._refresh_ui_config()
-        return result
 
     def _configure_session(self, resume: Optional[str], continue_session: bool) -> None:
         """Prepare session state mirroring CLI semantics."""
@@ -940,304 +504,11 @@ Work through each implementation step in order. Mark each todo item as 'in_progr
 
     def _run_command(self, command: str) -> None:
         """Execute a slash command and capture console output."""
-
-        stripped = command.strip()
-        lowered = stripped.lower()
-
-        # Background auto-connect trigger
-        if lowered.startswith("/mcp autoconnect"):
-            if self._connect_inflight:
-                self._enqueue_console_text(
-                    "[dim]MCP auto-connect already running...[/dim]"
-                )
-            else:
-                self._enqueue_console_text(
-                    "[cyan]Starting MCP auto-connect in the background...[/cyan]"
-                )
-                self._start_mcp_connect_thread(force=True)
+        if self.command_router.route_command(command):
             return
+        self.command_router.run_generic_command(command)
 
-        # Special handling for /mcp view command - use Textual modal instead of prompt_toolkit
-        if lowered.startswith("/mcp view "):
-            self._handle_mcp_view_command(command)
-            return
 
-        # Special handling for /mcp connect - use Textual spinner
-        if lowered.startswith("/mcp connect "):
-            self._handle_mcp_connect_command(command)
-            return
-
-        # Special handling for /resolve-issue - use TextualUICallback for proper display
-        if lowered.startswith("/resolve-issue"):
-            self._handle_resolve_issue_command(command)
-            return
-
-        # Special handling for /paper2code - use TextualUICallback for proper display
-        if lowered.startswith("/paper2code"):
-            self._handle_paper2code_command(command)
-            return
-
-        with self.repl.console.capture() as capture:
-            self.repl._handle_command(command)
-        output = capture.get()
-        if output.strip():
-            self._enqueue_console_text(output)
-        self._refresh_ui_config()
-
-    def _handle_mcp_view_command(self, command: str) -> None:
-        """Handle /mcp view command with Textual-native modal.
-
-        Args:
-            command: The full command (e.g., "/mcp view server_name")
-        """
-        import shlex
-        from io import StringIO
-        from rich.console import Console as RichConsole
-
-        def _emit_error(message: str) -> None:
-            """Render a Rich-styled error message into the conversation."""
-            string_io = StringIO()
-            temp_console = RichConsole(file=string_io, force_terminal=True)
-            temp_console.print(message)
-            self._enqueue_console_text(string_io.getvalue())
-
-        try:
-            raw_parts = shlex.split(command)
-        except ValueError:
-            raw_parts = command.strip().split()
-
-        if len(raw_parts) < 3:
-            _emit_error("[red]Error: Server name required for /mcp view[/red]")
-            return
-
-        server_name = " ".join(raw_parts[2:]).strip()
-        if not server_name:
-            _emit_error("[red]Error: Server name required for /mcp view[/red]")
-            return
-
-        mcp_manager = getattr(self.repl, "mcp_manager", None)
-        if mcp_manager is None:
-            _emit_error("[red]Error: MCP manager is not available in this session[/red]")
-            return
-
-        try:
-            servers = mcp_manager.list_servers()
-        except Exception as exc:  # pragma: no cover - defensive
-            _emit_error(f"[red]Error: Unable to load MCP servers ({exc})[/red]")
-            return
-
-        if server_name not in servers:
-            _emit_error(f"[red]Error: Server '{server_name}' not found in configuration[/red]")
-            return
-
-        server_config = servers[server_name]
-        is_connected = mcp_manager.is_connected(server_name)
-        tools = mcp_manager.get_server_tools(server_name) if is_connected else []
-
-        # Build elegant panel content for the conversation log
-        from rich import box
-        from rich.panel import Panel
-        from rich.table import Table
-        from rich.text import Text
-
-        info_table = Table(show_header=False, box=None, padding=(0, 1))
-        info_table.add_column("Property", style="cyan", no_wrap=True)
-        info_table.add_column("Value")
-
-        status_text = (
-            Text("Connected", style="bold green")
-            if is_connected
-            else Text("Disconnected", style="dim")
-        )
-        info_table.add_row("Status", status_text)
-
-        cmd_text = server_config.command or "unknown"
-        info_table.add_row("Command", cmd_text)
-
-        if server_config.args:
-            args_text = " ".join(server_config.args)
-            if len(args_text) > 80:
-                args_text = args_text[:77] + "..."
-            info_table.add_row("Args", args_text)
-
-        transport_text = server_config.transport or "stdio"
-        info_table.add_row("Transport", transport_text)
-
-        from swecli.core.context_engineering.mcp.config import get_config_path, get_project_config_path
-
-        config_location = ""
-        try:
-            project_config = get_project_config_path(getattr(mcp_manager, "working_dir", None))
-        except Exception:
-            project_config = None
-
-        if project_config:
-            config_location = f"{project_config} [project]"
-        else:
-            try:
-                config_location = str(get_config_path())
-            except Exception:
-                config_location = "Unknown"
-
-        info_table.add_row("Config", Text(config_location, style="dim"))
-
-        capabilities: list[str] = []
-        if is_connected and tools:
-            capabilities.append("tools")
-        if capabilities:
-            info_table.add_row("Capabilities", " · ".join(capabilities))
-
-        enabled_text = (
-            Text("Yes", style="green")
-            if server_config.enabled
-            else Text("No", style=ERROR)
-        )
-        info_table.add_row("Enabled", enabled_text)
-
-        auto_start_text = (
-            Text("Yes", style="green")
-            if server_config.auto_start
-            else Text("No", style="dim")
-        )
-        info_table.add_row("Auto-start", auto_start_text)
-
-        if server_config.env:
-            env_lines = "\n".join(f"{key}={value}" for key, value in server_config.env.items())
-            info_table.add_row("Environment", env_lines)
-
-        if is_connected:
-            info_table.add_row("Tools", f"{len(tools)} available")
-
-        tools_content = None
-        if is_connected and tools:
-            tools_table = Table(show_header=True, box=box.SIMPLE, padding=(0, 1))
-            tools_table.add_column("Tool Name", style="cyan")
-            tools_table.add_column("Description", style="white")
-
-            for tool in tools[:10]:
-                tool_name = tool.get("name", "unknown")
-                tool_desc = tool.get("description", "")
-                if len(tool_desc) > 60:
-                    tool_desc = tool_desc[:57] + "..."
-                tools_table.add_row(tool_name, tool_desc)
-
-            if len(tools) > 10:
-                tools_table.add_row(f"... and {len(tools) - 10} more", "", style="dim")
-
-            tools_content = tools_table
-
-        title = f"MCP Server: {server_name}"
-        main_panel = Panel(
-            info_table,
-            title=title,
-            title_align="left",
-            border_style="bright_cyan",
-            box=box.ROUNDED,
-            padding=(1, 2),
-        )
-
-        self._enqueue_console_text("\n")
-
-        string_io = StringIO()
-        temp_console = RichConsole(file=string_io, force_terminal=True, width=100)
-        temp_console.print(main_panel)
-
-        if tools_content:
-            temp_console.print("\n")
-            tools_panel = Panel(
-                tools_content,
-                title="Available Tools",
-                title_align="left",
-                border_style="green",
-                box=box.ROUNDED,
-                padding=(1, 2),
-            )
-            temp_console.print(tools_panel)
-
-        temp_console.print("\n[dim]Available actions:[/dim]")
-        if is_connected:
-            temp_console.print(f"  [cyan]/mcp disconnect {server_name}[/cyan] - Disconnect from server")
-            temp_console.print(f"  [cyan]/mcp tools {server_name}[/cyan] - List all tools")
-        else:
-            temp_console.print(f"  [cyan]/mcp connect {server_name}[/cyan] - Connect to server")
-
-        if server_config.enabled:
-            temp_console.print(f"  [cyan]/mcp disable {server_name}[/cyan] - Disable auto-start")
-        else:
-            temp_console.print(f"  [cyan]/mcp enable {server_name}[/cyan] - Enable auto-start")
-
-        output = string_io.getvalue()
-        self._enqueue_console_text(output)
-
-    def _handle_mcp_connect_command(self, command: str) -> None:
-        """Handle /mcp connect with Textual spinner.
-
-        Args:
-            command: The full command (e.g., "/mcp connect github")
-        """
-        from swecli.ui_textual.controllers.mcp_command_controller import MCPCommandController
-
-        controller = MCPCommandController(self.app, self.repl)
-        controller.handle_connect(command)
-
-    def _handle_resolve_issue_command(self, command: str) -> None:
-        """Handle /resolve-issue command with TextualUICallback for proper display.
-
-        Args:
-            command: The full command (e.g., "/resolve-issue https://github.com/owner/repo/issues/123")
-        """
-        from io import StringIO
-        from rich.console import Console as RichConsole
-
-        # Create UI callback for real-time tool display
-        conversation_widget = None
-        try:
-            from swecli.ui_textual.chat_app import ConversationLog
-            conversation_widget = self.app.query_one("#conversation", ConversationLog)
-        except Exception:
-            if hasattr(self.app, 'conversation') and self.app.conversation is not None:
-                conversation_widget = self.app.conversation
-
-        ui_callback = None
-        if conversation_widget is not None:
-            from swecli.ui_textual.ui_callback import TextualUICallback
-            ui_callback = TextualUICallback(conversation_widget, self.app, self.working_dir)
-
-        # Capture any console output during execution
-        with self.repl.console.capture() as capture:
-            self.repl.tool_commands.resolve_issue(command, ui_callback=ui_callback)
-
-        output = capture.get()
-        if output.strip():
-            self._enqueue_console_text(output)
-
-    def _handle_paper2code_command(self, command: str) -> None:
-        """Handle /paper2code command with TextualUICallback for proper display.
-
-        Args:
-            command: The full command (e.g., "/paper2code path/to/paper.pdf")
-        """
-        # Create UI callback for real-time tool display
-        conversation_widget = None
-        try:
-            from swecli.ui_textual.chat_app import ConversationLog
-            conversation_widget = self.app.query_one("#conversation", ConversationLog)
-        except Exception:
-            if hasattr(self.app, 'conversation') and self.app.conversation is not None:
-                conversation_widget = self.app.conversation
-
-        ui_callback = None
-        if conversation_widget is not None:
-            from swecli.ui_textual.ui_callback import TextualUICallback
-            ui_callback = TextualUICallback(conversation_widget, self.app, self.working_dir)
-
-        # Capture any console output during execution
-        with self.repl.console.capture() as capture:
-            self.repl.tool_commands.paper2code(command, ui_callback=ui_callback)
-
-        output = capture.get()
-        if output.strip():
-            self._enqueue_console_text(output)
 
     def _handle_interrupt(self) -> bool:
         """Handle interrupt request from UI (ESC key press).
