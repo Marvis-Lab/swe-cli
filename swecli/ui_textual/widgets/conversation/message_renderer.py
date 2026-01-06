@@ -35,6 +35,12 @@ class DefaultMessageRenderer:
         if normalized and normalized == self._last_assistant_rendered:
             return
 
+        # Add blank line before message if previous line has content (for spacing)
+        if self.log.lines and hasattr(self.log.lines[-1], 'plain'):
+            last_plain = self.log.lines[-1].plain.strip() if self.log.lines[-1].plain else ""
+            if last_plain:
+                self.log.write(Text(""))
+
         self._last_assistant_rendered = normalized
         segments = self._split_code_blocks(message)
         text_output = False
