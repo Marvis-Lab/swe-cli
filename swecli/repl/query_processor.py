@@ -108,6 +108,17 @@ class QueryProcessor:
             config=config,
             console=console,
         )
+        
+        from swecli.repl.llm_caller import LLMCaller
+        self._llm_caller = LLMCaller(console=console)
+        
+        from swecli.repl.tool_executor import ToolExecutor
+        self._tool_executor = ToolExecutor(
+            console=console,
+            output_formatter=output_formatter,
+            mode_manager=mode_manager,
+            session_manager=session_manager,
+        )
 
     def set_notification_center(self, notification_center):
         """Set notification center for status line rendering.
@@ -130,16 +141,23 @@ class QueryProcessor:
 
     def _init_ace_components(self, agent):
         """Initialize ACE components lazily on first use.
+        
+        Safe to call multiple times - idempotent and handles errors gracefully.
 
         Args:
             agent: Agent with LLM client
         """
         if self._ace_reflector is None:
-            # Initialize ACE roles with native implementation
-            # The native components use swecli's LLM client directly
-            self._ace_reflector = Reflector(agent.client)
+            try:
+                # Initialize ACE roles with native implementation
+                # The native components use swecli's LLM client directly
+                self._ace_reflector = Reflector(agent.client)
+                self._ace_curator = Curator(agent.client)
+            except Exception:  # pragma: no cover
+                # ACE initialization failed - leave components as None
+                # record_tool_learnings will safely handle None components
+                pass
 
-            self._ace_curator = Curator(agent.client)
 
     def enhance_query(self, query: str) -> str:
         """Enhance query with file contents if referenced.
@@ -171,6 +189,8 @@ class QueryProcessor:
 
     def _call_llm_with_progress(self, agent, messages, task_monitor) -> tuple:
         """Call LLM with progress display.
+        
+        Delegates to LLMCaller for improved error handling and logging.
 
         Args:
             agent: Agent to use
@@ -180,41 +200,11 @@ class QueryProcessor:
         Returns:
             Tuple of (response, latency_ms)
         """
-        from swecli.ui_textual.components.task_progress import TaskProgressDisplay
-        import time
-
-        # Get random thinking verb from consolidated LLMCaller
-        from swecli.repl.llm_caller import LLMCaller
-        thinking_verb = random.choice(LLMCaller.THINKING_VERBS)
-        task_monitor.start(thinking_verb, initial_tokens=0)
-
         # Track current monitor for interrupt support
         self._current_task_monitor = task_monitor
-
-        # Create progress display with live updates
-        progress = TaskProgressDisplay(self.console, task_monitor)
-        progress.start()
-
-        # Give display a moment to render before HTTP call
-        time.sleep(0.05)
-
         try:
-            # Call LLM
-            started = time.perf_counter()
-            response = agent.call_llm(messages, task_monitor=task_monitor)
-            latency_ms = int((time.perf_counter() - started) * 1000)
-
-            # Get LLM description
-            message_payload = response.get("message", {}) or {}
-            llm_description = response.get("content", message_payload.get("content", ""))
-
-            # Stop progress and show final status
-            progress.stop()
-            progress.print_final_status(replacement_message=llm_description)
-
-            return response, latency_ms
+            return self._llm_caller.call_llm_with_progress(agent, messages, task_monitor)
         finally:
-            # Clear current monitor
             self._current_task_monitor = None
 
     def _record_tool_learnings(
@@ -225,11 +215,9 @@ class QueryProcessor:
         agent,
     ) -> None:
         """Use ACE Reflector and Curator to evolve playbook from tool execution.
-
-        This implements the full ACE workflow:
-        1. Reflector analyzes what happened (LLM-powered)
-        2. Curator decides playbook changes (delta operations)
-        3. Apply deltas to evolve playbook
+        
+        Delegates to ToolExecutor. ToolExecutor.record_tool_learnings has
+        proper error handling, so we don't need additional try-except here.
 
         Args:
             query: User's query
@@ -237,90 +225,24 @@ class QueryProcessor:
             outcome: "success", "error", or "partial"
             agent: Agent with LLM client (for ACE initialization)
         """
-        session = self.session_manager.current_session
-        if not session:
-            return
+        # Initialize ACE components (safe - handles errors internally)
+        self._init_ace_components(agent)
+        
+        # Set ACE components on ToolExecutor (may be None if init failed)
+        self._tool_executor.set_ace_components(self._ace_reflector, self._ace_curator)
+        
+        # Set last agent response
+        if self._last_agent_response:
+            self._tool_executor.set_last_agent_response(str(self._last_agent_response))
+        
+        # Delegate to ToolExecutor (has internal error handling)
+        self._tool_executor.record_tool_learnings(query, tool_call_objects, outcome, agent)
 
-        tool_calls = list(tool_call_objects)
-        if not tool_calls:
-            return
-
-        # Skip if no agent response (ACE workflow needs it)
-        if not self._last_agent_response:
-            return
-
-        try:
-            # Initialize ACE components if needed
-            self._init_ace_components(agent)
-
-            playbook = session.get_playbook()
-
-            # Format tool feedback for reflector
-            feedback = self._format_tool_feedback(tool_calls, outcome)
-
-            # STEP 1: Reflect on execution using ACE Reflector
-            reflection = self._ace_reflector.reflect(
-                question=query,
-                agent_response=self._last_agent_response,
-                playbook=playbook,
-                ground_truth=None,
-                feedback=feedback
-            )
-
-            # STEP 2: Apply bullet tags from reflection
-            for bullet_tag in reflection.bullet_tags:
-                try:
-                    playbook.tag_bullet(bullet_tag.id, bullet_tag.tag)
-                except (ValueError, KeyError):
-                    continue
-
-            # STEP 3: Curate playbook updates using ACE Curator
-            self._execution_count += 1
-            curator_output = self._ace_curator.curate(
-                reflection=reflection,
-                playbook=playbook,
-                question_context=query,
-                progress=f"Query #{self._execution_count}"
-            )
-
-            # STEP 4: Apply delta operations
-            bullets_before = len(playbook.bullets())
-            playbook.apply_delta(curator_output.delta)
-            bullets_after = len(playbook.bullets())
-
-            # Save updated playbook
-            session.update_playbook(playbook)
-
-            # Debug logging
-            if bullets_after != bullets_before or curator_output.delta.operations:
-                debug_dir = os.path.dirname(self.PLAYBOOK_DEBUG_PATH)
-                os.makedirs(debug_dir, exist_ok=True)
-                with open(self.PLAYBOOK_DEBUG_PATH, "a", encoding="utf-8") as log:
-                    timestamp = datetime.now().isoformat()
-                    log.write(f"\n{'=' * 60}\n")
-                    log.write(f"🧠 ACE PLAYBOOK EVOLUTION - {timestamp}\n")
-                    log.write(f"{'=' * 60}\n")
-                    log.write(f"Query: {query}\n")
-                    log.write(f"Outcome: {outcome}\n")
-                    log.write(f"Bullets: {bullets_before} -> {bullets_after}\n")
-                    log.write(f"Delta Operations: {len(curator_output.delta.operations)}\n")
-                    for op in curator_output.delta.operations:
-                        log.write(f"  - {op.type}: {op.section} - {op.content[:80] if op.content else op.bullet_id}\n")
-                    log.write(f"Reflection Key Insight: {reflection.key_insight}\n")
-                    log.write(f"Curator Reasoning: {curator_output.delta.reasoning[:200]}\n")
-
-        except Exception as e:  # pragma: no cover
-            # Log error but don't break query processing
-            import traceback
-            debug_dir = os.path.dirname(self.PLAYBOOK_DEBUG_PATH)
-            os.makedirs(debug_dir, exist_ok=True)
-            with open(self.PLAYBOOK_DEBUG_PATH, "a", encoding="utf-8") as log:
-                log.write(f"\n{'!' * 60}\n")
-                log.write(f"❌ ACE ERROR: {str(e)}\n")
-                log.write(traceback.format_exc())
 
     def _format_tool_feedback(self, tool_calls: list, outcome: str) -> str:
         """Format tool execution results as feedback string for ACE Reflector.
+        
+        Delegates to ToolExecutor.
 
         Args:
             tool_calls: List of ToolCall objects with results
@@ -329,25 +251,8 @@ class QueryProcessor:
         Returns:
             Formatted feedback string
         """
-        lines = [f"Outcome: {outcome}"]
-        lines.append(f"Tools executed: {len(tool_calls)}")
+        return self._tool_executor._format_tool_feedback(tool_calls, outcome)
 
-        if outcome == "success":
-            lines.append("All tools completed successfully")
-            # Add brief summary of what was done
-            tool_names = [tc.name for tc in tool_calls]
-            lines.append(f"Tools: {', '.join(tool_names)}")
-        elif outcome == "error":
-            # List errors
-            errors = [f"{tc.name}: {tc.error}" for tc in tool_calls if tc.error]
-            lines.append(f"Errors ({len(errors)}):")
-            for error in errors[:3]:  # First 3 errors
-                lines.append(f"  - {error[:200]}")
-        else:  # partial
-            successes = sum(1 for tc in tool_calls if not tc.error)
-            lines.append(f"Partial success: {successes}/{len(tool_calls)} tools succeeded")
-
-        return "\n".join(lines)
 
     def _execute_tool_call(
         self,
