@@ -23,6 +23,7 @@ from swecli.ui_textual.widgets.terminal_box_renderer import (
     TerminalBoxConfig,
     TerminalBoxRenderer,
 )
+from swecli.ui_textual.widgets.conversation.spinner_manager import DefaultSpinnerManager
 
 
 class ConversationLog(RichLog):
@@ -42,12 +43,12 @@ class ConversationLog(RichLog):
         )
         self._user_scrolled = False
         self._last_assistant_rendered: str | None = None
-        self._spinner_start: int | None = None
-        self._spinner_line_count = 0
-        self._tool_spinner_timer: Timer | None = None
+        self._spinner_manager = DefaultSpinnerManager(self, None)
         self._tool_display: Text | None = None
+        self._tool_spinner_timer: Timer | None = None
         self._spinner_active = False
         self._spinner_chars = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+        
         self._nested_spinner_char = "⏺"  # Single character for nested/subagent tools
         # Ultra-smooth color gradient: 24 steps for slow breathing effect
         self._nested_color_gradient = [
@@ -65,7 +66,7 @@ class ConversationLog(RichLog):
         self._approval_start: int | None = None
         self._tool_timer_start: float | None = None
         self._tool_last_elapsed: int | None = None
-        self._debug_enabled = True  # Enable debug messages by default
+        self._debug_enabled = False  # Enable debug messages by default
         self._protected_lines: set[int] = set()  # Lines that should not be truncated
         self.MAX_PROTECTED_LINES = 200
         # Nested tool call pulsing animation state
@@ -105,6 +106,18 @@ class ConversationLog(RichLog):
         self._tool_thread_timer: threading.Timer | None = None
         self._nested_tool_thread_timer: threading.Timer | None = None
 
+    def call_from_thread(self, callback: Any, *args: Any, **kwargs: Any) -> None:
+        """Forward call_from_thread to the app."""
+        if self.app:
+            self.app.call_from_thread(callback, *args, **kwargs)
+
+    def refresh_line(self, y: int) -> None:
+        """Refresh a specific line by invalidating cache and repainting."""
+        # Aggressively clear cache to ensure spinner animation updates
+        if hasattr(self, '_line_cache'):
+            self._line_cache.clear()
+        self.refresh()
+
     def write(self, content, *args, **kwargs) -> None:
         """Override write to track content state for spacing logic."""
         super().write(content, *args, **kwargs)
@@ -115,18 +128,18 @@ class ConversationLog(RichLog):
             self._last_line_has_content = bool(str(content).strip())
 
     def on_mount(self) -> None:
+        if self.app:
+            self._spinner_manager.app = self.app
         return
 
     def on_unmount(self) -> None:
         if self._tool_spinner_timer is not None:
             self._tool_spinner_timer.stop()
             self._tool_spinner_timer = None
-        if self._thinking_spinner_timer is not None:
-            self._thinking_spinner_timer.stop()
-            self._thinking_spinner_timer = None
-        if self._pending_stop_timer is not None:
-            self._pending_stop_timer.stop()
-            self._pending_stop_timer = None
+            self._tool_spinner_timer = None
+        
+        self._spinner_manager.cleanup()
+        
         if self._thinking_thread_timer is not None:
             self._thinking_thread_timer.cancel()
             self._thinking_thread_timer = None
@@ -163,6 +176,18 @@ class ConversationLog(RichLog):
             to_remove = len(self._protected_lines) - self.MAX_PROTECTED_LINES
             for idx in sorted_lines[:to_remove]:
                 self._protected_lines.discard(idx)
+
+    def _cleanup_protected_lines(self) -> None:
+        """Remove protected lines that are out of bounds."""
+        if not self._protected_lines:
+            return
+        
+        # Filter out indices larger than current line count
+        max_idx = len(self.lines) - 1
+        valid_lines = {idx for idx in self._protected_lines if idx <= max_idx}
+        
+        if len(valid_lines) != len(self._protected_lines):
+            self._protected_lines = valid_lines
 
     async def on_key(self, event) -> None:
         """Handle key events, delegating to overlays if active, else scrolling."""
@@ -1127,327 +1152,6 @@ class ConversationLog(RichLog):
             with open(self._SPINNER_LOG_FILE, "a") as f:
                 f.write(f"[{t.time():.3f}] {msg}\n")
 
-    def start_spinner(self, message: Text | str) -> None:
-        """Append spinner output at the end of the log and start animation."""
-        self._spinner_log(f"start_spinner called, active={self._thinking_spinner_active}")
-
-        # Cancel any pending stop - we're (re)starting
-        if self._pending_stop_timer is not None:
-            self._spinner_log("Canceling pending stop")
-            self._pending_stop_timer.stop()
-            self._pending_stop_timer = None
-
-        # If already active, just update the message
-        if self._thinking_spinner_active and self._spinner_start is not None:
-            self._spinner_log("Already active, calling update_spinner")
-            self.update_spinner(message)
-            return
-
-        # Add blank line before spinner if previous line has content
-        if self.lines and hasattr(self.lines[-1], 'plain'):
-            last_plain = self.lines[-1].plain.strip() if self.lines[-1].plain else ""
-            if last_plain:
-                self.write(Text(""))
-        self._spinner_start = len(self.lines)
-
-        # Extract message and tip from Text object
-        # SpinnerController now sends just "Message\n  ⎿  Tip: tip text"
-        if isinstance(message, Text):
-            plain = message.plain
-            # Extract tip if present (after newline with "  ⎿  Tip: ")
-            if "\n" in plain:
-                parts = plain.split("\n", 1)
-                self._thinking_message = parts[0].strip()
-                # Extract tip
-                if len(parts) > 1 and "Tip:" in parts[1]:
-                    tip_match = re.search(r'Tip:\s*(.+)', parts[1])
-                    if tip_match:
-                        self._thinking_tip = tip_match.group(1).strip()
-                    else:
-                        self._thinking_tip = ""
-                else:
-                    self._thinking_tip = ""
-            else:
-                # No tip, just message
-                self._thinking_message = plain.strip()
-                self._thinking_tip = ""
-        else:
-            self._thinking_message = str(message)
-            self._thinking_tip = ""
-
-        # Initialize animation state
-        self._thinking_spinner_active = True
-        self._thinking_spinner_index = 0
-        self._thinking_started_at = time.monotonic()
-        self._last_tick_time = self._thinking_started_at  # Prevent tick_spinner from immediately advancing
-
-        self._spinner_log(f"Initialized: msg='{self._thinking_message}', tip='{self._thinking_tip[:20] if self._thinking_tip else ''}'")
-
-        # Render initial frame
-        self._render_thinking_spinner_frame()
-
-        # Start animation timer (widget-level timer for reliable animation)
-        self._schedule_thinking_spinner()
-        self._spinner_log("start_spinner complete")
-
-    def update_spinner(self, message: Text | str) -> None:
-        """Update spinner message without restarting animation."""
-        if self._spinner_start is None:
-            self.start_spinner(message)
-            return
-
-        # Extract updated message/tip (SpinnerController sends "Message\n  ⎿  Tip: ...")
-        if isinstance(message, Text):
-            plain = message.plain
-            if "\n" in plain:
-                parts = plain.split("\n", 1)
-                self._thinking_message = parts[0].strip()
-                if len(parts) > 1 and "Tip:" in parts[1]:
-                    tip_match = re.search(r'Tip:\s*(.+)', parts[1])
-                    if tip_match:
-                        self._thinking_tip = tip_match.group(1).strip()
-            else:
-                self._thinking_message = plain.strip()
-        else:
-            self._thinking_message = str(message)
-
-        # Re-render with current frame (timer will advance frame)
-        self._render_thinking_spinner_frame()
-
-    def stop_spinner(self) -> None:
-        """Request spinner removal (may be delayed for minimum visibility)."""
-        self._spinner_log(f"stop_spinner called, active={self._thinking_spinner_active}")
-
-        # Cancel any existing pending stop
-        if self._pending_stop_timer is not None:
-            self._spinner_log("Canceling existing pending stop")
-            self._pending_stop_timer.stop()
-            self._pending_stop_timer = None
-
-        if not self._thinking_spinner_active or self._spinner_start is None:
-            self._spinner_log("Not active or no spinner_start, returning")
-            return
-
-        # Check minimum visibility time
-        elapsed_ms = (time.monotonic() - self._thinking_started_at) * 1000
-        remaining_ms = max(0, self.MIN_VISIBLE_MS - elapsed_ms)
-
-        self._spinner_log(f"elapsed={elapsed_ms:.0f}ms, remaining={remaining_ms:.0f}ms")
-
-        if remaining_ms > 0:
-            # Keep animation running, schedule delayed removal
-            self._spinner_log(f"Scheduling delayed stop in {remaining_ms:.0f}ms")
-            self._pending_stop_timer = self.set_timer(remaining_ms / 1000, self._do_stop_spinner)
-        else:
-            # Already visible long enough, stop immediately
-            self._spinner_log("Stopping immediately")
-            self._do_stop_spinner()
-
-    def _do_stop_spinner(self) -> None:
-        """Actually stop and remove the spinner."""
-        self._spinner_log("_do_stop_spinner called")
-        self._pending_stop_timer = None
-
-        # Now stop the animation timers (both Textual and threading)
-        if self._thinking_spinner_timer is not None:
-            self._spinner_log("Stopping animation timer")
-            self._thinking_spinner_timer.stop()
-            self._thinking_spinner_timer = None
-        if self._thinking_thread_timer is not None:
-            self._thinking_thread_timer.cancel()
-            self._thinking_thread_timer = None
-        self._thinking_spinner_active = False
-
-        if self._spinner_start is not None:
-            self._spinner_log(f"Removing spinner lines from {self._spinner_start}")
-            self._remove_spinner_lines(preserve_index=False)
-            self._spinner_start = None
-            self._spinner_line_count = 0
-
-        self._thinking_message = ""
-        self._thinking_tip = ""
-        self._thinking_started_at = 0.0
-        self._spinner_log("_do_stop_spinner complete")
-
-    def _schedule_thinking_spinner(self) -> None:
-        """Schedule next thinking spinner frame using widget-level timer.
-
-        Also schedules a Python threading.Timer as fallback in case
-        Textual's event loop is blocked (e.g., during synchronous LLM calls).
-        """
-        # Cancel existing timers
-        if self._thinking_spinner_timer is not None:
-            self._thinking_spinner_timer.stop()
-        if self._thinking_thread_timer is not None:
-            self._thinking_thread_timer.cancel()
-            self._thinking_thread_timer = None
-
-        # Schedule Textual widget timer (works when event loop is free)
-        self._thinking_spinner_timer = self.set_timer(0.12, self._animate_thinking_spinner)
-        self._spinner_log(f"Timer scheduled for 120ms, timer={self._thinking_spinner_timer}")
-
-        # Also schedule Python threading.Timer as fallback (bypasses event loop)
-        # This ensures animation works even when Textual timers can't fire
-        self._thinking_thread_timer = threading.Timer(0.12, self._thread_animate_spinner)
-        self._thinking_thread_timer.daemon = True
-        self._thinking_thread_timer.start()
-
-    def _thread_animate_spinner(self) -> None:
-        """Fallback animation via Python threading.Timer.
-
-        Uses call_from_thread to safely update UI from background thread.
-        """
-        if not self._thinking_spinner_active:
-            return
-
-        # Use call_from_thread to run animation on UI thread
-        if hasattr(self, 'app') and self.app is not None:
-            try:
-                self.app.call_from_thread(self._animate_thinking_spinner)
-            except Exception:
-                pass  # App might be shutting down
-
-    def _animate_thinking_spinner(self) -> None:
-        """Animate the thinking spinner - advance frame and reschedule."""
-        self._spinner_log(f"_animate called, active={self._thinking_spinner_active}, frame={self._thinking_spinner_index}")
-
-        if not self._thinking_spinner_active:
-            self._spinner_log("Not active, returning without animation")
-            return
-
-        self._advance_spinner_frame()
-
-        # Schedule next frame
-        self._schedule_thinking_spinner()
-
-    def _advance_spinner_frame(self) -> None:
-        """Advance spinner to next frame and render.
-
-        No throttle here - the caller (timer or tick_spinner) controls the rate.
-        Timer fires every 120ms, tick_spinner has its own 100ms throttle.
-        """
-        if not self._thinking_spinner_active:
-            return
-
-        # Advance frame
-        old_frame = self._thinking_spinner_index
-        self._thinking_spinner_index = (self._thinking_spinner_index + 1) % len(self._spinner_chars)
-        self._spinner_log(f"Frame: {old_frame} -> {self._thinking_spinner_index}")
-
-        # Render the new frame
-        self._render_thinking_spinner_frame()
-
-    def tick_spinner(self) -> None:
-        """Called externally to advance spinner animation during streaming.
-
-        Since timers may not fire during heavy streaming, this allows
-        the streaming callback to drive the animation. Uses its own throttle
-        (separate from timer) to avoid rapid-fire updates.
-        """
-        if not self._thinking_spinner_active or self._spinner_start is None:
-            return
-
-        # Throttle tick_spinner to ~100ms intervals (independent from timer)
-        now = time.monotonic()
-        last_tick = getattr(self, '_last_tick_time', 0)
-        if now - last_tick < 0.1:  # 100ms throttle for tick_spinner only
-            return
-        self._last_tick_time = now
-
-        self._advance_spinner_frame()
-
-    def _render_thinking_spinner_frame(self) -> None:
-        """Render the current thinking spinner frame using in-place update."""
-        self._spinner_log(f"_render called, start={self._spinner_start}, count={self._spinner_line_count}, frame={self._thinking_spinner_index}")
-
-        if self._spinner_start is None:
-            self._spinner_log("spinner_start is None, returning")
-            return
-
-        # Calculate elapsed time
-        elapsed = 0
-        if self._thinking_started_at:
-            elapsed = int(time.monotonic() - self._thinking_started_at)
-
-        # Build the spinner text
-        frame = self._spinner_chars[self._thinking_spinner_index]
-        suffix = f" ({elapsed}s)"
-
-        renderable = Text()
-        renderable.append(frame, style="bright_cyan")
-        renderable.append(f" {self._thinking_message}{suffix}", style="bright_cyan")
-
-        # Check if this is the initial render or an update
-        if self._spinner_line_count == 0:
-            # Initial render - append the line
-            self._append_spinner(renderable)
-            # Also add tip line if present
-            if self._thinking_tip:
-                tip_line = Text()
-                tip_line.append("  ⎿  Tip: ", style=GREY)
-                tip_line.append(self._thinking_tip, style=GREY)
-                self.write(tip_line, scroll_end=True, animate=False)
-                self._spinner_line_count = len(self.lines) - self._spinner_start
-        else:
-            # Update in-place like tool spinner does
-            if self._spinner_start >= len(self.lines):
-                return
-
-            # Convert Text to Strip for in-place storage
-            from rich.console import Console
-            from textual.strip import Strip
-
-            console = Console(width=1000, force_terminal=True, no_color=False)
-            segments = list(renderable.render(console))
-            strip = Strip(segments)
-
-            # Update the line at the spinner position (in-place)
-            self.lines[self._spinner_start] = strip
-
-            # Clear line cache and refresh
-            self._line_cache.clear()
-            self.refresh_line(self._spinner_start)
-
-            # Force screen compositor to update immediately
-            if hasattr(self, 'app') and self.app is not None:
-                self.app.refresh()
-
-    def _append_spinner(self, message: Text | str) -> None:
-        text = message if isinstance(message, Text) else Text(message, style="bright_cyan")
-        self.write(text, scroll_end=True, animate=False)
-        if self._spinner_start is not None:
-            self._spinner_line_count = len(self.lines) - self._spinner_start
-
-    def _remove_spinner_lines(self, *, preserve_index: bool) -> None:
-        if self._spinner_start is None:
-            return
-
-        start = min(self._spinner_start, len(self.lines))
-        # Calculate end of spinner lines (not entire conversation)
-        end = min(start + self._spinner_line_count, len(self.lines))
-        if start < end:
-            # Only delete spinner lines, not content added after
-            to_delete = [i for i in range(start, end) if i not in self._protected_lines]
-            for i in sorted(to_delete, reverse=True):
-                if i < len(self.lines):
-                    del self.lines[i]
-
-            # Update protected line indices
-            new_protected = set()
-            for p in self._protected_lines:
-                if p < start:
-                    new_protected.add(p)
-                else:
-                    # Count deleted lines before this protected line
-                    deleted_before = len([i for i in to_delete if i < p])
-                    new_protected.add(p - deleted_before)
-            self._protected_lines = new_protected
-
-            self._line_cache.clear()
-            widths: List[int] = []
-            for strip in self.lines:
-                cell_length = getattr(strip, "cell_length", None)
-                widths.append(cell_length() if callable(cell_length) else cell_length or 0)
             self._widest_line_width = max(widths, default=0)
             self.virtual_size = Size(self._widest_line_width, len(self.lines))
             if self.auto_scroll:
@@ -1540,9 +1244,14 @@ class ConversationLog(RichLog):
         # Use RichLog's built-in refresh_line to update just this line
         self.refresh_line(self._tool_call_start)
 
-        # Force screen compositor to update immediately
-        if hasattr(self, 'app') and self.app is not None:
-            self.app.refresh()
+        # Force screen compositor to update immediately (safely for tests)
+        try:
+            app = self.app
+        except Exception:
+            app = None
+        
+        if app is not None and hasattr(app, "refresh"):
+            app.refresh()
 
     def _write_tool_call_line(self, prefix: str) -> None:
         formatted = Text()
@@ -1701,3 +1410,22 @@ class ConversationLog(RichLog):
         cleaned = cleaned.replace("⏺", " ")
         cleaned = re.sub(r"\s+", " ", cleaned)
         return cleaned.strip()
+
+    def start_spinner(self, message: Text | str) -> None:
+        """Show thinking spinner (delegated to SpinnerManager)."""
+        if self._debug_enabled:
+             # Keep debug logging if useful, or move to manager?
+             pass
+        self._spinner_manager.start_spinner(message)
+
+    def update_spinner(self, message: Text | str) -> None:
+        """Update the thinking message."""
+        self._spinner_manager.update_spinner(message)
+
+    def stop_spinner(self) -> None:
+        """Stop the thinking spinner."""
+        self._spinner_manager.stop_spinner()
+
+    def tick_spinner(self) -> None:
+        """Advance spinner animation manually."""
+        self._spinner_manager.tick_spinner()

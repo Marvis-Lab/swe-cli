@@ -84,10 +84,11 @@ class TestProtectedLineTracking:
         conversation_log._protected_lines.add(3)
 
         # Set spinner start at line 2
-        conversation_log._spinner_start = 2
+        conversation_log._spinner_manager._spinner_start = 2
+        conversation_log._spinner_manager._spinner_line_count = 3  # Assume 3 lines
 
         # Remove spinner lines
-        conversation_log._remove_spinner_lines(preserve_index=False)
+        conversation_log._spinner_manager._remove_spinner_lines()
 
         # Should have 3 lines: 0, 1, and the protected line (originally 3)
         assert len(conversation_log.lines) == 3
