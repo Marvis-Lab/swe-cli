@@ -1,7 +1,14 @@
 """Query enhancement and message preparation for the REPL."""
 
+from __future__ import annotations
+
 import os
 import re
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from swecli.repl.file_content_injector import InjectionResult
 
 
 class QueryEnhancer:
@@ -22,64 +29,57 @@ class QueryEnhancer:
         self.console = console
         self.REFLECTION_WINDOW_SIZE = 10  # Keep in sync with QueryProcessor
 
-    def enhance_query(self, query: str) -> str:
+    def enhance_query(self, query: str) -> tuple[str, list[dict]]:
         """Enhance query with file contents if referenced.
 
-        Includes safeguards against large files or binary formats (PDFs, images).
+        Uses FileContentInjector for structured XML-tagged content injection
+        with support for text files, directories, PDFs, and images.
 
         Args:
             query: Original query
 
         Returns:
-            Enhanced query with file contents or @ references stripped
+            Tuple of (enhanced_query, image_blocks):
+            - enhanced_query: Query with @ stripped and file contents appended
+            - image_blocks: List of multimodal image blocks for vision API
         """
-        # Safe extensions to auto-inject
-        SAFE_EXTENSIONS = {
-            ".py", ".js", ".ts", ".jsx", ".tsx", ".java", ".go", ".rs", 
-            ".c", ".cpp", ".h", ".hpp", ".cs", ".rb", ".php", ".swift",
-            ".md", ".txt", ".json", ".yaml", ".yml", ".toml", ".xml", ".html", ".css", ".sh",
-            ".gitignore", ".dockerignore", "Dockerfile", "Makefile"
-        }
-        MAX_INJECTION_SIZE = 50 * 1024  # 50KB limit for auto-injection
+        from swecli.repl.file_content_injector import FileContentInjector
 
-        # Extract all @file references BEFORE stripping @ symbols
-        file_refs = re.findall(r'@([a-zA-Z0-9_./\-]+)', query)
+        # Get working directory from file_ops if available
+        working_dir = Path.cwd()
+        if hasattr(self.file_ops, "working_dir"):
+            working_dir = Path(self.file_ops.working_dir)
 
-        # Strip @ prefix so agent understands the query
-        enhanced = re.sub(r'@([a-zA-Z0-9_./\-]+)', r'\1', query)
+        # Use FileContentInjector for structured content injection
+        injector = FileContentInjector(self.file_ops, self.config, working_dir)
+        result = injector.inject_content(query)
 
-        file_contents = []
-        for file_ref in file_refs:
-            # 1. Check extension
-            _, ext = os.path.splitext(file_ref)
-            if ext and ext.lower() not in SAFE_EXTENSIONS and os.path.basename(file_ref) not in SAFE_EXTENSIONS:
-                 # Skip unsafe/binary files (like .pdf)
-                 continue
+        # Strip @ from query (both quoted and unquoted patterns)
+        # Pattern 1: Quoted paths @"path with spaces"
+        enhanced = re.sub(r'@"([^"]+)"', r'\1', query)
+        # Pattern 2: Unquoted paths (but not emails like user@example.com)
+        enhanced = re.sub(r'(?:^|(?<=\s))@([a-zA-Z0-9_./\-]+)', r'\1', enhanced)
 
-            try:
-                content = self.file_ops.read_file(file_ref)
-                
-                # 2. Check size limit
-                if len(content) > MAX_INJECTION_SIZE:
-                    file_contents.append(f"Note: File '{file_ref}' referenced but too large to auto-inject ({len(content)} chars).")
-                else:
-                    file_contents.append(f"File contents of {file_ref}:\n```\n{content}\n```")
-            except Exception:
-                file_contents.append(f"Note: Could not read file '{file_ref}'.")
+        # Append injected content if any
+        if result.text_content:
+            enhanced = f"{enhanced}\n\n{result.text_content}"
 
-        # Inject file contents at the end of the query if any were found
-        if file_contents:
-            enhanced = f"{enhanced}\n\n" + "\n\n".join(file_contents)
+        return enhanced, result.image_blocks
 
-        return enhanced
-
-    def prepare_messages(self, query: str, enhanced_query: str, agent) -> list:
+    def prepare_messages(
+        self,
+        query: str,
+        enhanced_query: str,
+        agent: Any,
+        image_blocks: list[dict] | None = None,
+    ) -> list:
         """Prepare messages for LLM API call.
 
         Args:
             query: Original query
             enhanced_query: Query with file contents or @ references processed
             agent: Agent with system prompt
+            image_blocks: Optional list of multimodal image blocks for vision API
 
         Returns:
             List of API messages
@@ -139,6 +139,22 @@ class QueryEnhancer:
             messages.insert(0, {"role": "system", "content": system_content})
         else:
             messages[0]["content"] = system_content
+
+        # Handle multimodal content (images)
+        # Convert user message to multimodal format if image blocks are present
+        if image_blocks:
+            for msg in reversed(messages):
+                if msg.get("role") == "user":
+                    # Get current content (text)
+                    current_content = msg.get("content", "")
+                    if isinstance(current_content, str):
+                        # Convert to multimodal format: list of content blocks
+                        multimodal_content: list[dict] = [
+                            {"type": "text", "text": current_content}
+                        ]
+                        multimodal_content.extend(image_blocks)
+                        msg["content"] = multimodal_content
+                    break
 
         # Debug: Log message count and estimated size
         total_chars = sum(len(str(m.get("content", ""))) for m in messages)

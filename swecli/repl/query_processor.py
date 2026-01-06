@@ -163,33 +163,44 @@ class QueryProcessor:
                 pass
 
 
-    def enhance_query(self, query: str) -> str:
+    def enhance_query(self, query: str) -> tuple[str, list[dict]]:
         """Enhance query with file contents if referenced.
-        
+
         Delegates to QueryEnhancer.
 
         Args:
             query: Original query
 
         Returns:
-            Enhanced query with file contents or @ references stripped
+            Tuple of (enhanced_query, image_blocks):
+            - enhanced_query: Query with @ stripped and file contents appended
+            - image_blocks: List of multimodal image blocks for vision API
         """
         return self._query_enhancer.enhance_query(query)
 
-    def _prepare_messages(self, query: str, enhanced_query: str, agent) -> list:
+    def _prepare_messages(
+        self,
+        query: str,
+        enhanced_query: str,
+        agent,
+        image_blocks: list[dict] | None = None,
+    ) -> list:
         """Prepare messages for LLM API call.
-        
+
         Delegates to QueryEnhancer.
 
         Args:
             query: Original query
             enhanced_query: Query with file contents or @ references processed
             agent: Agent with system prompt
+            image_blocks: Optional list of multimodal image blocks for vision API
 
         Returns:
             List of API messages
         """
-        return self._query_enhancer.prepare_messages(query, enhanced_query, agent)
+        return self._query_enhancer.prepare_messages(
+            query, enhanced_query, agent, image_blocks=image_blocks
+        )
 
     def _call_llm_with_progress(self, agent, messages, task_monitor) -> tuple:
         """Call LLM with progress display.
@@ -303,11 +314,11 @@ class QueryProcessor:
         user_msg = ChatMessage(role=Role.USER, content=query)
         self.session_manager.add_message(user_msg, self.config.auto_save_interval)
 
-        # Enhance query with file contents
-        enhanced_query = self.enhance_query(query)
+        # Enhance query with file contents (returns enhanced text + image blocks)
+        enhanced_query, image_blocks = self.enhance_query(query)
 
-        # Prepare messages for API
-        messages = self._prepare_messages(query, enhanced_query, agent)
+        # Prepare messages for API (handles multimodal content if images present)
+        messages = self._prepare_messages(query, enhanced_query, agent, image_blocks)
 
         # Delegate to ReactExecutor
         return self._react_executor.execute(
@@ -347,11 +358,11 @@ class QueryProcessor:
         user_msg = ChatMessage(role=Role.USER, content=query)
         self.session_manager.add_message(user_msg, self.config.auto_save_interval)
 
-        # Enhance query with file contents
-        enhanced_query = self.enhance_query(query)
+        # Enhance query with file contents (returns enhanced text + image blocks)
+        enhanced_query, image_blocks = self.enhance_query(query)
 
-        # Prepare messages for API
-        messages = self._prepare_messages(query, enhanced_query, agent)
+        # Prepare messages for API (handles multimodal content if images present)
+        messages = self._prepare_messages(query, enhanced_query, agent, image_blocks)
 
         # Delegate to ReactExecutor with ui_callback
         return self._react_executor.execute(
