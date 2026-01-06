@@ -522,7 +522,8 @@ Work through each implementation step in order. Mark each todo item as 'in_progr
 
         # Start message processor thread (uses queue.Queue, not asyncio)
         self.message_processor.start()
-        self._console_task = asyncio.create_task(self._drain_console_queue())
+        # Start console bridge task (uses asyncio queue)
+        self.console_bridge.start(self._loop)
         try:
             # Use alternate screen mode (inline=False) for clean TUI with no terminal noise
             # Enable mouse for scroll support; text selection requires Option/Alt + drag
@@ -530,10 +531,8 @@ Work through each implementation step in order. Mark each todo item as 'in_progr
         finally:
             # Stop message processor thread
             self.message_processor.stop()
-            # Cancel console task
-            if self._console_task:
-                self._console_task.cancel()
-                await asyncio.gather(self._console_task, return_exceptions=True)
+            # Stop console bridge task
+            self.console_bridge.stop()
 
     def _notify_manual_mcp_connect(self) -> None:
         """Inform users how to connect MCP servers when auto-connect is disabled."""
