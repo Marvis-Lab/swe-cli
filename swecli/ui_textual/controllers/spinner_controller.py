@@ -7,7 +7,7 @@ from typing import Optional, TYPE_CHECKING
 
 from rich.text import Text
 
-from swecli.ui_textual.style_tokens import GREY
+from swecli.ui_textual.style_tokens import GREY, BLUE_BRIGHT
 
 if TYPE_CHECKING:  # pragma: no cover
     from swecli.ui_textual.chat_app import SWECLIChatApp
@@ -102,7 +102,7 @@ class SpinnerController:
         """
         renderable = Text()
         # Just provide the message - ConversationLog adds spinner char and timing
-        renderable.append(self._message, style="bright_cyan")
+        renderable.append(self._message, style=BLUE_BRIGHT)
 
         if self._current_tip:
             renderable.append("\n")
@@ -114,9 +114,9 @@ class SpinnerController:
     @staticmethod
     def _default_message() -> str:
         try:
-            from swecli.repl.query_processor import QueryProcessor
+            from swecli.repl.llm_caller import LLMCaller
 
-            verb = random.choice(QueryProcessor.THINKING_VERBS)
+            verb = random.choice(LLMCaller.THINKING_VERBS)
         except Exception:
             verb = "Thinking"
         return f"{verb}…"

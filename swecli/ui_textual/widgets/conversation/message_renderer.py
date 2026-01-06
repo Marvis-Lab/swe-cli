@@ -7,7 +7,7 @@ from rich.text import Text
 from textual.widgets import RichLog
 
 from swecli.ui_textual.renderers import render_markdown_text_segment
-from swecli.ui_textual.style_tokens import ERROR
+from swecli.ui_textual.style_tokens import ERROR, PRIMARY, SUBTLE, PANEL_BORDER
 from swecli.ui_textual.widgets.conversation.protocols import RichLogInterface
 
 
@@ -26,7 +26,7 @@ class DefaultMessageRenderer:
             last_plain = self.log.lines[-1].plain.strip() if self.log.lines[-1].plain else ""
             if last_plain:
                 self.log.write(Text(""))
-        self.log.write(Text(f"› {message}", style="bold white"))
+        self.log.write(Text(f"› {message}", style=f"bold {PRIMARY}"))
         self.log.write(Text(""))
 
     def add_assistant_message(self, message: str) -> None:
@@ -67,7 +67,7 @@ class DefaultMessageRenderer:
 
     def add_system_message(self, message: str) -> None:
         """Render a system message."""
-        self.log.write(Text(message, style="dim italic"))
+        self.log.write(Text(message, style=f"{SUBTLE} italic"))
 
     def add_error(self, message: str) -> None:
         """Render an error message."""
@@ -105,7 +105,7 @@ class DefaultMessageRenderer:
             syntax,
             title=language,
             expand=False,
-            border_style="dim",
+            border_style=PANEL_BORDER,
             padding=(0, 1),
         )
         self.log.write(panel)

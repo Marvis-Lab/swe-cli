@@ -15,7 +15,7 @@ from swecli.ui_textual.widgets.conversation.protocols import RichLogInterface
 
 from textual.strip import Strip
 
-from swecli.ui_textual.style_tokens import GREY
+from swecli.ui_textual.style_tokens import GREY, BLUE_BRIGHT
 from swecli.ui_textual.widgets.conversation.protocols import RichLogInterface
 
 
@@ -206,8 +206,8 @@ class DefaultSpinnerManager:
         suffix = f" ({elapsed}s)"
 
         renderable = Text()
-        renderable.append(frame, style="bright_cyan")
-        renderable.append(f" {self._thinking_message}{suffix}", style="bright_cyan")
+        renderable.append(frame, style=BLUE_BRIGHT)
+        renderable.append(f" {self._thinking_message}{suffix}", style=BLUE_BRIGHT)
 
         if self._spinner_line_count == 0:
             # Initial render

@@ -2,26 +2,15 @@
 
 from __future__ import annotations
 
-import re
-import threading
-import time
-from typing import Any, List, Tuple
+from typing import Any, List
 
 from rich.console import Group
 from rich.panel import Panel
-from rich.syntax import Syntax
 from rich.text import Text
 from textual.events import MouseDown, MouseMove, MouseScrollDown, MouseScrollUp, MouseUp
 from textual.geometry import Size
-from textual.timer import Timer
 from textual.widgets import RichLog
 
-from swecli.ui_textual.renderers import render_markdown_text_segment
-from swecli.ui_textual.constants import TOOL_ERROR_SENTINEL
-from swecli.ui_textual.style_tokens import ERROR, GREY
-from swecli.ui_textual.widgets.terminal_box_renderer import (
-    TerminalBoxConfig,
-)
 from swecli.ui_textual.widgets.conversation.spinner_manager import DefaultSpinnerManager
 from swecli.ui_textual.widgets.conversation.message_renderer import DefaultMessageRenderer
 from swecli.ui_textual.widgets.conversation.tool_renderer import DefaultToolRenderer
@@ -47,88 +36,20 @@ class ConversationLog(RichLog):
         self._spinner_manager = DefaultSpinnerManager(self, None)
         self._message_renderer = DefaultMessageRenderer(self, None)
         self._tool_renderer = DefaultToolRenderer(self, None)
-        self._last_assistant_rendered: str | None = None
-        self._spinner_active = False # Still used for main spinner? Checked usage.
-        # self._tool_display: Text | None = None  # Moved to ToolRenderer
-        # self._tool_spinner_timer: Timer | None = None # Moved
-        self._spinner_active = False # Still used for main spinner? Checked usage.
-        self._spinner_chars = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
         
-        self._nested_spinner_char = "⏺"  # Single character for nested/subagent tools
-        # Ultra-smooth color gradient: 24 steps for slow breathing effect
-        self._nested_color_gradient = [
-            "#00ff00",  # Peak bright
-            "#00f500", "#00eb00", "#00e100", "#00d700", "#00cd00",
-            "#00c300", "#00b900", "#00af00", "#00a500", "#009b00",
-            "#009100",  # Dimmest
-            "#009b00", "#00a500", "#00af00", "#00b900", "#00c300",
-            "#00cd00", "#00d700", "#00e100", "#00eb00", "#00f500",
-            "#00ff00",  # Back to peak
-        ]
-        self._nested_color_index = 0
-        self._spinner_index = 0
-        self._tool_call_start: int | None = None
+        self._last_assistant_rendered: str | None = None
+        self._spinner_active = False 
         self._approval_start: int | None = None
-        self._tool_timer_start: float | None = None
-        self._tool_last_elapsed: int | None = None
         self._debug_enabled = False  # Enable debug messages by default
         self._protected_lines: set[int] = set()  # Lines that should not be truncated
         self.MAX_PROTECTED_LINES = 200
-        # Nested tool call pulsing animation state
-        self._nested_tool_line: int | None = None  # Line index of last nested tool call
-        self._nested_tool_text: Text | None = None  # Original text for the nested tool
-        self._nested_tool_depth: int = 1  # Depth for indentation
-        self._nested_pulse_bright = True  # Toggle for dim/bright pulsing
-        self._nested_pulse_counter = 0  # Counter to slow down pulse rate
-        self._nested_tool_timer: Timer | None = None  # Independent timer for nested tool animation
-        self._nested_tool_timer_start: float | None = None  # Start time for elapsed tracking
-        # Track if last written line has content (for blank line insertion logic)
-        self._last_line_has_content = False
-        # Streaming bash box state
-        self._streaming_box_header_line: int | None = None  # Line index of header row
-        self._streaming_box_width: int = 60  # Box width
-        self._streaming_box_top_line: int | None = None  # Line index of top border (for error restyling)
-        # Streaming box data storage (for rebuild on close)
-        self._streaming_box_command: str = ""
-        self._streaming_box_working_dir: str = "."
-        self._streaming_box_content_lines: list[tuple[str, bool]] = []  # (line, is_stderr)
-        self._streaming_box_config: TerminalBoxConfig | None = None  # Config for streaming box
-        # Mouse drag detection for selection tip
-        self._mouse_down_pos: tuple[int, int] | None = None
-        # Thinking spinner animation state (widget-level timer for reliable animation)
-        self._thinking_spinner_timer: Timer | None = None
-        self._thinking_spinner_active: bool = False
-        self._thinking_spinner_index: int = 0
-        self._thinking_message: str = ""
-        self._thinking_tip: str = ""
-        self._thinking_started_at: float = 0.0
-        self._pending_stop_timer: Timer | None = None  # Delayed stop for minimum visibility
-        # Python threading.Timer as fallback (bypasses Textual's event loop)
-        self._thinking_thread_timer: threading.Timer | None = None
-        # Thread timers for tool spinners (bypass blocked event loop during tool execution)
-        self._tool_thread_timer: threading.Timer | None = None
-        self._nested_tool_thread_timer: threading.Timer | None = None
-
-    def call_from_thread(self, callback: Any, *args: Any, **kwargs: Any) -> None:
-        """Forward call_from_thread to the app."""
-        if self.app:
-            self.app.call_from_thread(callback, *args, **kwargs)
-
+        
     def refresh_line(self, y: int) -> None:
         """Refresh a specific line by invalidating cache and repainting."""
         # Aggressively clear cache to ensure spinner animation updates
         if hasattr(self, '_line_cache'):
             self._line_cache.clear()
         self.refresh()
-
-    def write(self, content, *args, **kwargs) -> None:
-        """Override write to track content state for spacing logic."""
-        super().write(content, *args, **kwargs)
-        # Track if this was a blank line or content
-        if isinstance(content, Text):
-            self._last_line_has_content = bool(content.plain.strip())
-        else:
-            self._last_line_has_content = bool(str(content).strip())
 
     def on_mount(self) -> None:
         if self.app:
@@ -142,10 +63,6 @@ class ConversationLog(RichLog):
         self._scroll_controller.cleanup()
         self._tool_renderer.cleanup()
         self._spinner_manager.cleanup()
-        
-        if self._thinking_thread_timer is not None:
-            self._thinking_thread_timer.cancel()
-            self._thinking_thread_timer = None
 
     def set_debug_enabled(self, enabled: bool) -> None:
         """Enable or disable debug message display."""
@@ -326,21 +243,6 @@ class ConversationLog(RichLog):
     ) -> None:
         self._tool_renderer.add_nested_tool_call(display, depth, parent)
 
-    # --- Thinking Spinner handling ------------------------------------------------
-
-    # Minimum time (ms) the spinner must be visible before stopping
-    MIN_VISIBLE_MS = 300
-    _SPINNER_DEBUG = True  # Enable debug logging
-    _SPINNER_LOG_FILE = "/tmp/spinner_debug.log"
-
-    def _spinner_log(self, msg: str) -> None:
-        """Debug log for spinner to file."""
-        if self._SPINNER_DEBUG:
-            import time as t
-            with open(self._SPINNER_LOG_FILE, "a") as f:
-                f.write(f"[{t.time():.3f}] {msg}\n")
-
-
     def _truncate_from(self, index: int) -> None:
         if index >= len(self.lines):
             return
@@ -360,7 +262,8 @@ class ConversationLog(RichLog):
         else:
             del self.lines[index:]
 
-        self._line_cache.clear()
+        if hasattr(self, '_line_cache'):
+             self._line_cache.clear()
 
         # Update protected line indices after deletion
         new_protected = set()
@@ -373,6 +276,7 @@ class ConversationLog(RichLog):
                 new_protected.add(p - deleted_before)
         self._protected_lines = new_protected
 
+        # Recalculate virtual size
         widths: List[int] = []
         for strip in self.lines:
             cell_length = getattr(strip, "cell_length", None)
@@ -386,6 +290,8 @@ class ConversationLog(RichLog):
             self.scroll_end(animate=False)
 
         self.refresh()
+
+    # --- Thinking Spinner handling ------------------------------------------------
 
     def start_spinner(self, message: Text | str) -> None:
         """Show thinking spinner (delegated to SpinnerManager)."""

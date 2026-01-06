@@ -31,113 +31,20 @@ if TYPE_CHECKING:
 
 
 class QueryProcessor:
-    """Processes user queries using ReAct pattern."""
-
-    # Fancy verbs for the thinking spinner - randomly selected for variety (100 verbs!)
-    THINKING_VERBS = [
-        "Thinking",
-        "Processing",
-        "Analyzing",
-        "Computing",
-        "Synthesizing",
-        "Orchestrating",
-        "Crafting",
-        "Brewing",
-        "Composing",
-        "Contemplating",
-        "Formulating",
-        "Strategizing",
-        "Architecting",
-        "Designing",
-        "Manifesting",
-        "Conjuring",
-        "Weaving",
-        "Pondering",
-        "Calculating",
-        "Deliberating",
-        "Ruminating",
-        "Meditating",
-        "Scheming",
-        "Envisioning",
-        "Imagining",
-        "Conceptualizing",
-        "Ideating",
-        "Brainstorming",
-        "Innovating",
-        "Engineering",
-        "Assembling",
-        "Constructing",
-        "Building",
-        "Forging",
-        "Molding",
-        "Sculpting",
-        "Fashioning",
-        "Shaping",
-        "Rendering",
-        "Materializing",
-        "Realizing",
-        "Actualizing",
-        "Executing",
-        "Implementing",
-        "Deploying",
-        "Launching",
-        "Initiating",
-        "Activating",
-        "Energizing",
-        "Catalyzing",
-        "Accelerating",
-        "Optimizing",
-        "Refining",
-        "Polishing",
-        "Perfecting",
-        "Enhancing",
-        "Augmenting",
-        "Amplifying",
-        "Boosting",
-        "Elevating",
-        "Transcending",
-        "Transforming",
-        "Evolving",
-        "Adapting",
-        "Morphing",
-        "Mutating",
-        "Iterating",
-        "Recursing",
-        "Traversing",
-        "Navigating",
-        "Exploring",
-        "Discovering",
-        "Uncovering",
-        "Revealing",
-        "Illuminating",
-        "Deciphering",
-        "Decoding",
-        "Parsing",
-        "Interpreting",
-        "Translating",
-        "Compiling",
-        "Rendering",
-        "Generating",
-        "Producing",
-        "Yielding",
-        "Outputting",
-        "Emitting",
-        "Transmitting",
-        "Broadcasting",
-        "Propagating",
-        "Disseminating",
-        "Distributing",
-        "Allocating",
-        "Assigning",
-        "Delegating",
-        "Coordinating",
-        "Synchronizing",
-        "Harmonizing",
-        "Balancing",
-        "Calibrating",
-        "Tuning",
-        "Adjusting",
-    ]
+    """Processes user queries using ReAct pattern.
+    
+    This class orchestrates query processing by coordinating:
+    - Query enhancement (@ file references)
+    - Message preparation with playbook context
+    - LLM calls with progress display
+    - Tool execution with approval/undo
+    - ACE learning from tool execution results
+    
+    Note:
+        THINKING_VERBS constant has been consolidated into LLMCaller.
+        This class is being incrementally refactored to compose 
+        specialized components (LLMCaller, QueryEnhancer, ToolExecutor).
+    """
 
     REFLECTION_WINDOW_SIZE = 10
     MAX_PLAYBOOK_STRATEGIES = 30
@@ -193,6 +100,15 @@ class QueryProcessor:
         self._last_agent_response: Optional[AgentResponse] = None
         self._execution_count = 0
 
+        # Composed components (SOLID refactoring)
+        from swecli.repl.query_enhancer import QueryEnhancer
+        self._query_enhancer = QueryEnhancer(
+            file_ops=file_ops,
+            session_manager=session_manager,
+            config=config,
+            console=console,
+        )
+
     def set_notification_center(self, notification_center):
         """Set notification center for status line rendering.
 
@@ -227,6 +143,8 @@ class QueryProcessor:
 
     def enhance_query(self, query: str) -> str:
         """Enhance query with file contents if referenced.
+        
+        Delegates to QueryEnhancer.
 
         Args:
             query: Original query
@@ -234,30 +152,12 @@ class QueryProcessor:
         Returns:
             Enhanced query with file contents or @ references stripped
         """
-        import re
-
-        # Handle @file references - strip @ prefix so agent understands
-        # Pattern: @filename or @path/to/filename (with or without extension)
-        # This makes "@app.py" become "app.py" in the query
-        enhanced = re.sub(r'@([a-zA-Z0-9_./\-]+)', r'\1', query)
-
-        # Simple heuristic: look for file references and include content
-        lower_query = enhanced.lower()
-        if any(keyword in lower_query for keyword in ["explain", "what does", "show me"]):
-            # Try to extract file paths
-            words = enhanced.split()
-            for word in words:
-                if any(word.endswith(ext) for ext in [".py", ".js", ".ts", ".java", ".go", ".rs"]):
-                    try:
-                        content = self.file_ops.read_file(word)
-                        return f"{enhanced}\n\nFile contents of {word}:\n```\n{content}\n```"
-                    except Exception:
-                        pass
-
-        return enhanced
+        return self._query_enhancer.enhance_query(query)
 
     def _prepare_messages(self, query: str, enhanced_query: str, agent) -> list:
         """Prepare messages for LLM API call.
+        
+        Delegates to QueryEnhancer.
 
         Args:
             query: Original query
@@ -267,73 +167,7 @@ class QueryProcessor:
         Returns:
             List of API messages
         """
-        session = self.session_manager.current_session
-        messages: list[dict] = []
-
-        if session:
-            messages = session.to_api_messages(window_size=self.REFLECTION_WINDOW_SIZE)
-            if enhanced_query != query:
-                for entry in reversed(messages):
-                    if entry.get("role") == "user":
-                        entry["content"] = enhanced_query
-                        break
-        else:
-            messages = []
-
-        system_content = agent.system_prompt
-        if session:
-            try:
-                playbook = session.get_playbook()
-                # Use ACE's as_context() method for intelligent bullet selection
-                # Configuration from config.playbook section
-                playbook_config = getattr(self.config, 'playbook', None)
-                if playbook_config:
-                    max_strategies = playbook_config.max_strategies
-                    use_selection = playbook_config.use_selection
-                    weights = playbook_config.scoring_weights.to_dict()
-                    embedding_model = playbook_config.embedding_model
-                    cache_file = playbook_config.cache_file
-                    # If cache_file not specified but cache enabled, use session-based default
-                    if cache_file is None and playbook_config.cache_embeddings and session:
-                        import os
-                        swecli_dir = os.path.expanduser(self.config.swecli_dir)
-                        cache_file = os.path.join(swecli_dir, "sessions", f"{session.session_id}_embeddings.json")
-                else:
-                    # Fallback to defaults if config not available
-                    max_strategies = 30
-                    use_selection = True
-                    weights = None
-                    embedding_model = "text-embedding-3-small"
-                    cache_file = None
-
-                playbook_context = playbook.as_context(
-                    query=query,  # Enables semantic matching (Phase 2)
-                    max_strategies=max_strategies,
-                    use_selection=use_selection,
-                    weights=weights,
-                    embedding_model=embedding_model,
-                    cache_file=cache_file,
-                )
-                if playbook_context:
-                    system_content = f"{system_content.rstrip()}\n\n## Learned Strategies\n{playbook_context}"
-            except Exception:  # pragma: no cover
-                pass
-
-        if not messages or messages[0].get("role") != "system":
-            messages.insert(0, {"role": "system", "content": system_content})
-        else:
-            messages[0]["content"] = system_content
-
-        # Debug: Log message count and estimated size
-        total_chars = sum(len(str(m.get("content", ""))) for m in messages)
-        estimated_tokens = total_chars // 4  # Rough estimate: 4 chars per token
-        if self.console and hasattr(self.console, "print"):
-            if estimated_tokens > 100000:  # Warn if > 100k tokens
-                self.console.print(
-                    f"[yellow]⚠ Large context: {len(messages)} messages, ~{estimated_tokens:,} tokens[/yellow]"
-                )
-
-        return messages
+        return self._query_enhancer.prepare_messages(query, enhanced_query, agent)
 
     def _call_llm_with_progress(self, agent, messages, task_monitor) -> tuple:
         """Call LLM with progress display.
@@ -349,8 +183,9 @@ class QueryProcessor:
         from swecli.ui_textual.components.task_progress import TaskProgressDisplay
         import time
 
-        # Get random thinking verb
-        thinking_verb = random.choice(self.THINKING_VERBS)
+        # Get random thinking verb from consolidated LLMCaller
+        from swecli.repl.llm_caller import LLMCaller
+        thinking_verb = random.choice(LLMCaller.THINKING_VERBS)
         task_monitor.start(thinking_verb, initial_tokens=0)
 
         # Track current monitor for interrupt support

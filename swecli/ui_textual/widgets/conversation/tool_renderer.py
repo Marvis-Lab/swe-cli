@@ -13,7 +13,7 @@ from textual.strip import Strip
 from textual.timer import Timer
 
 from swecli.ui_textual.constants import TOOL_ERROR_SENTINEL
-from swecli.ui_textual.style_tokens import GREY
+from swecli.ui_textual.style_tokens import GREY, GREEN_BRIGHT, ERROR, PRIMARY, SUBTLE, SUCCESS
 from swecli.ui_textual.widgets.terminal_box_renderer import (
     TerminalBoxConfig,
     TerminalBoxRenderer,
@@ -108,7 +108,7 @@ class DefaultToolRenderer:
         if isinstance(display, Text):
             self._tool_display = display.copy()
         else:
-            self._tool_display = Text(str(display), style="white")
+            self._tool_display = Text(str(display), style=PRIMARY)
 
         self.log.scroll_end(animate=False)
         self._tool_call_start = len(self.log.lines)
@@ -153,7 +153,7 @@ class DefaultToolRenderer:
         if isinstance(message, Text):
             self._tool_display = message.copy()
         else:
-            self._tool_display = Text(str(message), style="white")
+            self._tool_display = Text(str(message), style=PRIMARY)
 
         if self._spinner_active:
             self._render_tool_spinner_frame()
@@ -181,7 +181,7 @@ class DefaultToolRenderer:
         if isinstance(display, Text):
             tool_text = display.copy()
         else:
-            tool_text = Text(str(display), style="dim")
+            tool_text = Text(str(display), style=SUBTLE)
 
         formatted = Text()
         indent = "  " * depth
@@ -216,7 +216,7 @@ class DefaultToolRenderer:
         formatted.append(indent)
         
         status_char = "✓" if success else "✗"
-        status_color = "green" if success else "red"
+        status_color = SUCCESS if success else ERROR
         
         formatted.append(f"{status_char} ", style=status_color)
         formatted.append_text(self._nested_tool_text)
@@ -432,13 +432,13 @@ class DefaultToolRenderer:
         formatted = Text()
         
         if len(prefix) == 1 and prefix in self._spinner_chars:
-            style = "bright_cyan"
+            style = GREEN_BRIGHT
         elif not success:
-            style = "red"
+            style = ERROR
         elif prefix == "⏺":
-            style = "dim"
+            style = GREEN_BRIGHT
         else:
-            style = "green"
+            style = GREEN_BRIGHT
 
         formatted.append(f"{prefix} ", style=style)
         formatted.append_text(self._tool_display)
@@ -465,7 +465,7 @@ class DefaultToolRenderer:
          # It constructs Text and calls self.write().
          
         formatted = Text()
-        formatted.append(f"{prefix} ", style="dim")
+        formatted.append(f"{prefix} ", style=GREEN_BRIGHT)
         if self._tool_display:
             formatted.append_text(self._tool_display)
         formatted.append(" (0s)", style=GREY)
@@ -500,17 +500,17 @@ class DefaultToolRenderer:
         return "", []
 
     def _write_edit_result(self, header: str, diff_lines: list[str]) -> None:
-        self.log.write(Text(f"  {header}", style="dim"))
+        self.log.write(Text(f"  {header}", style=SUBTLE))
         
         # Render fake diff box
         # Simplified: just write lines
         for line in diff_lines:
              if line.startswith("+"):
-                 self.log.write(Text(f"  {line}", style="green"))
+                 self.log.write(Text(f"  {line}", style=GREEN_BRIGHT))
              elif line.startswith("-"):
-                 self.log.write(Text(f"  {line}", style="red"))
+                 self.log.write(Text(f"  {line}", style=ERROR))
              else:
-                 self.log.write(Text(f"  {line}", style="dim"))
+                 self.log.write(Text(f"  {line}", style=SUBTLE))
 
     def _write_generic_tool_result(self, text: str) -> None:
         lines = text.rstrip("\n").splitlines() or [text]
@@ -531,10 +531,10 @@ class DefaultToolRenderer:
                 message = message[len("::interrupted::"):].lstrip()
 
             if is_interrupted:
-                line.append(message, style=f"bold red") # Simplify styling for now
+                line.append(message, style=f"bold {ERROR}")
             else:
                 # Use dim for normal, red for error
-                line.append(message, style="red" if is_error else "dim")
+                line.append(message, style=ERROR if is_error else SUBTLE)
             self.log.write(line)
 
     # --- Bash Box Output ---
