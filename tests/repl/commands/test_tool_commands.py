@@ -81,23 +81,25 @@ def test_run_command_disabled(tool_commands, mock_dependencies):
 
 
 def test_resolve_issue_success(tool_commands, mock_dependencies):
-    """Test /resolve-issue command."""
+    """Test /resolve-github-issue command."""
     with patch("swecli.commands.issue_resolver.IssueResolverCommand") as MockHandler:
         mock_handler_instance = MockHandler.return_value
         mock_handler_instance.parse_args.return_value = "args"
 
+        mock_metadata = MagicMock()
+        mock_metadata.pr_url = "http://pr"
+        mock_metadata.repo_path = "/path"
         mock_result = MagicMock()
         mock_result.success = True
         mock_result.message = "Fixed"
-        mock_result.pr_url = "http://pr"
-        mock_result.repo_path = "/path"
+        mock_result.metadata = mock_metadata
         mock_handler_instance.execute.return_value = mock_result
 
         # Mock subagent manager presence
         mock_dependencies["runtime_suite"].agents.subagent_manager = MagicMock()
         mock_dependencies["config_manager"].working_dir = "/work/dir"
 
-        tool_commands.resolve_issue("/resolve-issue http://github.com/issue/1")
+        tool_commands.resolve_issue("/resolve-github-issue http://github.com/issue/1")
 
         MockHandler.assert_called_once()
         # Verify working_dir is passed correctly

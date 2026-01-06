@@ -1,548 +1,483 @@
-"""ReAct loop execution with SOLID principles."""
+"""ReAct loop executor."""
 
 import json
-from typing import TYPE_CHECKING, Optional
+from dataclasses import dataclass
+from enum import Enum, auto
+from typing import TYPE_CHECKING, Optional, Dict, Any, List
 
 from swecli.models.message import ChatMessage, Role, ToolCall as ToolCallModel
+from swecli.core.context_engineering.memory import AgentResponse
 from swecli.core.runtime.monitoring import TaskMonitor
-from swecli.core.utils.tool_result_summarizer import summarize_tool_result
 from swecli.ui_textual.utils.tool_display import format_tool_call
+from swecli.ui_textual.components.task_progress import TaskProgressDisplay
+from swecli.core.utils.tool_result_summarizer import summarize_tool_result
 
 if TYPE_CHECKING:
     from rich.console import Console
-    from swecli.core.runtime import ModeManager
     from swecli.core.context_engineering.history import SessionManager
+    from swecli.models.config import Config
+    from swecli.repl.llm_caller import LLMCaller
+    from swecli.repl.tool_executor import ToolExecutor
     from swecli.core.runtime.approval import ApprovalManager
     from swecli.core.context_engineering.history import UndoManager
-    from swecli.models.config import Config
 
 
-class DeepAgentConfigurator:
-    """Handles Deep Agent setup and configuration."""
-
-    def __init__(self, console: "Console", mode_manager: "ModeManager", session_manager: "SessionManager"):
-        """Initialize Deep Agent configurator.
-
-        Args:
-            console: Rich console for output
-            mode_manager: Mode manager
-            session_manager: Session manager
-        """
-        self.console = console
-        self.mode_manager = mode_manager
-        self.session_manager = session_manager
-
-    def configure_agent(
-        self,
-        agent,
-        ui_callback,
-        approval_manager: "ApprovalManager",
-        undo_manager: "UndoManager",
-        skip_if_approval_active: bool = True,
-    ):
-        """Configure Deep Agent with managers and UI callback.
-
-        Args:
-            agent: Agent to configure
-            ui_callback: UI callback for real-time updates (can be None)
-            approval_manager: Approval manager
-            undo_manager: Undo manager
-            skip_if_approval_active: Skip configuration if approval panel is active
-        """
-        # Check if approval panel is currently active
-        approval_active = False
-        if skip_if_approval_active and ui_callback:
-            if hasattr(ui_callback, 'app') and hasattr(ui_callback.app, '_approval_prompt_controller'):
-                approval_active = ui_callback.app._approval_prompt_controller.active
-
-        # Debug: Approval state check
-        if ui_callback and hasattr(ui_callback, 'on_debug'):
-            ui_callback.on_debug(f"Approval panel active: {approval_active}", "AGENT")
-
-        # Only update Deep Agent if approval is not active
-        if not approval_active:
-            # Debug: Deep Agent integration starting
-            if ui_callback and hasattr(ui_callback, 'on_debug'):
-                agent_type = type(agent).__name__
-                ui_callback.on_debug(f"Configuring Deep Agent integration ({agent_type})", "AGENT")
-
-            # Connect UI callback to Deep Agent for tool transparency
-            if ui_callback and hasattr(agent, 'set_ui_callback'):
-                agent.set_ui_callback(ui_callback)
-                if hasattr(ui_callback, 'on_debug'):
-                    ui_callback.on_debug("UI callback connected to Deep Agent", "AGENT")
-
-            # Update managers on Deep Agent's backend
-            if hasattr(agent, 'update_managers'):
-                agent.update_managers(
-                    mode_manager=self.mode_manager,
-                    approval_manager=approval_manager,
-                    undo_manager=undo_manager,
-                    task_monitor=None,  # Will be created per-iteration
-                    session_manager=self.session_manager
-                )
-                if ui_callback and hasattr(ui_callback, 'on_debug'):
-                    ui_callback.on_debug("Managers updated on Deep Agent backend", "AGENT")
-        else:
-            # Debug: Skipping Deep Agent setup due to active approval
-            if ui_callback and hasattr(ui_callback, 'on_debug'):
-                ui_callback.on_debug("Skipping Deep Agent setup (approval active)", "AGENT")
+class LoopAction(Enum):
+    """Action to take after an iteration."""
+    CONTINUE = auto()
+    BREAK = auto()
 
 
-class MessagePersister:
-    """Handles message persistence to session."""
-
-    def __init__(self, session_manager: "SessionManager", config: "Config"):
-        """Initialize message persister.
-
-        Args:
-            session_manager: Session manager
-            config: Configuration
-        """
-        self.session_manager = session_manager
-        self.config = config
-
-    def persist_assistant_message(
-        self,
-        content: str,
-        raw_content: Optional[str] = None,
-        tool_calls: Optional[list] = None,
-    ):
-        """Persist assistant message to session.
-
-        Args:
-            content: Message content
-            raw_content: Raw LLM content (optional)
-            tool_calls: Tool call objects (optional)
-        """
-        metadata = {}
-        if raw_content is not None:
-            metadata["raw_content"] = raw_content
-
-        assistant_msg = ChatMessage(
-            role=Role.ASSISTANT,
-            content=content,
-            metadata=metadata,
-            tool_calls=tool_calls or None,
-        )
-        self.session_manager.add_message(assistant_msg, self.config.auto_save_interval)
-
-    def build_tool_call_objects(self, tool_calls: list, messages: list) -> list:
-        """Build ToolCall objects from tool call dicts and results.
-
-        Args:
-            tool_calls: List of tool call dictionaries
-            messages: Message history with tool results
-
-        Returns:
-            List of ToolCallModel objects
-        """
-        tool_call_objects = []
-        for tc in tool_calls:
-            tool_result = None
-            tool_error = None
-
-            # Find corresponding result in messages
-            for msg in reversed(messages):
-                if msg.get("role") == "tool" and msg.get("tool_call_id") == tc["id"]:
-                    content = msg.get("content", "")
-                    if content.startswith("Error:"):
-                        tool_error = content[6:].strip()
-                    else:
-                        tool_result = content
-                    break
-
-            # Generate concise summary for LLM context
-            tool_name = tc["function"]["name"]
-            result_summary = summarize_tool_result(tool_name, tool_result, tool_error)
-
-            tool_call_objects.append(
-                ToolCallModel(
-                    id=tc["id"],
-                    name=tool_name,
-                    parameters=json.loads(tc["function"]["arguments"]),
-                    result=tool_result,
-                    result_summary=result_summary,
-                    error=tool_error,
-                    approved=True,
-                )
-            )
-
-        return tool_call_objects
+@dataclass
+class IterationContext:
+    """Context for a single ReAct iteration."""
+    query: str
+    messages: list
+    agent: Any
+    tool_registry: Any
+    approval_manager: "ApprovalManager"
+    undo_manager: "UndoManager"
+    ui_callback: Optional[Any]
+    iteration_count: int = 0
+    consecutive_reads: int = 0
+    consecutive_no_tool_calls: int = 0
 
 
-class ReActExecutor:
+class ReactExecutor:
     """Executes ReAct loop (Reasoning → Acting → Observing)."""
-
+    
     READ_OPERATIONS = {"read_file", "list_files", "search_code"}
+    MAX_NUDGE_ATTEMPTS = 3
 
     def __init__(
         self,
         console: "Console",
         session_manager: "SessionManager",
         config: "Config",
-        mode_manager: "ModeManager",
-        llm_caller,
-        tool_executor,
-        react_controller,
-        message_printer_callback,
+        llm_caller: "LLMCaller",
+        tool_executor: "ToolExecutor",
     ):
-        """Initialize ReAct executor.
-
-        Args:
-            console: Rich console
-            session_manager: Session manager
-            config: Configuration
-            mode_manager: Mode manager
-            llm_caller: LLM caller instance
-            tool_executor: Tool executor instance
-            react_controller: ReAct controller instance
-            message_printer_callback: Callback to print markdown messages
-        """
+        """Initialize ReAct executor."""
         self.console = console
         self.session_manager = session_manager
         self.config = config
-        self.mode_manager = mode_manager
-        self.llm_caller = llm_caller
-        self.tool_executor = tool_executor
-        self.react_controller = react_controller
-        self._print_markdown_message = message_printer_callback
-
-        self.agent_configurator = DeepAgentConfigurator(console, mode_manager, session_manager)
-        self.message_persister = MessagePersister(session_manager, config)
-
-        # State tracking
-        self._last_latency_ms = None
+        self._llm_caller = llm_caller
+        self._tool_executor = tool_executor
+        self._last_operation_summary = None
         self._last_error = None
-        self._last_operation_summary = "—"
+        self._last_latency_ms = 0
 
-    def execute_react_loop(
+    def execute(
         self,
+        query: str,
         messages: list,
         agent,
         tool_registry,
         approval_manager: "ApprovalManager",
         undo_manager: "UndoManager",
-        query: str,
         ui_callback=None,
     ) -> tuple:
-        """Execute the full ReAct loop.
-
-        Args:
-            messages: Message history
-            agent: Agent to use
-            tool_registry: Tool registry
-            approval_manager: Approval manager
-            undo_manager: Undo manager
-            query: Original user query
-            ui_callback: UI callback for real-time updates (None for non-callback mode)
-
-        Returns:
-            Tuple of (last_operation_summary, last_error, last_latency_ms)
-        """
-        # Configure Deep Agent
-        self.agent_configurator.configure_agent(
-            agent, ui_callback, approval_manager, undo_manager
+        """Execute ReAct loop."""
+        
+        # Initialize context
+        ctx = IterationContext(
+            query=query,
+            messages=messages,
+            agent=agent,
+            tool_registry=tool_registry,
+            approval_manager=approval_manager,
+            undo_manager=undo_manager,
+            ui_callback=ui_callback
         )
 
-        # Debug: Entering ReAct loop
+        # Notify UI start
+        if ui_callback and hasattr(ui_callback, 'on_thinking_start'):
+            ui_callback.on_thinking_start()
+
+        # Debug: Query processing started
         if ui_callback and hasattr(ui_callback, 'on_debug'):
-            ui_callback.on_debug("Entering ReAct loop (Reasoning → Acting → Observing)", "REACT")
+            ui_callback.on_debug(f"Processing query: {query[:50]}{'...' if len(query) > 50 else ''}", "QUERY")
 
         try:
-            # Notify UI that thinking is starting (callback mode only)
-            if ui_callback and hasattr(ui_callback, 'on_thinking_start'):
-                ui_callback.on_thinking_start()
-
-            consecutive_reads = 0
-            iteration = 0
-
             while True:
-                iteration += 1
-
-                # Debug: ReAct iteration
-                if ui_callback and hasattr(ui_callback, 'on_debug'):
-                    ui_callback.on_debug(f"ReAct iteration #{iteration}", "REACT")
-
-                # Execute single iteration
-                should_break, operation_cancelled = self._execute_iteration(
-                    messages, agent, tool_registry, approval_manager,
-                    undo_manager, query, ui_callback, consecutive_reads
-                )
-
-                if should_break:
+                ctx.iteration_count += 1
+                action = self._run_iteration(ctx)
+                if action == LoopAction.BREAK:
                     break
-
-                if operation_cancelled:
-                    break
-
-                # Update consecutive reads counter
-                consecutive_reads = self._update_consecutive_reads(messages, consecutive_reads)
-
-                # Check if agent needs nudge
-                if self.react_controller.should_nudge_agent(consecutive_reads, messages):
-                    consecutive_reads = 0
-
         except Exception as e:
             self.console.print(f"[red]Error: {str(e)}[/red]")
             import traceback
             traceback.print_exc()
             self._last_error = str(e)
-
+            
         return (self._last_operation_summary, self._last_error, self._last_latency_ms)
 
-    def _execute_iteration(
-        self,
-        messages: list,
-        agent,
-        tool_registry,
-        approval_manager,
-        undo_manager,
-        query: str,
-        ui_callback,
-        consecutive_reads: int,
-    ) -> tuple:
-        """Execute a single ReAct iteration.
+    def _run_iteration(self, ctx: IterationContext) -> LoopAction:
+        """Run a single ReAct iteration."""
+        
+        # Debug logging
+        if ctx.ui_callback and hasattr(ctx.ui_callback, 'on_debug'):
+            ctx.ui_callback.on_debug(f"Calling LLM with {len(ctx.messages)} messages", "LLM")
 
-        Returns:
-            Tuple of (should_break, operation_cancelled)
-        """
         # Call LLM
-        response, latency_ms = self._call_llm(agent, messages, ui_callback)
+        task_monitor = TaskMonitor()
+        response, latency_ms = self._llm_caller.call_llm_with_progress(ctx.agent, ctx.messages, task_monitor)
         self._last_latency_ms = latency_ms
 
-        # Handle LLM errors
+        # Debug logging
+        if ctx.ui_callback and hasattr(ctx.ui_callback, 'on_debug'):
+            success = response.get("success", False)
+            ctx.ui_callback.on_debug(f"LLM response (success={success}, latency={latency_ms}ms)", "LLM")
+
+        # Handle errors
         if not response["success"]:
-            self._handle_llm_error(response, ui_callback)
-            return (True, False)  # Break loop
+            return self._handle_llm_error(response, ctx)
 
-        # Notify UI that thinking is complete
-        if ui_callback and hasattr(ui_callback, 'on_thinking_complete'):
-            ui_callback.on_thinking_complete()
+        # Parse response
+        content, tool_calls = self._parse_llm_response(response)
+        
+        # Notify thinking complete
+        if ctx.ui_callback and hasattr(ctx.ui_callback, 'on_thinking_complete'):
+            ctx.ui_callback.on_thinking_complete()
 
-        # Extract response data
+        # Record agent response
+        self._record_agent_response(content, tool_calls)
+
+        # Dispatch based on tool calls presence
+        if not tool_calls:
+            return self._handle_no_tool_calls(ctx, content, response.get("message", {}).get("content"))
+        
+        # Process tool calls
+        return self._process_tool_calls(ctx, tool_calls, content, response.get("message", {}).get("content"))
+
+    def _handle_llm_error(self, response: dict, ctx: IterationContext) -> LoopAction:
+        """Handle LLM errors."""
+        error_text = response.get("error", "Unknown error")
+        
+        if "interrupted" in error_text.lower():
+            self._last_error = error_text
+            if ctx.ui_callback and hasattr(ctx.ui_callback, 'on_interrupt'):
+                ctx.ui_callback.on_interrupt()
+            elif not ctx.ui_callback:
+                 self.console.print(f"  ⎿  [bold red]Interrupted · What should I do instead?[/bold red]")
+        else:
+            self.console.print(f"[red]Error: {error_text}[/red]")
+            fallback = ChatMessage(role=Role.ASSISTANT, content=f"{error_text}")
+            self._last_error = error_text
+            self.session_manager.add_message(fallback, self.config.auto_save_interval)
+            if ctx.ui_callback and hasattr(ctx.ui_callback, 'on_assistant_message'):
+                ctx.ui_callback.on_assistant_message(fallback.content)
+                
+        return LoopAction.BREAK
+
+    def _parse_llm_response(self, response: dict) -> tuple[str, list]:
+        """Parse LLM response into content and tool calls."""
         message_payload = response.get("message", {}) or {}
         raw_llm_content = message_payload.get("content")
         llm_description = response.get("content", raw_llm_content or "")
-        if raw_llm_content is None:
-            raw_llm_content = llm_description
-
+        
         tool_calls = response.get("tool_calls")
         if tool_calls is None:
             tool_calls = message_payload.get("tool_calls")
+            
+        return (llm_description or "").strip(), tool_calls
 
-        normalized_description = (llm_description or "").strip()
+    def _record_agent_response(self, content: str, tool_calls: Optional[list]):
+        """Record agent response for ACE learning."""
+        if hasattr(self._tool_executor, 'set_last_agent_response'):
+            self._tool_executor.set_last_agent_response(str(AgentResponse(
+                content=content,
+                tool_calls=tool_calls or []
+            )))
 
-        # If no tool calls, task is complete
-        if not tool_calls:
-            self._handle_completion(normalized_description, raw_llm_content, ui_callback)
-            return (True, False)  # Break loop
+    def _handle_no_tool_calls(self, ctx: IterationContext, content: str, raw_content: Optional[str]) -> LoopAction:
+        """Handle case where agent made no tool calls."""
+        # Check if last tool failed
+        last_tool_failed = False
+        for msg in reversed(ctx.messages):
+            if msg.get("role") == "tool":
+                msg_content = msg.get("content", "")
+                if msg_content.startswith("Error:"):
+                    last_tool_failed = True
+                break
 
-        # Display assistant's thinking (callback mode only)
-        if ui_callback and llm_description and hasattr(ui_callback, 'on_assistant_message'):
-            ui_callback.on_assistant_message(llm_description)
+        if last_tool_failed:
+             return self._handle_failed_tool_nudge(ctx, content, raw_content)
+
+        # Accept implicit completion
+        if not content:
+            content = "Warning: model returned no reply."
+        
+        self._display_message(content, ctx.ui_callback, dim=True)
+        self._add_assistant_message(content, raw_content)
+        return LoopAction.BREAK
+
+    def _handle_failed_tool_nudge(self, ctx: IterationContext, content: str, raw_content: Optional[str]) -> LoopAction:
+        """Nudge agent to retry after failure."""
+        ctx.consecutive_no_tool_calls += 1
+
+        if ctx.consecutive_no_tool_calls >= self.MAX_NUDGE_ATTEMPTS:
+            if not content:
+                content = "Warning: could not complete after multiple attempts."
+            
+            self._display_message(content, ctx.ui_callback, dim=True)
+            self._add_assistant_message(content, raw_content)
+            return LoopAction.BREAK
+
+        # Nudge
+        if content:
+            ctx.messages.append({"role": "assistant", "content": raw_content or content})
+            self._display_message(content, ctx.ui_callback)
+
+        ctx.messages.append({
+            "role": "user",
+            "content": "The previous operation failed. Please fix the issue and try again, or call task_complete with status='failed' if you cannot proceed.",
+        })
+        return LoopAction.CONTINUE
+
+    def _process_tool_calls(
+        self, 
+        ctx: IterationContext, 
+        tool_calls: list, 
+        content: str, 
+        raw_content: Optional[str]
+    ) -> LoopAction:
+        """Process a list of tool calls."""
+        import json
+        
+        # Reset no-tool-call counter
+        ctx.consecutive_no_tool_calls = 0
+
+        # Display thinking
+        if content:
+             self._display_message(content, ctx.ui_callback)
 
         # Add assistant message to history
-        messages.append({
+        ctx.messages.append({
             "role": "assistant",
-            "content": raw_llm_content,
+            "content": raw_content,
             "tool_calls": tool_calls,
         })
+        
+        # Track reads for nudging
+        all_reads = all(tc["function"]["name"] in self.READ_OPERATIONS for tc in tool_calls)
+        ctx.consecutive_reads = ctx.consecutive_reads + 1 if all_reads else 0
 
-        # Execute tool calls
-        operation_cancelled = self._execute_tool_calls(
-            tool_calls, messages, tool_registry, approval_manager,
-            undo_manager, ui_callback
+        # Check for task completion
+        task_complete_call = next((tc for tc in tool_calls if tc["function"]["name"] == "task_complete"), None)
+        if task_complete_call:
+             args = json.loads(task_complete_call["function"]["arguments"])
+             summary = args.get("summary", "Task completed")
+             self._display_message(summary, ctx.ui_callback, dim=True)
+             self._add_assistant_message(summary, raw_content)
+             return LoopAction.BREAK
+
+        # Execute tools
+        operation_cancelled = False
+        tool_results_by_id = {}
+        
+        for tool_call in tool_calls:
+            result = self._execute_single_tool(tool_call, ctx)
+            tool_results_by_id[tool_call["id"]] = result
+            
+            if result.get("interrupted"):
+                operation_cancelled = True
+                
+            # Add result to history
+            self._add_tool_result_to_history(ctx.messages, tool_call, result)
+
+        if operation_cancelled:
+            return LoopAction.BREAK
+
+        # Persist and Learn
+        self._persist_step(ctx, tool_calls, tool_results_by_id, content, raw_content)
+        
+        # Check nudge for reads
+        if self._should_nudge_agent(ctx.consecutive_reads, ctx.messages):
+            ctx.consecutive_reads = 0
+
+        return LoopAction.CONTINUE
+
+    def _execute_single_tool(self, tool_call: dict, ctx: IterationContext) -> dict:
+        """Execute a single tool and handle UI updates."""
+        tool_name = tool_call["function"]["name"]
+        
+        if tool_name == "task_complete":
+            return {}
+
+        # Debug
+        if ctx.ui_callback and hasattr(ctx.ui_callback, 'on_debug'):
+            ctx.ui_callback.on_debug(f"Executing tool: {tool_name}", "TOOL")
+
+        # Notify UI call
+        if ctx.ui_callback and hasattr(ctx.ui_callback, 'on_tool_call'):
+            ctx.ui_callback.on_tool_call(tool_name, tool_call["function"]["arguments"])
+        
+        # Execute
+        result = self._execute_tool_call(
+            tool_call,
+            ctx.tool_registry,
+            ctx.approval_manager,
+            ctx.undo_manager,
+            ui_callback=ctx.ui_callback,
+        )
+        
+        # Store summary
+        self._last_operation_summary = format_tool_call(
+            tool_name, 
+            json.loads(tool_call["function"]["arguments"])
         )
 
-        # Persist assistant message with tool calls
-        tool_call_objects = self.message_persister.build_tool_call_objects(tool_calls, messages)
-        self.message_persister.persist_assistant_message(
-            normalized_description or "",
-            raw_llm_content,
-            tool_call_objects,
-        )
+        # Notify UI result
+        if ctx.ui_callback and hasattr(ctx.ui_callback, 'on_tool_result'):
+            ctx.ui_callback.on_tool_result(
+                tool_name,
+                tool_call["function"]["arguments"],
+                result
+            )
+            
+        # Handle subagent display
+        separate_response = result.get("separate_response")
+        if separate_response:
+            self._display_message(separate_response, ctx.ui_callback)
 
-        # Record learnings
+        return result
+
+    def _add_tool_result_to_history(self, messages: list, tool_call: dict, result: dict):
+        """Add tool execution result to message history."""
+        separate_response = result.get("separate_response")
+        if result.get("success", False):
+            tool_result = separate_response if separate_response else result.get("output", "")
+        else:
+            tool_result = f"Error: {result.get('error', 'Tool execution failed')}"
+        
+        messages.append({
+            "role": "tool",
+            "tool_call_id": tool_call["id"],
+            "content": tool_result,
+        })
+
+    def _persist_step(
+        self, 
+        ctx: IterationContext, 
+        tool_calls: list, 
+        results: Dict[str, dict], 
+        content: str, 
+        raw_content: Optional[str]
+    ):
+        """Persist the step to session manager and record learnings."""
+        tool_call_objects = []
+        
+        for tc in tool_calls:
+            tool_name = tc["function"]["name"]
+            if tool_name == "task_complete":
+                continue
+
+            full_result = results.get(tc["id"], {})
+            tool_error = full_result.get("error") if not full_result.get("success", True) else None
+            tool_result_str = full_result.get("output", "") if full_result.get("success", True) else None
+            result_summary = summarize_tool_result(tool_name, tool_result_str, tool_error)
+            
+            nested_calls = []
+            if tool_name == "spawn_subagent" and ctx.ui_callback and hasattr(ctx.ui_callback, 'get_and_clear_nested_calls'):
+                nested_calls = ctx.ui_callback.get_and_clear_nested_calls()
+
+            tool_call_objects.append(
+                ToolCallModel(
+                    id=tc["id"],
+                    name=tool_name,
+                    parameters=json.loads(tc["function"]["arguments"]),
+                    result=full_result,
+                    result_summary=result_summary,
+                    error=tool_error,
+                    approved=True,
+                    nested_tool_calls=nested_calls,
+                )
+            )
+
+        if tool_call_objects or content:
+            metadata = {"raw_content": raw_content} if raw_content is not None else {}
+            assistant_msg = ChatMessage(
+                role=Role.ASSISTANT,
+                content=content or "",
+                metadata=metadata,
+                tool_calls=tool_call_objects,
+            )
+            self.session_manager.add_message(assistant_msg, self.config.auto_save_interval)
+
         if tool_call_objects:
             outcome = "error" if any(tc.error for tc in tool_call_objects) else "success"
-            self.tool_executor.set_last_agent_response(normalized_description or "")
-            self.tool_executor.record_tool_learnings(query, tool_call_objects, outcome, agent)
+            self._tool_executor.record_tool_learnings(ctx.query, tool_call_objects, outcome, ctx.agent)
 
-        return (False, operation_cancelled)
-
-    def _call_llm(self, agent, messages: list, ui_callback) -> tuple:
-        """Call LLM with progress display.
-
-        Returns:
-            Tuple of (response, latency_ms)
-        """
-        # Debug: Calling LLM
-        if ui_callback and hasattr(ui_callback, 'on_debug'):
-            from swecli.repl.query_enhancer import QueryEnhancer
-            messages_summary = QueryEnhancer.format_messages_summary(messages)
-            ui_callback.on_debug(f"Calling LLM: {messages_summary}", "LLM")
-
-        task_monitor = TaskMonitor()
-        response, latency_ms = self.llm_caller.call_llm_with_progress(agent, messages, task_monitor)
-
-        # Debug: LLM response received
-        if ui_callback and hasattr(ui_callback, 'on_debug'):
-            success = response.get("success", False)
-            ui_callback.on_debug(f"LLM response received (success={success}, latency={latency_ms}ms)", "LLM")
-
-        return response, latency_ms
-
-    def _handle_llm_error(self, response: dict, ui_callback):
-        """Handle LLM call error.
-
-        Args:
-            response: LLM response with error
-            ui_callback: UI callback (can be None)
-        """
-        error_text = response.get("error", "Unknown error")
-
-        # Check if this is an interruption
-        if "interrupted" in error_text.lower():
-            self._last_error = error_text
-            if ui_callback and hasattr(ui_callback, 'on_interrupt'):
-                ui_callback.on_interrupt()
-            else:
-                # Non-callback mode
-                self.console.print(f"  ⎿  [bold red]Interrupted · What should I do instead?[/bold red]")
-            # Don't save to session
-        else:
-            self.console.print(f"[red]Error: {error_text}[/red]")
-            fallback = ChatMessage(role=Role.ASSISTANT, content=f"❌ {error_text}")
-            self._last_error = error_text
-            self.session_manager.add_message(fallback, self.config.auto_save_interval)
-
-            if ui_callback and hasattr(ui_callback, 'on_assistant_message'):
-                ui_callback.on_assistant_message(fallback.content)
-
-    def _handle_completion(self, description: str, raw_content: str, ui_callback):
-        """Handle task completion (no tool calls).
-
-        Args:
-            description: Assistant's description
-            raw_content: Raw LLM content
-            ui_callback: UI callback (can be None)
-        """
-        if not description:
-            description = "Warning: model returned no reply."
-
+    def _display_message(self, message: str, ui_callback, dim: bool = False):
+        """Display a message via UI callback or console."""
+        if not message:
+            return
+            
         if ui_callback and hasattr(ui_callback, 'on_assistant_message'):
-            ui_callback.on_assistant_message(description)
+            ui_callback.on_assistant_message(message)
         else:
-            # Non-callback mode
-            self.console.print(f"\n[dim]{description}[/dim]")
+            style = "[dim]" if dim else ""
+            end_style = "[/dim]" if dim else ""
+            self.console.print(f"\n{style}{message}{end_style}")
 
-        self.message_persister.persist_assistant_message(description, raw_content)
+    def _add_assistant_message(self, content: str, raw_content: Optional[str]):
+        """Add assistant message to session."""
+        metadata = {"raw_content": raw_content} if raw_content is not None else {}
+        assistant_msg = ChatMessage(
+            role=Role.ASSISTANT,
+            content=content,
+            metadata=metadata,
+        )
+        self.session_manager.add_message(assistant_msg, self.config.auto_save_interval)
 
-    def _execute_tool_calls(
+    def _should_nudge_agent(self, consecutive_reads: int, messages: list) -> bool:
+        """Check if agent should be nudged to conclude."""
+        if consecutive_reads >= 5:
+            # Silently nudge the agent
+            messages.append({
+                "role": "user",
+                "content": "Based on what you've seen, please summarize your findings and explain what needs to be done next."
+            })
+            return True
+        return False
+        
+    def _execute_tool_call(
         self,
-        tool_calls: list,
-        messages: list,
+        tool_call: dict,
         tool_registry,
         approval_manager,
         undo_manager,
-        ui_callback,
-    ) -> bool:
-        """Execute all tool calls and add results to messages.
+        ui_callback=None,
+    ) -> dict:
+        """Execute a single tool call."""
+        
+        tool_name = tool_call["function"]["name"]
+        tool_args = json.loads(tool_call["function"]["arguments"])
+        tool_call_display = format_tool_call(tool_name, tool_args)
+        
+        tool_monitor = TaskMonitor()
+        tool_monitor.start(tool_call_display, initial_tokens=0)
+        
+        if self._tool_executor:
+             self._tool_executor._current_task_monitor = tool_monitor
 
-        Args:
-            tool_calls: List of tool calls to execute
-            messages: Message history to append results to
-            tool_registry: Tool registry
-            approval_manager: Approval manager
-            undo_manager: Undo manager
-            ui_callback: UI callback (can be None)
-
-        Returns:
-            True if operation was cancelled, False otherwise
-        """
-        operation_cancelled = False
-
-        for tool_call in tool_calls:
-            tool_name = tool_call["function"]["name"]
-            tool_args = tool_call["function"]["arguments"]
-
-            # Notify UI about tool call (callback mode)
-            if ui_callback and hasattr(ui_callback, 'on_tool_call'):
-                ui_callback.on_tool_call(tool_name, tool_args)
-
-            # Debug: Executing tool
-            if ui_callback and hasattr(ui_callback, 'on_debug'):
-                ui_callback.on_debug(f"Executing tool: {tool_name}", "TOOL")
-
-            # Non-callback mode: Display tool call immediately
-            if not ui_callback:
-                tool_args_dict = json.loads(tool_args)
-                tool_call_display = format_tool_call(tool_name, tool_args_dict)
-                self.console.print(f"\n⏺ [cyan]{tool_call_display}[/cyan]")
-
-            # Execute tool
-            result = self.tool_executor.execute_tool_call(
-                tool_call, tool_registry, approval_manager, undo_manager
+        progress = TaskProgressDisplay(self.console, tool_monitor)
+        progress.start()
+        
+        try:
+            result = tool_registry.execute_tool(
+                tool_name,
+                tool_args,
+                mode_manager=self._tool_executor.mode_manager,
+                approval_manager=approval_manager,
+                undo_manager=undo_manager,
+                task_monitor=tool_monitor,
+                session_manager=self.session_manager,
+                ui_callback=ui_callback, 
             )
-
-            # Update state
-            tool_args_dict = json.loads(tool_args)
-            tool_call_display = format_tool_call(tool_name, tool_args_dict)
-            self._last_operation_summary = tool_call_display
-
-            if result.get("success"):
-                self._last_error = None
-            else:
-                self._last_error = result.get("error", "Tool execution failed")
-
-            # Debug: Tool execution completed
-            if ui_callback and hasattr(ui_callback, 'on_debug'):
-                success = result.get("success", False)
-                ui_callback.on_debug(f"Tool '{tool_name}' completed (success={success})", "TOOL")
-
-            # Check if operation was cancelled/interrupted
-            if result.get("interrupted"):
-                operation_cancelled = True
-
-            # Notify UI about tool result (callback mode)
-            if ui_callback and hasattr(ui_callback, 'on_tool_result'):
-                ui_callback.on_tool_result(tool_name, tool_args, result)
-
-            # Handle separate_response for spawn_subagent (display as assistant message)
-            separate_response = result.get("separate_response")
-            if separate_response and ui_callback:
-                if hasattr(ui_callback, 'on_assistant_message'):
-                    ui_callback.on_assistant_message(separate_response)
-
-            # Add tool result to messages (use separate_response for spawn_subagent if available)
-            if result["success"]:
-                tool_result = separate_response if separate_response else result.get("output", "")
-            else:
-                tool_result = f"Error: {result.get('error', 'Tool execution failed')}"
-            messages.append({
-                "role": "tool",
-                "tool_call_id": tool_call["id"],
-                "content": tool_result,
-            })
-
-        return operation_cancelled
-
-    def _update_consecutive_reads(self, messages: list, current_count: int) -> int:
-        """Update consecutive reads counter based on last tool calls.
-
-        Args:
-            messages: Message history
-            current_count: Current consecutive reads count
-
-        Returns:
-            Updated consecutive reads count
-        """
-        # Find last assistant message with tool calls
-        for msg in reversed(messages):
-            if msg.get("role") == "assistant" and msg.get("tool_calls"):
-                tool_calls = msg["tool_calls"]
-                all_reads = all(tc["function"]["name"] in self.READ_OPERATIONS for tc in tool_calls)
-                return current_count + 1 if all_reads else 0
-
-        return current_count
+            return result
+        finally:
+            progress.stop()
+            if self._tool_executor:
+                 self._tool_executor._current_task_monitor = None

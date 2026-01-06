@@ -1,4 +1,4 @@
-"""Command handlers for tool-related commands (/init, /run, /resolve-issue, /paper2code)."""
+"""Command handlers for tool-related commands (/init, /run, /resolve-github-issue, /paper2code)."""
 
 import asyncio
 from datetime import datetime
@@ -118,10 +118,10 @@ class ToolCommands(CommandHandler):
             traceback.print_exc()
 
     def resolve_issue(self, command: str, ui_callback: Any = None) -> None:
-        """Handle /resolve-issue command to fix GitHub issues.
+        """Handle /resolve-github-issue command to fix GitHub issues.
 
         Args:
-            command: The full command string (e.g., "/resolve-issue https://github.com/owner/repo/issues/123")
+            command: The full command string (e.g., "/resolve-github-issue https://github.com/owner/repo/issues/123")
             ui_callback: Optional UI callback for real-time display. If None, uses console output.
         """
         # Catch FD errors early - these happen in Textual's event loop
@@ -130,7 +130,7 @@ class ToolCommands(CommandHandler):
         except ValueError as e:
             if "fds_to_keep" in str(e):
                 # This is the subprocess FD error - handle gracefully
-                self.print_command_header("resolve-issue")
+                self.print_command_header("resolve-github-issue")
                 self.print_warning("Subprocess error in Textual context - retrying...")
                 # Try again - sometimes it works on retry
                 try:
@@ -141,13 +141,13 @@ class ToolCommands(CommandHandler):
                 raise
 
     def _resolve_issue_inner(self, command: str, ui_callback: Any = None) -> None:
-        """Inner implementation of resolve-issue command."""
+        """Inner implementation of resolve-github-issue command."""
         from swecli.commands.issue_resolver import IssueResolverCommand
 
         # Get subagent manager from runtime suite
         subagent_manager = getattr(self.runtime_suite.agents, "subagent_manager", None)
         if subagent_manager is None:
-            self.print_command_header("resolve-issue")
+            self.print_command_header("resolve-github-issue")
             self.print_error("Subagent manager not available")
             return
 
@@ -170,7 +170,7 @@ class ToolCommands(CommandHandler):
         try:
             args = handler.parse_args(command)
         except ValueError as e:
-            self.print_command_header("resolve-issue")
+            self.print_command_header("resolve-github-issue")
             self.print_error(str(e))
             return
 
@@ -180,14 +180,16 @@ class ToolCommands(CommandHandler):
 
             if result.success:
                 self.print_success(result.message)
-                if result.pr_url:
-                    self.print_info(f"Pull Request: {result.pr_url}")
-                if result.repo_path:
-                    self.console.print(f"  ⎿  [dim]Repository: {result.repo_path}[/dim]")
+                # Access PR URL from PRMetadata
+                if hasattr(result.metadata, 'pr_url'):
+                    self.print_info(f"Pull Request: {result.metadata.pr_url}")
+                # Access repo_path from RepoMetadata
+                if hasattr(result.metadata, 'repo_path'):
+                    self.console.print(f"  ⎿  [dim]Repository: {result.metadata.repo_path}[/dim]")
             else:
                 self.print_error(result.message)
-                if result.repo_path:
-                    self.console.print(f"  ⎿  [dim]Repository: {result.repo_path}[/dim]")
+                if hasattr(result.metadata, 'repo_path'):
+                    self.console.print(f"  ⎿  [dim]Repository: {result.metadata.repo_path}[/dim]")
 
         except Exception as e:
             self.print_error(f"Error: {e}")
