@@ -103,6 +103,15 @@ class QueryProcessor:
             console=console,
         )
         
+        # Context Picker - unified context engineering
+        from swecli.core.context_engineering.context_picker import ContextPicker
+        self._context_picker = ContextPicker(
+            session_manager=session_manager,
+            config=config,
+            file_ops=file_ops,
+            console=console,
+        )
+        
         from swecli.repl.llm_caller import LLMCaller
         self._llm_caller = LLMCaller(console=console)
         
@@ -122,6 +131,7 @@ class QueryProcessor:
             self._llm_caller,
             self._tool_executor
         )
+
 
 
     def set_notification_center(self, notification_center):
@@ -177,6 +187,27 @@ class QueryProcessor:
             - image_blocks: List of multimodal image blocks for vision API
         """
         return self._query_enhancer.enhance_query(query)
+
+    def pick_context(self, query: str, agent, *, trace: bool = False):
+        """Pick and assemble all context for an LLM call.
+
+        This is the unified entry point for context engineering.
+        Uses ContextPicker to coordinate:
+        - File reference injection (@mentions)
+        - Conversation history
+        - Playbook strategies
+        - System prompt
+
+        Args:
+            query: User's query (may contain @file references)
+            agent: Agent with system prompt
+            trace: If True, log context selection details
+
+        Returns:
+            AssembledContext with messages and context pieces
+        """
+        return self._context_picker.pick_context(query, agent, trace=trace)
+
 
     def _prepare_messages(
         self,
