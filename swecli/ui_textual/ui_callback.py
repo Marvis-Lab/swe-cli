@@ -39,6 +39,8 @@ class TextualUICallback:
         self._working_dir = working_dir
         # Collector for nested tool calls (for session storage)
         self._pending_nested_calls: list[ToolCall] = []
+        # Thinking mode visibility toggle
+        self._thinking_visible = True
 
     def on_thinking_start(self) -> None:
         """Called when the agent starts thinking."""
@@ -53,6 +55,47 @@ class TextualUICallback:
             # Don't stop the spinner here - let it continue during tool execution
             # The app will stop it when the entire process is complete
             self._current_thinking = False
+
+    def on_thinking(self, content: str) -> None:
+        """Called when the model produces thinking content via the think tool.
+
+        Displays thinking content in the conversation log with dark gray styling.
+        Can be toggled on/off with Ctrl+Shift+T hotkey.
+
+        Args:
+            content: The reasoning/thinking text from the model
+        """
+        # Check visibility from chat_app (single source of truth) or fallback to local state
+        if self.chat_app and hasattr(self.chat_app, '_thinking_visible'):
+            if not self.chat_app._thinking_visible:
+                return  # Skip display if thinking is hidden
+        elif not self._thinking_visible:
+            return  # Fallback to local state
+
+        if not content or not content.strip():
+            return
+
+        # Display thinking block with special styling
+        if hasattr(self.conversation, 'add_thinking_block'):
+            self._run_on_ui(self.conversation.add_thinking_block, content)
+
+    def toggle_thinking_visibility(self) -> bool:
+        """Toggle thinking content visibility.
+
+        Syncs with chat_app state if available.
+
+        Returns:
+            New visibility state (True = visible)
+        """
+        # Toggle app state (single source of truth) if available
+        if self.chat_app and hasattr(self.chat_app, '_thinking_visible'):
+            self.chat_app._thinking_visible = not self.chat_app._thinking_visible
+            self._thinking_visible = self.chat_app._thinking_visible
+            return self.chat_app._thinking_visible
+        else:
+            # Fallback to local state
+            self._thinking_visible = not self._thinking_visible
+            return self._thinking_visible
 
     def get_and_clear_nested_calls(self) -> list[ToolCall]:
         """Return collected nested calls and clear the buffer.
@@ -297,6 +340,13 @@ class TextualUICallback:
         if tool_name == "spawn_subagent":
             return
 
+        # Special handling for think tool - display via on_thinking callback
+        if tool_name == "think" and isinstance(result, dict):
+            thinking_content = result.get("_thinking_content", "")
+            if thinking_content:
+                self.on_thinking(thinking_content)
+            return  # Don't show as standard tool result
+
         # Bash commands: show terminal box with complete output
         if tool_name in ("bash_execute", "run_command") and isinstance(result, dict):
             is_error = not result.get("success", True)
@@ -305,9 +355,14 @@ class TextualUICallback:
                 import os
                 command = self._normalize_arguments(tool_args).get("command", "")
                 working_dir = os.getcwd()
-                # Use "output" key which already has combined stdout+stderr from process_handlers
+                # Use "output" key (combined stdout+stderr from process_handlers),
+                # falling back to "stdout" for compatibility
+                output = result.get("output") or result.get("stdout") or ""
+                stderr = result.get("stderr") or ""
+                # Combine stdout and stderr for display
+                if stderr and stderr not in output:
+                    output = (output + "\n" + stderr).strip() if output else stderr
                 # Filter out placeholder messages
-                output = result.get("output", "") or ""
                 if output in ("Command executed", "Command execution failed"):
                     output = ""
                 self._run_on_ui(

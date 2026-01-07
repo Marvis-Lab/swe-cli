@@ -7,7 +7,7 @@ from rich.text import Text
 from textual.widgets import RichLog
 
 from swecli.ui_textual.renderers import render_markdown_text_segment
-from swecli.ui_textual.style_tokens import ERROR, PRIMARY, SUBTLE, PANEL_BORDER
+from swecli.ui_textual.style_tokens import ERROR, PRIMARY, SUBTLE, PANEL_BORDER, THINKING, THINKING_ICON
 from swecli.ui_textual.widgets.conversation.protocols import RichLogInterface
 
 
@@ -85,6 +85,32 @@ class DefaultMessageRenderer:
         bullet.append(message, style=ERROR)
         self.log.write(bullet)
         self.log.write(Text(""))
+
+    def add_thinking_block(self, content: str) -> None:
+        """Render thinking content as inline dimmed text.
+
+        Displays model reasoning from the think tool with dark gray styling.
+        Format: "⟡ First line\n  Subsequent lines indented (2 spaces)"
+
+        Args:
+            content: The thinking/reasoning content from the model
+        """
+        if not content or not content.strip():
+            return
+
+        lines = content.strip().split('\n')
+        text = Text()
+
+        # First line with thinking icon (⟡ concave diamond)
+        text.append(f"{THINKING_ICON} ", style=f"dim {THINKING}")
+        text.append(lines[0], style=f"italic {THINKING}")
+
+        # Subsequent lines indented with 2 spaces to align with text after icon
+        for line in lines[1:]:
+            text.append(f"\n  {line}", style=f"italic {THINKING}")
+
+        self.log.write(text)
+        self.log.write(Text(""))  # Blank line after thinking
 
     # --- Helpers ---
 

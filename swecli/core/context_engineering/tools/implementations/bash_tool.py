@@ -1,5 +1,6 @@
 """Tool for executing bash commands safely."""
 
+import os
 import platform
 import re
 import select
@@ -94,6 +95,30 @@ class BashTool(BaseTool):
                 return True
         return False
 
+    # Server command patterns - these should run in background mode with PTY
+    _SERVER_PATTERNS = (
+        r"flask\s+run",
+        r"python.*app\.py",
+        r"python.*manage\.py\s+runserver",
+        r"django.*runserver",
+        r"uvicorn",
+        r"gunicorn",
+        r"python.*-m\s+http\.server",
+        r"npm\s+(run\s+)?(start|dev|serve)",
+        r"yarn\s+(run\s+)?(start|dev|serve)",
+        r"node.*server",
+        r"nodemon",
+        r"next\s+(dev|start)",
+        r"rails\s+server",
+        r"php.*artisan\s+serve",
+        r"hugo\s+server",
+        r"jekyll\s+serve",
+    )
+
+    def _is_server_command(self, command: str) -> bool:
+        """Check if command is a server/daemon that should run in background."""
+        return any(re.search(pattern, command, re.IGNORECASE) for pattern in self._SERVER_PATTERNS)
+
     def execute(
         self,
         command: str,
@@ -179,6 +204,19 @@ class BashTool(BaseTool):
         # Resolve working directory
         work_dir = Path(working_dir) if working_dir else self.working_dir
 
+        # Auto-detect server commands and run them in background mode
+        # This ensures proper PTY-based output capture for servers like Flask/Django
+        if not background and self._is_server_command(command):
+            background = True
+
+        # Ensure Python output is unbuffered when piped to subprocess
+        # This fixes the issue where Flask/Django server output gets stuck in buffer
+        exec_env = os.environ.copy()
+        if env:
+            exec_env.update(env)
+        # Force unbuffered Python output for immediate display
+        exec_env["PYTHONUNBUFFERED"] = "1"
+
         try:
             # Mark operation as executing
             if operation:
@@ -187,68 +225,93 @@ class BashTool(BaseTool):
             # Start timing
             start_time = time.time()
 
+            # Force unbuffered output for Python commands by adding -u flag
+            # This is more reliable than PYTHONUNBUFFERED for capturing server output
+            exec_command = command
+            if re.match(r'^python3?\s+', command) and ' -u ' not in command:
+                # Insert -u flag after python/python3
+                exec_command = re.sub(r'^(python3?)\s+', r'\1 -u ', command)
+
             # Handle background execution
             if background:
-                # Use Popen for background execution
-                process = subprocess.Popen(
-                    command,
-                    shell=True,
-                    stdout=subprocess.PIPE if capture_output else None,
-                    stderr=subprocess.PIPE if capture_output else None,
-                    text=True,
-                    bufsize=1,  # Line buffered for real-time streaming
-                    cwd=str(work_dir),
-                    env=env,
-                )
+                # Use PTY (pseudo-terminal) for background execution
+                # This makes the subprocess think it's connected to a terminal,
+                # which fixes buffering issues with servers like Flask/Django
+                import pty
 
-                # Capture initial startup output (wait up to 2 seconds)
+                master_fd, slave_fd = pty.openpty()
+
+                process = subprocess.Popen(
+                    exec_command,
+                    shell=True,
+                    stdin=slave_fd,
+                    stdout=slave_fd,
+                    stderr=slave_fd,
+                    cwd=str(work_dir),
+                    env=exec_env,
+                    close_fds=True,
+                )
+                os.close(slave_fd)  # Close slave in parent
+
+                # Capture initial startup output for background processes
+                # Stream output in real-time via callback, use activity-based timeout
                 stdout_lines = []
                 stderr_lines = []
 
                 if capture_output:
                     import time as time_module
-                    timeout = 2.0  # Wait 2 seconds for startup output
+                    max_capture_time = 20.0  # Maximum time to wait for startup output
+                    idle_timeout = 3.0  # Stop if no output for this long
                     start_capture = time_module.time()
+                    last_output_time = start_capture
+                    buffer = ""
 
-                    while time_module.time() - start_capture < timeout:
+                    while time_module.time() - start_capture < max_capture_time:
                         # Check if there's data ready to read (non-blocking)
-                        ready, _, _ = select.select([process.stdout, process.stderr], [], [], 0.1)
+                        ready, _, _ = select.select([master_fd], [], [], 0.1)
 
-                        for stream in ready:
-                            line = stream.readline()
-                            if line:
-                                if stream == process.stdout:
-                                    stdout_lines.append(line)
-                                else:
-                                    stderr_lines.append(line)
+                        if ready:
+                            try:
+                                data = os.read(master_fd, 4096).decode('utf-8', errors='replace')
+                                if data:
+                                    buffer += data
+                                    # Process complete lines
+                                    while '\n' in buffer:
+                                        line, buffer = buffer.split('\n', 1)
+                                        last_output_time = time_module.time()
+                                        stdout_lines.append(line + '\n')
+                                        # Stream output immediately via callback
+                                        if output_callback:
+                                            try:
+                                                output_callback(line, is_stderr=False)
+                                            except Exception:
+                                                pass
+                            except OSError:
+                                break
 
                         # Stop if process died
                         if process.poll() is not None:
                             break
 
-                    # Drain any remaining output after process exits
-                    if process.poll() is not None:
-                        # Read remaining data from pipes
-                        remaining_stdout = process.stdout.read() if process.stdout else ""
-                        remaining_stderr = process.stderr.read() if process.stderr else ""
-                        if remaining_stdout:
-                            stdout_lines.extend(remaining_stdout.splitlines(keepends=True))
-                        if remaining_stderr:
-                            stderr_lines.extend(remaining_stderr.splitlines(keepends=True))
+                        # Activity-based timeout: stop if no output for idle_timeout seconds
+                        # But give at least 1 second before checking idle timeout
+                        elapsed = time_module.time() - start_capture
+                        idle_time = time_module.time() - last_output_time
+                        if elapsed > 1.0 and idle_time >= idle_timeout:
+                            break
 
-                # Send captured output through callback for streaming display
-                # Do this for ALL captured output, regardless of success/failure
-                if output_callback:
-                    for line in stdout_lines:
-                        try:
-                            output_callback(line.rstrip('\n'), is_stderr=False)
-                        except Exception:
-                            pass
-                    for line in stderr_lines:
-                        try:
-                            output_callback(line.rstrip('\n'), is_stderr=True)
-                        except Exception:
-                            pass
+                    # Process any remaining buffer
+                    if buffer.strip():
+                        stdout_lines.append(buffer)
+                        if output_callback:
+                            try:
+                                output_callback(buffer.rstrip('\n'), is_stderr=False)
+                            except Exception:
+                                pass
+
+                    # Keep master_fd open for potential future reads
+                    # Store it with the process for later access
+                    process._pty_master_fd = master_fd
 
                 # Check if process exited during startup capture
                 exit_code = process.poll()
@@ -320,17 +383,17 @@ class BashTool(BaseTool):
 
             # Auto-confirm interactive commands when requested
             use_stdin_confirm = False
-            if auto_confirm and self._needs_auto_confirm(command):
+            if auto_confirm and self._needs_auto_confirm(exec_command):
                 if platform.system() != "Windows":
                     # Unix: use yes | wrapper to handle multiple prompts
-                    command = f"yes | {command}"
+                    exec_command = f"yes | {exec_command}"
                 else:
                     # Windows: will use stdin.write() approach
                     use_stdin_confirm = True
 
             # Regular synchronous execution with interrupt support
             process = subprocess.Popen(
-                command,
+                exec_command,
                 shell=True,
                 stdin=subprocess.PIPE if use_stdin_confirm else None,
                 stdout=subprocess.PIPE if capture_output else None,
@@ -338,7 +401,7 @@ class BashTool(BaseTool):
                 text=True,
                 bufsize=1,  # Line buffered for real-time streaming
                 cwd=str(work_dir),
-                env=env,
+                env=exec_env,
             )
 
             # Windows fallback: write y to stdin for interactive prompts

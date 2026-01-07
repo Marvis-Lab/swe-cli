@@ -30,7 +30,6 @@ from typing import Optional
 from rich.text import Text
 
 from swecli.ui_textual import style_tokens
-from swecli.ui_textual import style_tokens
 
 
 class ResultType(Enum):
@@ -43,6 +42,8 @@ class ResultType(Enum):
 
 # Standard prefix used for all result lines (2-space indent + arrow + 2-space)
 RESULT_PREFIX = "  ⎿  "
+# Continuation prefix for multi-line messages (aligns with content after ⎿)
+RESULT_CONTINUATION = "     "
 
 
 class ToolResultFormatter:
@@ -76,19 +77,26 @@ class ToolResultFormatter:
         """
         # Get style based on result type
         style, icon = self._get_style_and_icon(result_type)
-        
-        # Build the text
-        text = Text(RESULT_PREFIX, style=GREY)
+
+        # Build the text - handle multi-line messages
+        lines = message.split('\n')
+        text = Text(RESULT_PREFIX, style=style_tokens.GREY)
 
         if show_icon:
             text.append(f"{icon} ", style=style)
 
-        text.append(message, style=style)
+        # First line
+        text.append(lines[0], style=style)
+
+        # Continuation lines with proper indentation
+        for line in lines[1:]:
+            text.append(f"\n{RESULT_CONTINUATION}", style=style_tokens.GREY)
+            text.append(line, style=style)
 
         if secondary:
-            text.append(f"\n{RESULT_PREFIX}", style=GREY)
+            text.append(f"\n{RESULT_PREFIX}", style=style_tokens.GREY)
             text.append(secondary, style=style_tokens.SUBTLE)
-        
+
         return text
     
     def format_success(self, message: str, secondary: Optional[str] = None) -> Text:
