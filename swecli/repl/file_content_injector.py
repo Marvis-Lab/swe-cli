@@ -348,8 +348,12 @@ class FileContentInjector:
         language = self._get_language(path)
         lang_attr = f' language="{language}"' if language else ""
 
+        # Include absolute path so model knows exactly where file is
+        abs_path = str(path)
+
         return (
-            f'<file_content path="{ref_str}"{lang_attr}>\n'
+            f'<file_content path="{ref_str}" absolute_path="{abs_path}" exists="true"{lang_attr}>\n'
+            f'<!-- NOTE: This file already exists. Do NOT create or overwrite it unless explicitly asked. -->\n'
             f'{content}\n'
             f'</file_content>'
         )
@@ -379,12 +383,14 @@ class FileContentInjector:
 
         language = self._get_language(path)
         lang_attr = f' language="{language}"' if language else ""
+        abs_path = str(path)
 
         head_content = "\n".join(head)
         tail_content = "\n".join(tail)
 
         return (
-            f'<file_truncated path="{ref_str}" total_lines="{total_lines}"{lang_attr}>\n'
+            f'<file_truncated path="{ref_str}" absolute_path="{abs_path}" exists="true" total_lines="{total_lines}"{lang_attr}>\n'
+            f'<!-- NOTE: This file already exists. Do NOT create or overwrite it unless explicitly asked. -->\n'
             f'=== HEAD (lines 1-{self.HEAD_LINES}) ===\n'
             f'{head_content}\n\n'
             f'=== TRUNCATED ({omitted} lines omitted) ===\n\n'

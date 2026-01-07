@@ -61,16 +61,22 @@ class SwecliAgent(BaseAgent):
         messages: list[dict],
         task_monitor: Optional[Any] = None,
         thinking_visible: bool = True,
+        iteration_count: int = 1,
     ) -> dict:
         # Rebuild schemas with current thinking visibility
         # This ensures think tool is filtered when thinking mode is OFF
         tool_schemas = self._schema_builder.build(thinking_visible=thinking_visible)
 
+        # Only require tool use on FIRST iteration when thinking is visible
+        # This ensures think tool is called first, but allows normal flow after
+        # Without this, model would be stuck in infinite thinking loop
+        tool_choice = "required" if (thinking_visible and iteration_count == 1) else "auto"
+
         payload = {
             "model": self.config.model,
             "messages": messages,
             "tools": tool_schemas,
-            "tool_choice": "auto",
+            "tool_choice": tool_choice,
             "temperature": self.config.temperature,
             **build_max_tokens_param(self.config.model, self.config.max_tokens),
         }

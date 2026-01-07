@@ -105,10 +105,11 @@ class QueryEnhancer:
         if "{thinking_instruction}" in system_content:
             if thinking_visible:
                 thinking_text = (
-                    "**IMPORTANT: Thinking mode is ENABLED.** Before taking ANY action, "
-                    "you MUST call the `think` tool to reason through your approach. "
-                    "Your thinking will be displayed to the user. "
-                    "Never skip this step - always think first, then act."
+                    "**CRITICAL REQUIREMENT - THINKING MODE IS ON:** "
+                    "You MUST call the `think` tool FIRST before calling ANY other tool. "
+                    "This is mandatory - do NOT skip this step. Do NOT call write_file, read_file, bash, or any other tool before calling `think`. "
+                    "In your thinking, explain step-by-step: what you understand about the task, your approach, and your planned actions. "
+                    "Aim for 100-300 words. Only after calling `think` may you proceed with other tools."
                 )
             else:
                 thinking_text = (

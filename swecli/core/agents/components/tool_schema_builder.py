@@ -837,13 +837,13 @@ _BUILTIN_TOOL_SCHEMAS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "think",
-            "description": "Capture your reasoning and thought process. Use this to think through complex problems step-by-step before taking action. The thinking content is visible to the user and helps them understand your approach. Ideal for breaking down problems, evaluating alternatives, and documenting your decision-making process.",
+            "description": "Capture your detailed step-by-step reasoning before taking any action. When thinking mode is enabled, you MUST call this tool first to break down the problem systematically: analyze what the user is asking, consider multiple approaches and their trade-offs, identify potential issues or edge cases, and outline your planned steps in sequence. This reasoning is visible to the user and becomes part of the conversation context, so be thorough and explicit in walking through your thought process.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "content": {
                         "type": "string",
-                        "description": "Your reasoning, analysis, or thought process. Be thorough - explain what you're considering, alternatives you've evaluated, and why you're making certain choices.",
+                        "description": "Your detailed step-by-step reasoning (aim for 150-300 words). Walk through your analysis methodically: what you understand about the task, what approaches you considered and why you chose one, what assumptions you're making, and the specific steps you plan to take in order. Think out loud as if explaining your reasoning to the user.",
                     },
                 },
                 "required": ["content"],

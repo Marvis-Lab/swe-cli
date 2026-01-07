@@ -1,9 +1,13 @@
 """ReAct loop executor."""
 
 import json
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from enum import Enum, auto
 from typing import TYPE_CHECKING, Optional, Dict, Any, List
+
+# Maximum number of tools to execute in parallel
+MAX_CONCURRENT_TOOLS = 5
 
 from swecli.models.message import ChatMessage, Role, ToolCall as ToolCallModel
 from swecli.core.context_engineering.memory import AgentResponse
@@ -127,7 +131,8 @@ class ReactExecutor:
         # Call LLM
         task_monitor = TaskMonitor()
         response, latency_ms = self._llm_caller.call_llm_with_progress(
-            ctx.agent, ctx.messages, task_monitor, thinking_visible=thinking_visible
+            ctx.agent, ctx.messages, task_monitor, thinking_visible=thinking_visible,
+            iteration_count=ctx.iteration_count
         )
         self._last_latency_ms = latency_ms
 
@@ -279,19 +284,19 @@ class ReactExecutor:
              self._add_assistant_message(summary, raw_content)
              return LoopAction.BREAK
 
-        # Execute tools
-        operation_cancelled = False
-        tool_results_by_id = {}
-        
+        # Execute tools (parallel for multiple, direct for single)
+        if len(tool_calls) == 1:
+            # Single tool - execute directly (no thread pool overhead)
+            result = self._execute_single_tool(tool_calls[0], ctx)
+            tool_results_by_id = {tool_calls[0]["id"]: result}
+            operation_cancelled = result.get("interrupted", False)
+        else:
+            # Multiple tools - execute in parallel
+            tool_results_by_id, operation_cancelled = self._execute_tools_parallel(tool_calls, ctx)
+
+        # Batch add all results after completion (maintains message order)
         for tool_call in tool_calls:
-            result = self._execute_single_tool(tool_call, ctx)
-            tool_results_by_id[tool_call["id"]] = result
-            
-            if result.get("interrupted"):
-                operation_cancelled = True
-                
-            # Add result to history
-            self._add_tool_result_to_history(ctx.messages, tool_call, result)
+            self._add_tool_result_to_history(ctx.messages, tool_call, tool_results_by_id[tool_call["id"]])
 
         if operation_cancelled:
             return LoopAction.BREAK
@@ -349,6 +354,47 @@ class ReactExecutor:
             self._display_message(separate_response, ctx.ui_callback)
 
         return result
+
+    def _execute_tools_parallel(
+        self,
+        tool_calls: list,
+        ctx: IterationContext
+    ) -> tuple[Dict[str, dict], bool]:
+        """Execute tools in parallel using managed thread pool.
+
+        Uses `with` statement to ensure executor cleanup (no memory leaks).
+        ThreadPoolExecutor's max_workers naturally limits concurrency.
+
+        Args:
+            tool_calls: List of tool call dicts from LLM response
+            ctx: Iteration context with registry, callbacks, etc.
+
+        Returns:
+            Tuple of (results_by_id dict, operation_cancelled bool)
+        """
+        tool_results_by_id: Dict[str, dict] = {}
+        operation_cancelled = False
+
+        with ThreadPoolExecutor(max_workers=MAX_CONCURRENT_TOOLS) as executor:
+            # Submit all tasks
+            future_to_call = {
+                executor.submit(self._execute_single_tool, tc, ctx): tc
+                for tc in tool_calls
+            }
+
+            # Collect results as they complete
+            for future in as_completed(future_to_call):
+                tool_call = future_to_call[future]
+                try:
+                    result = future.result()
+                except Exception as e:
+                    result = {"success": False, "error": str(e)}
+
+                tool_results_by_id[tool_call["id"]] = result
+                if result.get("interrupted"):
+                    operation_cancelled = True
+
+        return tool_results_by_id, operation_cancelled
 
     def _add_tool_result_to_history(self, messages: list, tool_call: dict, result: dict):
         """Add tool execution result to message history."""

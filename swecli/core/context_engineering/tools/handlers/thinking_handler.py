@@ -53,7 +53,7 @@ class ThinkingHandler:
 
         return {
             "success": True,
-            "output": "",  # Empty string - thinking shown via UI callback, not tool result
+            "output": content.strip(),  # Include in message history for subsequent LLM calls
             "thinking_id": block_id,
             "_thinking_content": content.strip(),  # Special key for UI callback
         }

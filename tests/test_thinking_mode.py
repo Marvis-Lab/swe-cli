@@ -31,7 +31,7 @@ class TestThinkingHandler:
         assert result["success"] is True
         assert result["_thinking_content"] == "Step 1: analyze..."
         assert result["thinking_id"] == "think-1"
-        assert result["output"] == ""  # Empty string - shown via UI callback, not tool result
+        assert result["output"] == "Step 1: analyze..."  # Included in message history for next LLM call
 
     def test_add_thinking_strips_whitespace(self):
         """Test that thinking content is stripped."""
@@ -196,7 +196,7 @@ class TestThinkToolExecution:
 
         assert result["success"] is True
         assert result["_thinking_content"] == "Analyzing the problem..."
-        assert result["output"] == ""
+        assert result["output"] == "Analyzing the problem..."  # Included in message history
 
     def test_execute_think_empty_content_fails(self):
         """Test executing think tool with empty content."""
@@ -509,8 +509,8 @@ class TestThinkingModeInjection:
 
         system_content = messages[0]["content"]
         assert "{thinking_instruction}" not in system_content
-        assert "thinking mode is enabled" in system_content.lower()
-        assert "must call the `think` tool" in system_content.lower()
+        assert "thinking mode is on" in system_content.lower()
+        assert "must call the `think` tool first" in system_content.lower()
 
     def test_placeholder_replaced_when_thinking_off(self):
         """Test that {thinking_instruction} is replaced with 'explain briefly' when OFF."""
