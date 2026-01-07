@@ -62,6 +62,11 @@ class DefaultSpinnerManager:
         if self._pending_stop_timer is not None:
             self._pending_stop_timer.stop()
             self._pending_stop_timer = None
+            # Clean up old spinner and reset state for fresh start with new tip
+            self._remove_spinner_lines()
+            self._spinner_start = None
+            self._spinner_line_count = 0
+            self._spinner_active = False
 
         if self._spinner_active and self._spinner_start is not None:
             self.update_spinner(message)
