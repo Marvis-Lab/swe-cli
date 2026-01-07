@@ -169,13 +169,16 @@ class LLMCaller:
         self.console = console
         self._current_task_monitor = None
 
-    def call_llm_with_progress(self, agent, messages, task_monitor) -> tuple:
+    def call_llm_with_progress(
+        self, agent, messages, task_monitor, thinking_visible: bool = True
+    ) -> tuple:
         """Call LLM with progress display.
 
         Args:
             agent: Agent to use
             messages: Message history
             task_monitor: Task monitor for tracking
+            thinking_visible: If False, exclude think tool from schemas
 
         Returns:
             Tuple of (response, latency_ms)
@@ -208,7 +211,9 @@ class LLMCaller:
             # Call LLM
             started = time.perf_counter()
             try:
-                response = agent.call_llm(messages, task_monitor=task_monitor)
+                response = agent.call_llm(
+                    messages, task_monitor=task_monitor, thinking_visible=thinking_visible
+                )
             except Exception as e:
                 logger.error(f"[LLM_CALLER] Exception in agent.call_llm: {type(e).__name__}: {e}")
                 logger.error(f"[LLM_CALLER] Full traceback:\n{traceback.format_exc()}")

@@ -42,6 +42,7 @@ class SWECLIChatApp(App):
         Binding("ctrl+c", "clear_or_quit", "", show=False, priority=True),
         Binding("ctrl+l", "clear_conversation", "", show=False),
         Binding("ctrl+t", "toggle_todo_panel", "Toggle Todos", show=False),
+        Binding("ctrl+shift+t", "toggle_thinking", "Thinking", show=False),
         Binding("escape", "interrupt", "", show=False),
         Binding("pageup", "scroll_up", "Scroll Up", show=False),
         Binding("pagedown", "scroll_down", "Scroll Down", show=False),
@@ -120,6 +121,7 @@ class SWECLIChatApp(App):
         self._exit_confirmation_mode = False
         self._selection_tip_timer: Any | None = None
         self._default_label = "› Type your message (Enter to send, Shift+Enter for new line):"
+        self._thinking_visible = True  # Thinking mode visibility state
 
     def compose(self) -> ComposeResult:
         """Create child widgets."""
@@ -616,6 +618,27 @@ class SWECLIChatApp(App):
         try:
             panel = self.query_one("#todo-panel", TodoPanel)
             panel.toggle_expansion()
+        except Exception:  # pragma: no cover - defensive
+            pass
+
+    def action_toggle_thinking(self) -> None:
+        """Toggle thinking content visibility (Ctrl+Shift+T).
+
+        Toggles whether thinking blocks from the think tool are displayed.
+        When hidden, thinking content is still captured but not shown.
+        Also syncs with tool_registry.thinking_handler for prompt injection.
+        """
+        # Toggle the app's thinking visibility state
+        self._thinking_visible = not self._thinking_visible
+
+        # Sync with thinking handler (used by query_processor for prompt injection)
+        if hasattr(self, '_thinking_handler') and self._thinking_handler:
+            self._thinking_handler._visible = self._thinking_visible
+
+        # Update status bar
+        try:
+            status_bar = self.query_one("#status-bar", StatusBar)
+            status_bar.set_thinking_enabled(self._thinking_visible)
         except Exception:  # pragma: no cover - defensive
             pass
 

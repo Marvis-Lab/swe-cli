@@ -40,6 +40,7 @@ class SwecliAgent(BaseAgent):
         self.__http_client = None  # Lazy initialization - defer API key validation
         self._response_cleaner = ResponseCleaner()
         self._working_dir = working_dir
+        self._schema_builder = ToolSchemaBuilder(tool_registry)
         super().__init__(config, tool_registry, mode_manager)
 
     @property
@@ -52,14 +53,23 @@ class SwecliAgent(BaseAgent):
     def build_system_prompt(self) -> str:
         return SystemPromptBuilder(self.tool_registry, self._working_dir).build()
 
-    def build_tool_schemas(self) -> list[dict[str, Any]]:
-        return ToolSchemaBuilder(self.tool_registry).build()
+    def build_tool_schemas(self, thinking_visible: bool = True) -> list[dict[str, Any]]:
+        return self._schema_builder.build(thinking_visible=thinking_visible)
 
-    def call_llm(self, messages: list[dict], task_monitor: Optional[Any] = None) -> dict:
+    def call_llm(
+        self,
+        messages: list[dict],
+        task_monitor: Optional[Any] = None,
+        thinking_visible: bool = True,
+    ) -> dict:
+        # Rebuild schemas with current thinking visibility
+        # This ensures think tool is filtered when thinking mode is OFF
+        tool_schemas = self._schema_builder.build(thinking_visible=thinking_visible)
+
         payload = {
             "model": self.config.model,
             "messages": messages,
-            "tools": self.tool_schemas,
+            "tools": tool_schemas,
             "tool_choice": "auto",
             "temperature": self.config.temperature,
             **build_max_tokens_param(self.config.model, self.config.max_tokens),

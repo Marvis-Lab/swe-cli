@@ -255,7 +255,10 @@ class TextualRunner:
             
         # Store approval manager reference on the app for action_cycle_autonomy
         self.app._approval_manager = self.repl.approval_manager
-        
+
+        # Store thinking handler reference for action_toggle_thinking to sync with query_processor
+        self.app._thinking_handler = self.repl.tool_registry.thinking_handler
+
         if hasattr(self.repl, "config_commands"):
             self.repl.config_commands.chat_app = self.app
 

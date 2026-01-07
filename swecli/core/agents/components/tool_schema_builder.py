@@ -24,6 +24,8 @@ PLANNING_TOOLS = {
     "spawn_subagent",
     # Task completion (always allowed - agents must signal completion)
     "task_complete",
+    # Think tool (always allowed - just captures reasoning)
+    "think",
 }
 
 
@@ -33,9 +35,19 @@ class ToolSchemaBuilder:
     def __init__(self, tool_registry: Union[Any, None]) -> None:
         self._tool_registry = tool_registry
 
-    def build(self) -> list[dict[str, Any]]:
-        """Return tool schema definitions including MCP and task tool extensions."""
+    def build(self, thinking_visible: bool = True) -> list[dict[str, Any]]:
+        """Return tool schema definitions including MCP and task tool extensions.
+
+        Args:
+            thinking_visible: If False, exclude the think tool from schemas.
+                             When thinking mode is OFF, the model should not
+                             be able to call the think tool.
+        """
         schemas: list[dict[str, Any]] = deepcopy(_BUILTIN_TOOL_SCHEMAS)
+
+        # Filter out think tool when thinking mode is OFF
+        if not thinking_visible:
+            schemas = [s for s in schemas if s.get("function", {}).get("name") != "think"]
 
         # Add task tool schema if subagent manager is configured
         task_schema = self._build_task_schema()
@@ -817,6 +829,24 @@ _BUILTIN_TOOL_SCHEMAS: list[dict[str, Any]] = [
                     },
                 },
                 "required": ["symbol_name", "file_path", "new_name"],
+            },
+        },
+    },
+    # ===== Think Tool (Reasoning Capture) =====
+    {
+        "type": "function",
+        "function": {
+            "name": "think",
+            "description": "Capture your reasoning and thought process. Use this to think through complex problems step-by-step before taking action. The thinking content is visible to the user and helps them understand your approach. Ideal for breaking down problems, evaluating alternatives, and documenting your decision-making process.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "content": {
+                        "type": "string",
+                        "description": "Your reasoning, analysis, or thought process. Be thorough - explain what you're considering, alternatives you've evaluated, and why you're making certain choices.",
+                    },
+                },
+                "required": ["content"],
             },
         },
     },

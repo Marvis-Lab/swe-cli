@@ -72,6 +72,7 @@ class QueryEnhancer:
         enhanced_query: str,
         agent: Any,
         image_blocks: list[dict] | None = None,
+        thinking_visible: bool = False,
     ) -> list:
         """Prepare messages for LLM API call.
 
@@ -80,6 +81,7 @@ class QueryEnhancer:
             enhanced_query: Query with file contents or @ references processed
             agent: Agent with system prompt
             image_blocks: Optional list of multimodal image blocks for vision API
+            thinking_visible: Whether thinking mode is enabled (for dynamic prompt injection)
 
         Returns:
             List of API messages
@@ -98,6 +100,23 @@ class QueryEnhancer:
             messages = []
 
         system_content = agent.system_prompt
+
+        # Replace {thinking_instruction} placeholder based on thinking mode visibility
+        if "{thinking_instruction}" in system_content:
+            if thinking_visible:
+                thinking_text = (
+                    "**IMPORTANT: Thinking mode is ENABLED.** Before taking ANY action, "
+                    "you MUST call the `think` tool to reason through your approach. "
+                    "Your thinking will be displayed to the user. "
+                    "Never skip this step - always think first, then act."
+                )
+            else:
+                thinking_text = (
+                    "For complex tasks, briefly explain your reasoning in 1-2 sentences. "
+                    "For simple tasks, act directly."
+                )
+            system_content = system_content.replace("{thinking_instruction}", thinking_text)
+
         if session:
             try:
                 playbook = session.get_playbook()

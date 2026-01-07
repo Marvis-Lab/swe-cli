@@ -279,6 +279,16 @@ class TextualUICallback:
             tool_name: Name of the tool being called
             tool_args: Arguments for the tool call
         """
+        # For think tool: stop spinner but don't display a tool call line
+        # Thinking content will be shown via on_thinking callback
+        if tool_name == "think":
+            # Always stop the thinking spinner so thinking content appears cleanly
+            # Use _stop_local_spinner to properly stop the SpinnerController
+            if self.chat_app and hasattr(self.chat_app, "_stop_local_spinner"):
+                self._run_on_ui(self.chat_app._stop_local_spinner)
+            self._current_thinking = False
+            return
+
         # Stop thinking spinner if still active
         if self._current_thinking:
             self._run_on_ui(self.conversation.stop_spinner)
@@ -317,6 +327,17 @@ class TextualUICallback:
         if isinstance(result, str):
             result = {"success": True, "output": result}
 
+        # Special handling for think tool - display via on_thinking callback
+        # Check BEFORE spinner handling since we didn't start a spinner for think
+        if tool_name == "think" and isinstance(result, dict):
+            thinking_content = result.get("_thinking_content", "")
+            if thinking_content:
+                self.on_thinking(thinking_content)
+                # Restart spinner - model is still working on next steps
+                if self.chat_app and hasattr(self.chat_app, '_start_local_spinner'):
+                    self._run_on_ui(self.chat_app._start_local_spinner)
+            return  # Don't show as standard tool result
+
         # Stop spinner animation
         # Pass success status to color the bullet (green for success, red for failure)
         success = result.get("success", True) if isinstance(result, dict) else True
@@ -339,13 +360,6 @@ class TextualUICallback:
         # Skip displaying spawn_subagent results - the command handler shows its own result
         if tool_name == "spawn_subagent":
             return
-
-        # Special handling for think tool - display via on_thinking callback
-        if tool_name == "think" and isinstance(result, dict):
-            thinking_content = result.get("_thinking_content", "")
-            if thinking_content:
-                self.on_thinking(thinking_content)
-            return  # Don't show as standard tool result
 
         # Bash commands: show terminal box with complete output
         if tool_name in ("bash_execute", "run_command") and isinstance(result, dict):

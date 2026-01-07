@@ -119,9 +119,16 @@ class ReactExecutor:
         if ctx.ui_callback and hasattr(ctx.ui_callback, 'on_debug'):
             ctx.ui_callback.on_debug(f"Calling LLM with {len(ctx.messages)} messages", "LLM")
 
+        # Get thinking visibility from tool registry
+        thinking_visible = False
+        if ctx.tool_registry and hasattr(ctx.tool_registry, 'thinking_handler'):
+            thinking_visible = ctx.tool_registry.thinking_handler.is_visible
+
         # Call LLM
         task_monitor = TaskMonitor()
-        response, latency_ms = self._llm_caller.call_llm_with_progress(ctx.agent, ctx.messages, task_monitor)
+        response, latency_ms = self._llm_caller.call_llm_with_progress(
+            ctx.agent, ctx.messages, task_monitor, thinking_visible=thinking_visible
+        )
         self._last_latency_ms = latency_ms
 
         # Debug logging
