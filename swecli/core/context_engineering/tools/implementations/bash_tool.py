@@ -69,15 +69,17 @@ class BashTool(BaseTool):
         """Tool description."""
         return "Execute a bash command safely"
 
-    def __init__(self, config: AppConfig, working_dir: Path):
+    def __init__(self, config: AppConfig, working_dir: Path, task_manager: Optional[Any] = None):
         """Initialize bash tool.
 
         Args:
             config: Application configuration
             working_dir: Working directory for command execution
+            task_manager: Optional BackgroundTaskManager for tracking background tasks
         """
         self.config = config
         self.working_dir = working_dir
+        self._task_manager = task_manager
         # Track background processes: {pid: {process, command, start_time, stdout_lines, stderr_lines}}
         self._background_processes = {}
 
@@ -371,6 +373,18 @@ class BashTool(BaseTool):
                 stdout_text = "".join(stdout_lines).rstrip()
                 stderr_text = "".join(stderr_lines).rstrip()
 
+                # Register with task manager for UI tracking
+                background_task_id = None
+                if self._task_manager:
+                    task = self._task_manager.register_task(
+                        command=command,
+                        pid=process.pid,
+                        process=process,
+                        pty_master_fd=getattr(process, '_pty_master_fd', None),
+                        initial_output=stdout_text,
+                    )
+                    background_task_id = task.task_id
+
                 return BashResult(
                     success=True,
                     command=command,
@@ -379,6 +393,7 @@ class BashTool(BaseTool):
                     stderr=stderr_text,
                     duration=time.time() - start_time,
                     operation_id=operation.id if operation else None,
+                    background_task_id=background_task_id,
                 )
 
             # Auto-confirm interactive commands when requested

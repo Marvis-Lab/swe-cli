@@ -20,6 +20,7 @@ from swecli.ui_textual.style_tokens import (
     ORANGE_CAUTION,
     CYAN_VISION,
     GOLD,
+    THINKING,
 )
 
 
@@ -106,6 +107,7 @@ class StatusBar(Static):
         self.mode = "normal"
         self.model = model
         self.autonomy = "Manual"  # Autonomy level: Manual, Semi-Auto, Auto
+        self.thinking_enabled = True  # Thinking mode visibility
         self.spinner_text: str | None = None
         self.spinner_tip: str | None = None
         self.working_dir = working_dir or ""
@@ -134,6 +136,15 @@ class StatusBar(Static):
         self.autonomy = level
         self.update_status()
 
+    def set_thinking_enabled(self, enabled: bool) -> None:
+        """Update thinking mode display.
+
+        Args:
+            enabled: Whether thinking mode is enabled (visible)
+        """
+        self.thinking_enabled = enabled
+        self.update_status()
+
     def set_spinner(self, text: str, tip: str | None = None) -> None:
         """Display spinner status."""
         self.spinner_text = text
@@ -148,7 +159,7 @@ class StatusBar(Static):
         self.update_status()
 
     def update_status(self) -> None:
-        """Update status bar text with mode hint, autonomy level, repo info, and spinner."""
+        """Update status bar text with mode hint, autonomy level, thinking status, repo info, and spinner."""
         mode_color = ORANGE if self.mode == "normal" else GREEN_LIGHT
         status = Text()
 
@@ -168,6 +179,15 @@ class StatusBar(Static):
         autonomy_color = autonomy_colors.get(self.autonomy, GREY)
         status.append(self.autonomy, style=f"bold {autonomy_color}")
         status.append(" (Ctrl+Shift+A)", style=GREY)
+
+        # Thinking mode status
+        status.append("  │  ", style=GREY)
+        status.append("Thinking: ", style=GREY)
+        if self.thinking_enabled:
+            status.append("ON", style=f"bold {GREEN_BRIGHT}")
+        else:
+            status.append("OFF", style=f"bold {GREY}")
+        status.append(" (Ctrl+Shift+T)", style=GREY)
 
         # Repo info
         repo_display = self._get_repo_display()
@@ -275,6 +295,7 @@ class ModelFooter(Footer):
         self._model_slots: dict[str, tuple[str, str]] = dict(model_slots or {})
         self._normal_model = normal_model
         self._models_label: Static | None = None
+        self._background_task_count: int = 0
 
     def compose(self) -> ComposeResult:
         """Compose footer with model display prefix and inherited key hints."""
@@ -298,6 +319,16 @@ class ModelFooter(Footer):
     def set_normal_model(self, model: str) -> None:
         """Update normal model display."""
         self._normal_model = model
+        if self._models_label is not None:
+            self._models_label.update(self._build_model_text())
+
+    def set_background_task_count(self, count: int) -> None:
+        """Update background task count indicator.
+
+        Args:
+            count: Number of running background tasks
+        """
+        self._background_task_count = count
         if self._models_label is not None:
             self._models_label.update(self._build_model_text())
 
@@ -377,6 +408,13 @@ class ModelFooter(Footer):
             vision_model = ""
 
         format_model_display(vision_model, vision_style)
+
+        # Show background task indicator if any tasks are running
+        if self._background_task_count > 0:
+            text.append("  │  ", style=base_style)
+            text.append("⏳ ", style=BLUE_BRIGHT)
+            text.append(f"{self._background_task_count} bg", style=BLUE_BRIGHT)
+            text.append(" (^B)", style=base_style)
 
         return text
 

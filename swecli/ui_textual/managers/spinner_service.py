@@ -165,6 +165,16 @@ class SpinnerService:
         # Animation loop state
         self._running = False
 
+        # Per-spinner line tracking for parallel tool execution
+        # Maps spinner_id -> line number where spinner was written
+        self._spinner_lines: Dict[str, int] = {}
+        # Maps spinner_id -> display text for rebuilding final line
+        self._spinner_displays: Dict[str, Text] = {}
+        # Maps spinner_id -> line number where result placeholder was written
+        self._result_lines: Dict[str, int] = {}
+        # Maps spinner_id -> line number where spacing placeholder was written
+        self._spacing_lines: Dict[str, int] = {}
+
     @property
     def _conversation(self) -> Optional["ConversationLog"]:
         """Get the conversation log widget."""
@@ -179,16 +189,19 @@ class SpinnerService:
         message: str | Text,
         spinner_type: SpinnerType = SpinnerType.TOOL,
         min_visible_ms: int = 0,
+        skip_placeholder: bool = False,
     ) -> str:
         """Start a spinner and return its ID (FACADE API).
 
-        This method delegates to ConversationLog methods to display the spinner.
-        ConversationLog manages its own animation timer internally.
+        This method tracks line numbers per spinner_id to support parallel
+        tool execution. Each spinner gets its own line that can be updated
+        independently when stop() is called.
 
         Args:
             message: The message to display with the spinner
             spinner_type: Type of spinner (TOOL or PROGRESS)
             min_visible_ms: Minimum time the spinner should be visible (in ms)
+            skip_placeholder: If True, don't write placeholders (for bash commands)
 
         Returns:
             A unique spinner ID for later reference
@@ -206,12 +219,36 @@ class SpinnerService:
         # Generate unique ID
         spinner_id = str(uuid.uuid4())[:8]
 
+        # Store display text for later use in stop()
+        self._spinner_displays[spinner_id] = display_text.copy()
+
         # Delegate to ConversationLog (BLOCKING to ensure line is added)
+        # Track line number for this specific spinner
         def _start_on_ui():
+            # Get line number BEFORE writing (this is where the tool line will be)
+            line_num = len(conversation.lines)
+
             if hasattr(conversation, "add_tool_call"):
                 conversation.add_tool_call(display_text)
             if hasattr(conversation, "start_tool_execution"):
                 conversation.start_tool_execution()
+
+            # Store line number for this spinner
+            self._spinner_lines[spinner_id] = line_num
+
+            # Write placeholders only for non-bash tools
+            # Bash commands don't need placeholders - their output is rendered separately
+            if not skip_placeholder:
+                # Write TWO placeholders:
+                # 1. Result placeholder - updated with result in stop()
+                # 2. Spacing placeholder - stays as blank line between tool blocks
+                result_line_num = len(conversation.lines)
+                conversation.write(Text(""))  # Result placeholder
+                self._result_lines[spinner_id] = result_line_num
+
+                spacing_line_num = len(conversation.lines)
+                conversation.write(Text(""))  # Spacing placeholder
+                self._spacing_lines[spinner_id] = spacing_line_num
 
         self._run_blocking(_start_on_ui)
         return spinner_id
@@ -247,7 +284,9 @@ class SpinnerService:
     ) -> None:
         """Stop a spinner (FACADE API).
 
-        Works for both facade and callback API spinners.
+        Uses stored line number to update the correct line for this specific
+        spinner, enabling parallel tool execution where multiple spinners
+        can be stopped independently in any order.
 
         Args:
             spinner_id: The spinner ID
@@ -261,21 +300,55 @@ class SpinnerService:
                 if not self._spinners:
                     self._stop_animation_loop()
 
-        # Also delegate to ConversationLog for facade spinners
+        # Get stored line numbers and display for this spinner
+        line_num = self._spinner_lines.pop(spinner_id, None)
+        display_text = self._spinner_displays.pop(spinner_id, None)
+        result_line_num = self._result_lines.pop(spinner_id, None)
+        # spacing_line_num stays as blank line, just pop to clean up
+        self._spacing_lines.pop(spinner_id, None)
+
         conversation = self._conversation
         if conversation is None:
             return
 
         def _stop_on_ui():
-            # Stop spinner (shows green/red bullet based on success)
+            # Call stop_tool_execution for animation timer cleanup
             if hasattr(conversation, "stop_tool_execution"):
                 conversation.stop_tool_execution(success)
 
-            # Show result line if provided
-            if result_message:
-                result_line = Text("  ⎿  ", style=GREY)
-                result_line.append(result_message, style=GREY)
-                conversation.write(result_line)
+            # Convert Text to Strip helper
+            def text_to_strip(text: Text) -> "Strip":
+                from rich.console import Console
+                from textual.strip import Strip
+                console = Console(width=1000, force_terminal=True, no_color=False)
+                segments = list(text.render(console))
+                return Strip(segments)
+
+            # If we have a stored line number, directly update that specific line
+            # This ensures parallel tools update their own lines correctly
+            if line_num is not None and display_text is not None:
+                if line_num < len(conversation.lines):
+                    # Build the final line with success/failure bullet
+                    # No leading spaces - matches tool_renderer.py format
+                    # Green only for bullet, text preserves its own style (PRIMARY)
+                    bullet_style = GREEN_BRIGHT if success else WARNING
+                    final_line = Text()
+                    final_line.append("⏺ ", style=bullet_style)
+                    final_line.append_text(display_text)  # Preserves display_text's PRIMARY style
+
+                    # Directly update the line at stored position
+                    conversation.lines[line_num] = text_to_strip(final_line)
+
+            # Update result placeholder if it exists (non-bash tools only)
+            # Bash commands don't have placeholders - they render output separately
+            if result_line_num is not None and result_line_num < len(conversation.lines):
+                if result_message:
+                    result_line = Text("    ⎿  ", style=GREY)
+                    result_line.append(result_message, style=GREY)
+                    conversation.lines[result_line_num] = text_to_strip(result_line)
+                # Spacing placeholder stays as blank line (no update needed)
+
+            conversation.refresh()
 
         self._run_non_blocking(_stop_on_ui)
 

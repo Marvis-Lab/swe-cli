@@ -99,3 +99,4 @@ class BashResult(BaseModel):
     duration: float  # Seconds
     error: Optional[str] = None
     operation_id: Optional[str] = None
+    background_task_id: Optional[str] = None  # ID if running as background task

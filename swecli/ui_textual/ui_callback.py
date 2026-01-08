@@ -34,7 +34,9 @@ class TextualUICallback:
         self._current_thinking = False
         # Spinner IDs for tracking active spinners via SpinnerService
         self._progress_spinner_id: str = ""
-        self._tool_spinner_id: str = ""
+        # Dict to track multiple tool spinners for parallel execution
+        # Maps tool_call_id -> spinner_id
+        self._tool_spinner_ids: Dict[str, str] = {}
         # Working directory for resolving relative paths
         self._working_dir = working_dir
         # Collector for nested tool calls (for session storage)
@@ -272,12 +274,18 @@ class TextualUICallback:
         # Main agent doesn't stream - output shown in on_tool_result
         pass
 
-    def on_tool_call(self, tool_name: str, tool_args: Dict[str, Any]) -> None:
+    def on_tool_call(
+        self,
+        tool_name: str,
+        tool_args: Dict[str, Any],
+        tool_call_id: Optional[str] = None,
+    ) -> None:
         """Called when a tool call is about to be executed.
 
         Args:
             tool_name: Name of the tool being called
             tool_args: Arguments for the tool call
+            tool_call_id: Unique ID for this tool call (for parallel tracking)
         """
         # For think tool: stop spinner but don't display a tool call line
         # Thinking content will be shown via on_thinking callback
@@ -304,7 +312,12 @@ class TextualUICallback:
 
         # Use SpinnerService for unified spinner management
         if self._app is not None and hasattr(self._app, 'spinner_service'):
-            self._tool_spinner_id = self._app.spinner_service.start(display_text)
+            # Bash commands don't need placeholders - their output is rendered separately
+            is_bash = tool_name in ("bash_execute", "run_command")
+            spinner_id = self._app.spinner_service.start(display_text, skip_placeholder=is_bash)
+            # Track spinner by tool_call_id for parallel execution
+            key = tool_call_id or f"_default_{id(tool_args)}"
+            self._tool_spinner_ids[key] = spinner_id
         else:
             # Fallback to direct calls if SpinnerService not available
             if hasattr(self.conversation, 'add_tool_call') and self._app is not None:
@@ -312,16 +325,20 @@ class TextualUICallback:
             if hasattr(self.conversation, 'start_tool_execution') and self._app is not None:
                 self._app.call_from_thread(self.conversation.start_tool_execution)
 
-        # Bash commands: no special setup needed
-        # Output will be shown via add_bash_output_box in on_tool_result
-
-    def on_tool_result(self, tool_name: str, tool_args: Dict[str, Any], result: Any) -> None:
+    def on_tool_result(
+        self,
+        tool_name: str,
+        tool_args: Dict[str, Any],
+        result: Any,
+        tool_call_id: Optional[str] = None,
+    ) -> None:
         """Called when a tool execution completes.
 
         Args:
             tool_name: Name of the tool that was executed
             tool_args: Arguments that were used
             result: Result of the tool execution (can be dict or string)
+            tool_call_id: Unique ID for this tool call (for parallel tracking)
         """
         # Handle string results by converting to dict format
         if isinstance(result, str):
@@ -342,27 +359,38 @@ class TextualUICallback:
         # Pass success status to color the bullet (green for success, red for failure)
         success = result.get("success", True) if isinstance(result, dict) else True
 
-        # Use SpinnerService for unified spinner management
-        if self._tool_spinner_id and self._app is not None and hasattr(self._app, 'spinner_service'):
-            # Stop spinner without result message - results are displayed separately
-            self._app.spinner_service.stop(self._tool_spinner_id, success)
-            self._tool_spinner_id = ""
-        else:
-            # Fallback to direct calls if SpinnerService not available
-            if hasattr(self.conversation, 'stop_tool_execution'):
-                self._run_on_ui(lambda: self.conversation.stop_tool_execution(success))
+        # Look up spinner_id by tool_call_id for parallel execution
+        key = tool_call_id or f"_default_{id(tool_args)}"
+        spinner_id = self._tool_spinner_ids.pop(key, None)
 
         # Skip displaying interrupted operations
         # These are already shown by the approval controller interrupt message
         if isinstance(result, dict) and result.get("interrupted"):
+            # Still stop the spinner
+            if spinner_id and self._app is not None and hasattr(self._app, 'spinner_service'):
+                self._app.spinner_service.stop(spinner_id, False, "Interrupted")
             return
 
         # Skip displaying spawn_subagent results - the command handler shows its own result
         if tool_name == "spawn_subagent":
+            if spinner_id and self._app is not None and hasattr(self._app, 'spinner_service'):
+                self._app.spinner_service.stop(spinner_id, success)
             return
 
-        # Bash commands: show terminal box with complete output
+        # Bash commands: handle background vs immediate differently
         if tool_name in ("bash_execute", "run_command") and isinstance(result, dict):
+            background_task_id = result.get("background_task_id")
+
+            if background_task_id:
+                # Background task - show special message (Claude Code style)
+                if spinner_id and self._app is not None and hasattr(self._app, 'spinner_service'):
+                    self._app.spinner_service.stop(spinner_id, success, f"Running in background ({background_task_id})")
+                return
+
+            # Quick command - stop spinner first, then show bash output box
+            if spinner_id and self._app is not None and hasattr(self._app, 'spinner_service'):
+                self._app.spinner_service.stop(spinner_id, success, "")
+
             is_error = not result.get("success", True)
 
             if hasattr(self.conversation, 'add_bash_output_box'):
@@ -379,6 +407,17 @@ class TextualUICallback:
                 # Filter out placeholder messages
                 if output in ("Command executed", "Command execution failed"):
                     output = ""
+
+                # Add OK prefix for successful commands (Claude Code style)
+                if not is_error:
+                    # Extract command name for the OK message
+                    cmd_name = command.split()[0] if command else "command"
+                    ok_line = f"OK: {cmd_name} ran successfully"
+                    if output:
+                        output = ok_line + "\n" + output
+                    else:
+                        output = ok_line
+
                 self._run_on_ui(
                     self.conversation.add_bash_output_box,
                     output,
@@ -395,7 +434,7 @@ class TextualUICallback:
         formatted = self.formatter.format_tool_result(tool_name, normalized_args, result)
 
         # Extract the result line(s) from the formatted output
-        # Capture ALL lines after the first ⎿ line (including diff lines for edit_file)
+        # First line goes to spinner result, additional lines displayed separately
         summary_lines: list[str] = []
         collected_lines: list[str] = []
         if isinstance(formatted, str):
@@ -423,9 +462,18 @@ class TextualUICallback:
                 if isinstance(renderable, str):
                     summary_lines.append(renderable.strip())
 
-        if collected_lines:
-            block = "\n".join(collected_lines)
-            self._run_on_ui(self.conversation.add_tool_result, block)
+        # Stop spinner WITH the first summary line (for parallel tool display)
+        first_summary = summary_lines[0] if summary_lines else ""
+        if spinner_id and self._app is not None and hasattr(self._app, 'spinner_service'):
+            self._app.spinner_service.stop(spinner_id, success, first_summary)
+        else:
+            # Fallback to direct calls if SpinnerService not available
+            if hasattr(self.conversation, 'stop_tool_execution'):
+                self._run_on_ui(lambda: self.conversation.stop_tool_execution(success))
+            # Write result separately in fallback mode
+            if collected_lines:
+                block = "\n".join(collected_lines)
+                self._run_on_ui(self.conversation.add_tool_result, block)
 
         if summary_lines and self.chat_app and hasattr(self.chat_app, "record_tool_summary"):
             self._run_on_ui(self.chat_app.record_tool_summary, tool_name, normalized_args, summary_lines.copy())

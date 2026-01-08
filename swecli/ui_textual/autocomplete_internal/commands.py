@@ -75,5 +75,10 @@ BUILTIN_COMMANDS.register(SlashCommand("mode", "switch between NORMAL and PLAN m
 # Advanced commands
 BUILTIN_COMMANDS.register(SlashCommand("init", "analyze codebase and generate AGENTS.md"))
 BUILTIN_COMMANDS.register(SlashCommand("mcp", "manage MCP servers and tools"))
-BUILTIN_COMMANDS.register(SlashCommand("resolve-issue", "resolve a GitHub issue automatically"))
+BUILTIN_COMMANDS.register(SlashCommand("resolve-github-issue", "resolve a GitHub issue automatically"))
 BUILTIN_COMMANDS.register(SlashCommand("paper2code", "convert PDF paper to code"))
+
+# Background task management commands
+BUILTIN_COMMANDS.register(SlashCommand("tasks", "list background tasks"))
+BUILTIN_COMMANDS.register(SlashCommand("task", "show output from a background task (usage: /task <id>)"))
+BUILTIN_COMMANDS.register(SlashCommand("kill", "kill a background task (usage: /kill <id>)"))

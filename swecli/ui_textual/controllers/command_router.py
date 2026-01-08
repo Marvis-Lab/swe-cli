@@ -17,7 +17,8 @@ class CommandRouter:
     async def handle(self, command: str) -> bool:
         """Dispatch a slash command. Returns True if handled locally."""
 
-        cmd = command.lower().split()[0]
+        parts = command.split()
+        cmd = parts[0].lower()
         conversation = getattr(self.app, "conversation", None)
 
         if cmd == "/help":
@@ -51,6 +52,24 @@ class CommandRouter:
             self.app.exit()
             return True
 
+        # Background task commands
+        if cmd == "/tasks":
+            if conversation is not None:
+                await self._handle_tasks(conversation)
+            return True
+
+        if cmd == "/task" and len(parts) > 1:
+            if conversation is not None:
+                task_id = parts[1]
+                await self._handle_task_output(conversation, task_id)
+            return True
+
+        if cmd == "/kill" and len(parts) > 1:
+            if conversation is not None:
+                task_id = parts[1]
+                await self._handle_kill_task(conversation, task_id)
+            return True
+
         return False
 
     def _render_help(self, conversation) -> None:
@@ -60,6 +79,9 @@ class CommandRouter:
         conversation.add_system_message("  /demo - Show demo messages")
         conversation.add_system_message("  /scroll - Generate many messages (test scrolling)")
         conversation.add_system_message("  /models - Configure model slots")
+        conversation.add_system_message("  /tasks - List background tasks")
+        conversation.add_system_message("  /task <id> - Show task output")
+        conversation.add_system_message("  /kill <id> - Kill a background task")
         conversation.add_system_message("  /quit - Exit application")
         conversation.add_system_message("")
         conversation.add_system_message("✨ Multi-line Input:")
@@ -113,6 +135,67 @@ class CommandRouter:
                 )
         conversation.add_system_message("")
         conversation.add_assistant_message("✓ Done! Try scrolling up with mouse wheel or Page Up.")
+
+    async def _handle_tasks(self, conversation) -> None:
+        """List all background tasks."""
+        task_manager = getattr(self.app, "_task_manager", None)
+        if task_manager is None:
+            conversation.add_tool_call("Background Tasks", "")
+            conversation.add_tool_result("No task manager available")
+            return
+
+        tasks = task_manager.get_all_tasks()
+
+        conversation.add_tool_call("Background Tasks", "")
+
+        if not tasks:
+            conversation.add_tool_result("No background tasks")
+            return
+
+        lines = []
+        for t in tasks:
+            status = "running" if t.is_running else t.status.name.lower()
+            runtime = f"{t.runtime_seconds:.1f}s"
+            lines.append(f"{t.task_id}: {t.command[:40]} ({runtime}, {status})")
+
+        conversation.add_tool_result("\n".join(lines))
+
+    async def _handle_task_output(self, conversation, task_id: str) -> None:
+        """Show output for a specific task."""
+        task_manager = getattr(self.app, "_task_manager", None)
+        if task_manager is None:
+            conversation.add_tool_call(f"Task Output ({task_id})", "")
+            conversation.add_tool_result("No task manager available")
+            return
+
+        task = task_manager.get_task(task_id)
+        if not task:
+            conversation.add_tool_call(f"Task Output ({task_id})", "")
+            conversation.add_error(f"Task '{task_id}' not found")
+            return
+
+        conversation.add_tool_call(f"Task Output ({task_id})", task.command[:30])
+
+        output = task_manager.read_output(task_id)
+        if output:
+            conversation.add_tool_result(output)
+        else:
+            conversation.add_tool_result("(no output yet)")
+
+    async def _handle_kill_task(self, conversation, task_id: str) -> None:
+        """Kill a background task."""
+        task_manager = getattr(self.app, "_task_manager", None)
+        if task_manager is None:
+            conversation.add_tool_call(f"Kill Task ({task_id})", "")
+            conversation.add_tool_result("No task manager available")
+            return
+
+        conversation.add_tool_call(f"Kill Task ({task_id})", "")
+
+        if task_manager.kill_task(task_id):
+            conversation.add_tool_result(f"Task {task_id} killed")
+        else:
+            conversation.add_error(f"Failed to kill task {task_id}")
 
 
 __all__ = ["CommandRouter"]
