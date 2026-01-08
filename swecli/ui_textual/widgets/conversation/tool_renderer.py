@@ -181,6 +181,18 @@ class DefaultToolRenderer:
 
         self.log.write(Text(""))
 
+    def add_tool_result_continuation(self, lines: list[str]) -> None:
+        """Add continuation lines for tool result (no ⎿ prefix, just space indentation).
+
+        Used for diff lines that follow a summary line. The summary line already
+        has the ⎿ prefix in the result placeholder, so these continuation lines
+        just need space indentation to align.
+        """
+        for line in lines:
+            formatted = Text("       ", style=GREY)  # 7 spaces to align with ⎿ content
+            formatted.append(line, style=SUBTLE)
+            self.log.write(formatted)
+
     # --- Nested Tool Calls ---
 
     def add_nested_tool_call(self, display: Text | str, depth: int, parent: str) -> None:

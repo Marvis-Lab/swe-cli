@@ -471,10 +471,10 @@ class TextualUICallback:
             if hasattr(self.conversation, 'stop_tool_execution'):
                 self._run_on_ui(lambda: self.conversation.stop_tool_execution(success))
 
-        # Write tool result (e.g., diff lines for edit_file) - always runs
+        # Write tool result continuation (e.g., diff lines for edit_file)
+        # These follow the summary line, so no ⎿ prefix needed - just space indentation
         if collected_lines:
-            block = "\n".join(collected_lines)
-            self._run_on_ui(self.conversation.add_tool_result, block)
+            self._run_on_ui(self.conversation.add_tool_result_continuation, collected_lines)
 
         if summary_lines and self.chat_app and hasattr(self.chat_app, "record_tool_summary"):
             self._run_on_ui(self.chat_app.record_tool_summary, tool_name, normalized_args, summary_lines.copy())
