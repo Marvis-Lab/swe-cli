@@ -439,21 +439,21 @@ class TextualUICallback:
         collected_lines: list[str] = []
         if isinstance(formatted, str):
             lines = formatted.splitlines()
-            in_result_section = False
+            first_result_line_seen = False
             for line in lines:
                 stripped = line.strip()
                 if stripped.startswith("⎿"):
-                    # Start of result section - first line goes to placeholder only
-                    in_result_section = True
                     result_text = stripped.lstrip("⎿").strip()
                     if result_text:
-                        summary_lines.append(result_text)
-                        # Don't add to collected_lines - it goes to the result placeholder
-                elif in_result_section and stripped:
-                    # Continue collecting lines after the first ⎿ line (e.g., diff lines)
-                    # Skip @@ header lines, only show actual diff content
-                    if not stripped.startswith("@@"):
-                        collected_lines.append(stripped)
+                        if not first_result_line_seen:
+                            # First ⎿ line goes to placeholder only
+                            first_result_line_seen = True
+                            summary_lines.append(result_text)
+                        else:
+                            # Subsequent ⎿ lines go to collected_lines (e.g., diff content)
+                            # Skip @@ header lines
+                            if not result_text.startswith("@@"):
+                                collected_lines.append(result_text)
         else:
             self._run_on_ui(self.conversation.write, formatted)
             if hasattr(formatted, "renderable") and hasattr(formatted, "title"):
