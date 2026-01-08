@@ -187,22 +187,43 @@ class DefaultToolRenderer:
         Used for diff lines that follow a summary line. The summary line already
         has the ⎿ prefix in the result placeholder, so these continuation lines
         just need space indentation to align.
+
+        Structure:
+        - ⎿  Summary line       (result placeholder, updated by spinner_service.stop)
+        -    First diff line    (overwrites spacing placeholder - no gap)
+        -    More diff lines...
+        -    Last diff line
+        - [blank line]          (added at end for spacing before next tool)
         """
         if not lines:
             return
 
-        # Remove preceding blank line (spacing placeholder) if it exists
-        # This ensures no gap between summary and continuation lines
-        if self.log.lines:
-            last_line = self.log.lines[-1]
-            last_text = getattr(last_line, 'plain', str(last_line)) if last_line else ""
-            if not last_text.strip():
-                self.log.lines.pop()
+        # Convert line to Strip helper
+        def text_to_strip(text: Text) -> "Strip":
+            from rich.console import Console
+            from textual.strip import Strip
+            console = Console(width=1000, force_terminal=True, no_color=False)
+            segments = list(text.render(console))
+            return Strip(segments)
 
-        for line in lines:
+        # Check if we have a pending spacing line to overwrite
+        spacing_line = getattr(self.log, '_pending_spacing_line', None)
+
+        for i, line in enumerate(lines):
             formatted = Text("       ", style=GREY)  # 7 spaces to align with ⎿ content
             formatted.append(line, style=SUBTLE)
-            self.log.write(formatted)
+
+            if i == 0 and spacing_line is not None and spacing_line < len(self.log.lines):
+                # Overwrite spacing placeholder with first diff line (no gap)
+                self.log.lines[spacing_line] = text_to_strip(formatted)
+            else:
+                self.log.write(formatted)
+
+        # Clear the pending spacing line
+        self.log._pending_spacing_line = None
+
+        # Add blank line at end for spacing before next tool
+        self.log.write(Text(""))
 
     # --- Nested Tool Calls ---
 

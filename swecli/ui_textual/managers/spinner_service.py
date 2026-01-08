@@ -304,8 +304,7 @@ class SpinnerService:
         line_num = self._spinner_lines.pop(spinner_id, None)
         display_text = self._spinner_displays.pop(spinner_id, None)
         result_line_num = self._result_lines.pop(spinner_id, None)
-        # spacing_line_num stays as blank line, just pop to clean up
-        self._spacing_lines.pop(spinner_id, None)
+        spacing_line_num = self._spacing_lines.pop(spinner_id, None)
 
         conversation = self._conversation
         if conversation is None:
@@ -346,7 +345,10 @@ class SpinnerService:
                     result_line = Text("    ⎿  ", style=GREY)
                     result_line.append(result_message, style=GREY)
                     conversation.lines[result_line_num] = text_to_strip(result_line)
-                # Spacing placeholder stays as blank line (no update needed)
+
+            # Store spacing line number for add_tool_result_continuation to use
+            # It will overwrite this line with the first diff line (no gap)
+            conversation._pending_spacing_line = spacing_line_num
 
             conversation.refresh()
 
