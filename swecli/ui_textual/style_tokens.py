@@ -19,6 +19,7 @@ BLUE_LIGHT = "#9ccffd"      # Headers, subtitles
 BLUE_BRIGHT = "#4a9eff"     # Repo display, spinner text
 BLUE_PATH = "#58a6ff"       # File paths in terminal
 BLUE_BG_ACTIVE = "#1f2d3a"  # Active row background
+BLUE_TASK = "#2596be"       # Background task indicator
 
 # Greens
 GREEN_BRIGHT = "#00ff00"    # Auto mode, success indicators
@@ -35,6 +36,10 @@ CYAN_VISION = "#00CED1"     # Vision model indicator
 
 # Other
 GOLD = "#FFD700"            # Thinking model indicator
+
+# Thinking mode
+THINKING = "#5a5e66"        # Darker gray for thinking content
+THINKING_ICON = "⟡"         # Concave diamond - thinking prefix icon
 
 # Icons/prefixes
 ERROR_ICON = "✖"

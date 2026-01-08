@@ -330,25 +330,19 @@ class DefaultToolRenderer:
             content_lines, head_count, tail_count
         )
 
-        # Re-render prompt line with ⎿ prefix
-        formatted_path = self._box_renderer.format_path(self._streaming_box_working_dir)
-        cmd_normalized = self._streaming_box_command.replace("\n", " ").replace("  ", " ").strip()
-        prompt = Text("    \u23bf  ", style=GREY)
-        prompt.append(formatted_path, style=BLUE_PATH)
-        prompt.append(" $ ", style=GREEN_PROMPT)
-        prompt.append(cmd_normalized, style=GREY)
-        self.log.write(prompt)
-
-        # Output lines with truncation
+        # Output lines with ⎿ prefix for first line, spaces for rest
+        is_first = True
         for line in head_lines:
-            self._write_bash_output_line(line, "", is_error)
+            self._write_bash_output_line(line, "", is_error, is_first)
+            is_first = False
 
         if hidden_count > 0:
             hidden_text = Text(f"       ... {hidden_count} lines hidden ...", style=f"{SUBTLE} italic")
             self.log.write(hidden_text)
 
         for line in tail_lines:
-            self._write_bash_output_line(line, "", is_error)
+            self._write_bash_output_line(line, "", is_error, is_first)
+            is_first = False
 
     def _truncate_from(self, index: int) -> None:
         if index >= len(self.log.lines):
@@ -586,33 +580,29 @@ class DefaultToolRenderer:
 
         indent = "  " * depth
 
-        # Prompt line with ⎿ prefix
-        formatted_path = self._box_renderer.format_path(working_dir)
-        cmd_normalized = command.replace("\n", " ").replace("  ", " ").strip()
-        prompt = Text(f"{indent}    \u23bf  ", style=GREY)
-        prompt.append(formatted_path, style=BLUE_PATH)
-        prompt.append(" $ ", style=GREEN_PROMPT)
-        prompt.append(cmd_normalized, style=GREY)
-        self.log.write(prompt)
-
-        # Output lines with space prefix for alignment
+        # Output lines with ⎿ prefix for first line, spaces for rest
+        is_first = True
         for line in head_lines:
-            self._write_bash_output_line(line, indent, is_error)
+            self._write_bash_output_line(line, indent, is_error, is_first)
+            is_first = False
 
         if hidden_count > 0:
             hidden_text = Text(f"{indent}       ... {hidden_count} lines hidden ...", style=f"{SUBTLE} italic")
             self.log.write(hidden_text)
 
         for line in tail_lines:
-            self._write_bash_output_line(line, indent, is_error)
+            self._write_bash_output_line(line, indent, is_error, is_first)
+            is_first = False
 
         # Add blank line for spacing after output
         self.log.write(Text(""))
 
-    def _write_bash_output_line(self, line: str, indent: str, is_error: bool) -> None:
+    def _write_bash_output_line(self, line: str, indent: str, is_error: bool, is_first: bool = False) -> None:
         """Write a single bash output line with proper indentation."""
         normalized = self._box_renderer.normalize_line(line)
-        output_line = Text(f"{indent}       ")
+        # Use ⎿ prefix for first line, spaces for rest
+        prefix = f"{indent}    \u23bf  " if is_first else f"{indent}       "
+        output_line = Text(prefix, style=GREY)
         output_line.append(normalized, style=ERROR if is_error else GREY)
         self.log.write(output_line)
 
@@ -622,30 +612,23 @@ class DefaultToolRenderer:
         self._streaming_box_working_dir = working_dir
         self._streaming_box_content_lines = []
 
-        # Write prompt line with ⎿ prefix
-        self.log.write(Text(""))  # Spacing
+        # Track start position for rebuild
         self._streaming_box_top_line = len(self.log.lines)
-
-        formatted_path = self._box_renderer.format_path(working_dir)
-        cmd_normalized = command.replace("\n", " ").replace("  ", " ").strip()
-        prompt = Text("    \u23bf  ", style=GREY)
-        prompt.append(formatted_path, style=BLUE_PATH)
-        prompt.append(" $ ", style=GREEN_PROMPT)
-        prompt.append(cmd_normalized, style=GREY)
-        self.log.write(prompt)
-
-        self._streaming_box_header_line = len(self.log.lines) - 1
+        self._streaming_box_header_line = len(self.log.lines)
 
     def append_to_streaming_box(self, line: str, is_stderr: bool = False) -> None:
         """Append a content line to the streaming output."""
         if self._streaming_box_header_line is None:
             return
 
+        # Check if this is the first line (⎿ prefix)
+        is_first = len(self._streaming_box_content_lines) == 0
+
         # Store for rebuild
         self._streaming_box_content_lines.append((line, is_stderr))
 
-        # Write output line with space prefix for alignment
-        self._write_bash_output_line(line, "", is_stderr)
+        # Write output line with ⎿ for first line, spaces for rest
+        self._write_bash_output_line(line, "", is_stderr, is_first)
 
     def close_streaming_bash_box(self, is_error: bool, exit_code: int) -> None:
         """Close streaming bash output, applying truncation if needed."""

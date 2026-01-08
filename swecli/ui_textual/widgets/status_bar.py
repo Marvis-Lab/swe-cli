@@ -12,6 +12,7 @@ from textual.widgets import Footer, Static
 
 from swecli.ui_textual.style_tokens import (
     BLUE_BRIGHT,
+    BLUE_TASK,
     CYAN,
     GREEN_BRIGHT,
     GREEN_LIGHT,
@@ -412,9 +413,9 @@ class ModelFooter(Footer):
         # Show background task indicator if any tasks are running
         if self._background_task_count > 0:
             text.append("  │  ", style=base_style)
-            text.append("⏳ ", style=BLUE_BRIGHT)
-            text.append(f"{self._background_task_count} bg", style=BLUE_BRIGHT)
-            text.append(" (^B)", style=base_style)
+            task_word = "task" if self._background_task_count == 1 else "tasks"
+            text.append(f"{self._background_task_count} background {task_word}", style=BLUE_TASK)
+            text.append(" (Ctrl+B)", style=base_style)
 
         return text
 
