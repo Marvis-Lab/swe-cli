@@ -213,6 +213,15 @@ class ConfigCommands(CommandHandler):
             # Recalculate max_context_tokens based on normal model
             config.max_context_tokens = int(model_info.context_length * 0.8)
 
+            # Auto-populate thinking/vision slots based on capabilities (only if not set)
+            if "reasoning" in model_info.capabilities and not config.model_thinking:
+                config.model_thinking_provider = provider_id
+                config.model_thinking = model_info.id
+
+            if "vision" in model_info.capabilities and not config.model_vlm:
+                config.model_vlm_provider = provider_id
+                config.model_vlm = model_info.id
+
         elif mode == "thinking":
             config.model_thinking_provider = provider_id
             config.model_thinking = model_info.id

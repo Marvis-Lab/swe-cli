@@ -10,7 +10,7 @@
       "name": "Claude Opus 4.5",
       "provider": "Anthropic",
       "context_length": 200000,
-      "capabilities": ["text", "vision", "code", "reasoning"],
+      "capabilities": ["text", "vision", "reasoning"],
       "recommended": true
     },
     "claude-haiku-4-5-20251001": {
@@ -25,35 +25,35 @@
       "name": "Claude Sonnet 4.5",
       "provider": "Anthropic",
       "context_length": 200000,
-      "capabilities": ["text", "vision", "code", "reasoning"]
+      "capabilities": ["text", "vision", "reasoning"]
     },
     "claude-opus-4-1-20250805": {
       "id": "claude-opus-4-1-20250805",
       "name": "Claude Opus 4.1",
       "provider": "Anthropic",
       "context_length": 200000,
-      "capabilities": ["text", "vision", "code", "reasoning"]
+      "capabilities": ["text", "vision", "reasoning"]
     },
     "claude-opus-4-20250514": {
       "id": "claude-opus-4-20250514",
       "name": "Claude Opus 4",
       "provider": "Anthropic",
       "context_length": 200000,
-      "capabilities": ["text", "vision", "code", "reasoning"]
+      "capabilities": ["text", "vision", "reasoning"]
     },
     "claude-sonnet-4-20250514": {
       "id": "claude-sonnet-4-20250514",
       "name": "Claude Sonnet 4",
       "provider": "Anthropic",
       "context_length": 200000,
-      "capabilities": ["text", "vision", "code"]
+      "capabilities": ["text", "vision"]
     },
     "claude-3-7-sonnet-20250219": {
       "id": "claude-3-7-sonnet-20250219",
       "name": "Claude Sonnet 3.7",
       "provider": "Anthropic",
       "context_length": 200000,
-      "capabilities": ["text", "vision", "code"]
+      "capabilities": ["text", "vision"]
     },
     "claude-3-5-haiku-20241022": {
       "id": "claude-3-5-haiku-20241022",
@@ -74,7 +74,7 @@
       "name": "Claude Opus 3",
       "provider": "Anthropic",
       "context_length": 200000,
-      "capabilities": ["text", "vision", "code"]
+      "capabilities": ["text", "vision"]
     }
   }
 }

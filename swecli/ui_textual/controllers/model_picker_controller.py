@@ -764,6 +764,11 @@ class ModelPickerController:
             self.app.conversation.add_system_message(
                 f"✓ {labels.get(slot, slot.title())} model saved: {summary}"
             )
+
+            # Auto-populate thinking/vision slots when setting normal model
+            if slot == "normal":
+                await self._auto_populate_slots(provider_info, model_info, labels)
+
             return True
         else:
             message = getattr(result, "message", None) or "Model update failed."
@@ -771,6 +776,45 @@ class ModelPickerController:
                 f"{labels.get(slot, slot.title())} model not saved: {message}"
             )
             return False
+
+    async def _auto_populate_slots(self, provider_info, model_info, labels: dict[str, str]) -> None:
+        """Auto-populate thinking/vision slots based on model capabilities.
+
+        Only populates slots that are not already set.
+        """
+        # Get current config to check if slots are set
+        config_snapshot = self._get_model_config_snapshot()
+        thinking_set = config_snapshot.get("thinking", {}).get("model")
+        vision_set = config_snapshot.get("vision", {}).get("model")
+
+        display_name = f"{provider_info.name}/{model_info.name}"
+        capabilities = getattr(model_info, "capabilities", []) or []
+
+        # Auto-populate thinking slot if model has reasoning capability AND not set
+        if "reasoning" in capabilities and not thinking_set:
+            try:
+                result = self.app.on_model_selected("thinking", provider_info.id, model_info.id)
+                if inspect.isawaitable(result):
+                    result = await result
+                if getattr(result, "success", None):
+                    self.app.conversation.add_system_message(
+                        f"  ⎿  {labels.get('thinking', 'Thinking')} auto-set: {display_name}"
+                    )
+            except Exception:
+                pass  # Silently skip if auto-populate fails
+
+        # Auto-populate vision slot if model has vision capability AND not set
+        if "vision" in capabilities and not vision_set:
+            try:
+                result = self.app.on_model_selected("vision", provider_info.id, model_info.id)
+                if inspect.isawaitable(result):
+                    result = await result
+                if getattr(result, "success", None):
+                    self.app.conversation.add_system_message(
+                        f"  ⎿  {labels.get('vision', 'Vision')} auto-set: {display_name}"
+                    )
+            except Exception:
+                pass  # Silently skip if auto-populate fails
 
     @staticmethod
     def _model_slot_labels() -> dict[str, str]:

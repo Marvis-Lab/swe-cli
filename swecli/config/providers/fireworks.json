@@ -87,7 +87,7 @@
       "name": "Qwen3 Coder 480B A35B Instruct",
       "provider": "Qwen",
       "context_length": 256000,
-      "capabilities": ["text", "code"],
+      "capabilities": ["text"],
       "serverless": true,
       "tunable": true
     },
