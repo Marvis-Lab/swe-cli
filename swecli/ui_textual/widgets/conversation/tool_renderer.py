@@ -188,6 +188,17 @@ class DefaultToolRenderer:
         has the ⎿ prefix in the result placeholder, so these continuation lines
         just need space indentation to align.
         """
+        if not lines:
+            return
+
+        # Remove preceding blank line (spacing placeholder) if it exists
+        # This ensures no gap between summary and continuation lines
+        if self.log.lines:
+            last_line = self.log.lines[-1]
+            last_text = getattr(last_line, 'plain', str(last_line)) if last_line else ""
+            if not last_text.strip():
+                self.log.lines.pop()
+
         for line in lines:
             formatted = Text("       ", style=GREY)  # 7 spaces to align with ⎿ content
             formatted.append(line, style=SUBTLE)
