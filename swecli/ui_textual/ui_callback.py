@@ -434,7 +434,7 @@ class TextualUICallback:
         formatted = self.formatter.format_tool_result(tool_name, normalized_args, result)
 
         # Extract the result line(s) from the formatted output
-        # First line goes to spinner result, additional lines displayed separately
+        # First ⎿ line goes to spinner result placeholder, additional lines displayed separately
         summary_lines: list[str] = []
         collected_lines: list[str] = []
         if isinstance(formatted, str):
@@ -443,12 +443,12 @@ class TextualUICallback:
             for line in lines:
                 stripped = line.strip()
                 if stripped.startswith("⎿"):
-                    # Start of result section
+                    # Start of result section - first line goes to placeholder only
                     in_result_section = True
                     result_text = stripped.lstrip("⎿").strip()
                     if result_text:
                         summary_lines.append(result_text)
-                        collected_lines.append(result_text)
+                        # Don't add to collected_lines - it goes to the result placeholder
                 elif in_result_section and stripped:
                     # Continue collecting lines after the first ⎿ line (e.g., diff lines)
                     # Skip @@ header lines, only show actual diff content
@@ -470,10 +470,11 @@ class TextualUICallback:
             # Fallback to direct calls if SpinnerService not available
             if hasattr(self.conversation, 'stop_tool_execution'):
                 self._run_on_ui(lambda: self.conversation.stop_tool_execution(success))
-            # Write result separately in fallback mode
-            if collected_lines:
-                block = "\n".join(collected_lines)
-                self._run_on_ui(self.conversation.add_tool_result, block)
+
+        # Write tool result (e.g., diff lines for edit_file) - always runs
+        if collected_lines:
+            block = "\n".join(collected_lines)
+            self._run_on_ui(self.conversation.add_tool_result, block)
 
         if summary_lines and self.chat_app and hasattr(self.chat_app, "record_tool_summary"):
             self._run_on_ui(self.chat_app.record_tool_summary, tool_name, normalized_args, summary_lines.copy())
