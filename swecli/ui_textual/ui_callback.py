@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from swecli.ui_textual.formatters.style_formatter import StyleFormatter
-from swecli.ui_textual.style_tokens import GREY, PRIMARY
+from swecli.ui_textual.style_tokens import GREY, PRIMARY, SUCCESS
 from swecli.ui_textual.utils.tool_display import build_tool_call_text
 from swecli.models.message import ToolCall
 
@@ -277,8 +277,17 @@ class TextualUICallback:
         if self.chat_app and hasattr(self.chat_app, "_stop_local_spinner"):
             self._run_on_ui(self.chat_app._stop_local_spinner)
 
-        # Claude Code style: No spinner during tool execution
-        # Results appear only in on_tool_result with ⎿ prefix
+        # Show tool call header with green bullet
+        from rich.text import Text
+
+        normalized_args = self._normalize_arguments(tool_args)
+        display_args = self._resolve_paths_in_args(normalized_args)
+        display_text = build_tool_call_text(tool_name, display_args)
+
+        tool_line = Text()
+        tool_line.append("⏺ ", style=SUCCESS)
+        tool_line.append_text(display_text)
+        self._run_on_ui(self.conversation.write, tool_line)
 
     def on_tool_result(
         self,
@@ -378,19 +387,8 @@ class TextualUICallback:
         success = result.get("success", True) if isinstance(result, dict) else True
 
         if not success:
-            # Failed tool: Show tool call line with ⏺ then error on next line
-            from swecli.ui_textual.style_tokens import WARNING
-            from swecli.ui_textual.utils.tool_display import build_tool_call_text
-            display_args = self._resolve_paths_in_args(normalized_args)
-            display_text = build_tool_call_text(tool_name, display_args)
-
-            # Tool call line with warning color
-            tool_line = Text()
-            tool_line.append("⏺ ", style=WARNING)
-            tool_line.append_text(display_text)
-            self._run_on_ui(self.conversation.write, tool_line)
-
-            # Error result line
+            # Failed tool: Tool call header already shown in on_tool_call
+            # Just show error result line
             error_msg = result.get("error", "") or result.get("message", "") or "Error"
             if isinstance(error_msg, str) and len(error_msg) > 100:
                 error_msg = error_msg[:97] + "..."
