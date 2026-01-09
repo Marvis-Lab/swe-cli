@@ -14,11 +14,13 @@ from textual.widgets import Markdown, Static
 from textual.widgets._markdown import MarkdownStream
 
 from swecli.ui_textual.style_tokens import (
+    BLUE_BRIGHT,
     ERROR,
+    GREY,
     PRIMARY,
-    SUBTLE,
-    THINKING,
+    SUCCESS,
     THINKING_ICON,
+    WARNING,
 )
 
 
@@ -75,8 +77,6 @@ class SpinnerWidget(Static):
     """Animated spinner widget matching the original spinner_manager behavior."""
 
     SPINNER_CHARS = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
-    BLUE_BRIGHT = "#4a9eff"
-    GREY = "#7a7e86"
 
     DEFAULT_CSS = """
     SpinnerWidget {
@@ -124,12 +124,12 @@ class SpinnerWidget(Static):
         suffix = f" ({elapsed}s)" if elapsed > 0 else ""
 
         content = Text()
-        content.append(frame, style=self.BLUE_BRIGHT)
-        content.append(f" {self._message}{suffix}", style=self.BLUE_BRIGHT)
+        content.append(frame, style=BLUE_BRIGHT)
+        content.append(f" {self._message}{suffix}", style=BLUE_BRIGHT)
 
         if self._tip:
-            content.append("\n  ⎿  Tip: ", style=self.GREY)
-            content.append(self._tip, style=self.GREY)
+            content.append("\n  ⎿  Tip: ", style=GREY)
+            content.append(self._tip, style=GREY)
 
         self.update(content)
 
@@ -188,8 +188,6 @@ class UserMessage(Static):
     }
     """
 
-    PRIMARY = "#d0d4dc"
-
     def __init__(self, content: str, pending: bool = False) -> None:
         super().__init__()
         self.add_class("user-message")
@@ -200,8 +198,8 @@ class UserMessage(Static):
         """Render user message on mount."""
         from rich.text import Text
         content = Text()
-        content.append("› ", style=f"bold {self.PRIMARY}")
-        content.append(self._content, style=self.PRIMARY)
+        content.append("› ", style=f"bold {PRIMARY}")
+        content.append(self._content, style=PRIMARY)
         self.update(content)
         if self._pending:
             self.add_class("pending")
@@ -271,10 +269,6 @@ class StreamingMessageBase(Static):
 class AssistantMessage(Static):
     """Assistant message with colored bullet prefix."""
 
-    # Use SUCCESS green for the bullet dot (matches completed state)
-    DOT_COLOR = "#6ad18f"
-    TEXT_COLOR = "#d0d4dc"
-
     DEFAULT_CSS = """
     AssistantMessage {
         width: 100%;
@@ -293,8 +287,8 @@ class AssistantMessage(Static):
         from rich.text import Text
 
         text = Text()
-        text.append("● ", style=self.DOT_COLOR)
-        text.append(self._content, style=self.TEXT_COLOR)
+        text.append("● ", style=SUCCESS)
+        text.append(self._content, style=PRIMARY)
         self.update(text)
 
     async def append_content(self, content: str) -> None:
@@ -306,8 +300,8 @@ class AssistantMessage(Static):
         from rich.text import Text
 
         text = Text()
-        text.append("● ", style=self.DOT_COLOR)
-        text.append(self._content, style=self.TEXT_COLOR)
+        text.append("● ", style=SUCCESS)
+        text.append(self._content, style=PRIMARY)
         self.update(text)
 
     async def stop_stream(self) -> None:
@@ -322,13 +316,12 @@ class AssistantMessage(Static):
 class ThinkingMessage(Vertical):
     """Thinking/reasoning message with collapsible content."""
 
-    THINKING_COLOR = "#5a5e66"
-
     DEFAULT_CSS = """
     ThinkingMessage {
         width: 100%;
         height: auto;
         margin: 0 0 1 0;
+        color: #7a7e86;
     }
     ThinkingMessage > .header-widget {
         width: auto;
@@ -337,6 +330,10 @@ class ThinkingMessage(Vertical):
     ThinkingMessage > .content-widget {
         width: 100%;
         height: auto;
+        color: #7a7e86;
+    }
+    ThinkingMessage Markdown {
+        color: #7a7e86;
     }
     """
 
@@ -373,11 +370,11 @@ class ThinkingMessage(Vertical):
         """Render the header with icon and label."""
         from rich.text import Text
         header = Text()
-        header.append(f"{THINKING_ICON} ", style=self.THINKING_COLOR)
+        header.append(f"{THINKING_ICON} ", style=GREY)
         label = self.COMPLETED_TEXT if self._completed else self.SPINNING_TEXT
-        header.append(label, style=f"italic {self.THINKING_COLOR}")
+        header.append(label, style=f"italic {GREY}")
         triangle = " ▶" if self.collapsed else " ▼"
-        header.append(triangle, style=self.THINKING_COLOR)
+        header.append(triangle, style=GREY)
         if self._header_widget is not None:
             self._header_widget.update(header)
 
@@ -471,8 +468,6 @@ class SystemMessage(Static):
 class ErrorMessage(Static):
     """Error message with red styling."""
 
-    ERROR_COLOR = "#ff5c57"
-
     DEFAULT_CSS = """
     ErrorMessage {
         width: 100%;
@@ -495,9 +490,9 @@ class ErrorMessage(Static):
         """Render the error content."""
         from rich.text import Text
         content = Text()
-        content.append("⦿ ", style=self.ERROR_COLOR)
+        content.append("⦿ ", style=ERROR)
         text = "Error. (click to expand)" if self.collapsed else self._error
-        content.append(text, style=self.ERROR_COLOR)
+        content.append(text, style=ERROR)
         self.update(content)
 
     async def on_click(self) -> None:
@@ -512,8 +507,6 @@ class ErrorMessage(Static):
 
 class WarningMessage(Static):
     """Warning message widget."""
-
-    WARNING_COLOR = "#ffb347"
 
     DEFAULT_CSS = """
     WarningMessage {
@@ -534,17 +527,13 @@ class WarningMessage(Static):
         from rich.text import Text
         content = Text()
         if self._show_border:
-            content.append("│ ", style=self.WARNING_COLOR)
-        content.append(self._message, style=self.WARNING_COLOR)
+            content.append("│ ", style=WARNING)
+        content.append(self._message, style=WARNING)
         self.update(content)
 
 
 class ToolCallMessage(Static):
     """Tool call display widget with animated spinner."""
-
-    GREEN_BRIGHT = "#6ad18f"
-    GREY = "#7a7e86"
-    ERROR = "#ff5c57"
 
     DEFAULT_CSS = """
     ToolCallMessage {
@@ -580,27 +569,27 @@ class ToolCallMessage(Static):
         content = Text()
 
         if self._status == "pending":
-            content.append("⏺ ", style=self.GREEN_BRIGHT)
+            content.append("⏺ ", style=SUCCESS)
         elif self._status == "running":
             elapsed = 0
             if self._started_at:
                 elapsed = int(time.monotonic() - self._started_at)
-            content.append("⏺ ", style=self.GREEN_BRIGHT)
-            content.append(self._tool_name, style=self.GREY)
-            content.append(f" ({elapsed}s)", style=self.GREY)
+            content.append("⏺ ", style=SUCCESS)
+            content.append(self._tool_name, style=GREY)
+            content.append(f" ({elapsed}s)", style=GREY)
             self.update(content)
             return
         elif self._status == "success":
-            content.append("✓ ", style=self.GREEN_BRIGHT)
+            content.append("✓ ", style=SUCCESS)
         elif self._status == "error":
-            content.append("✗ ", style=self.ERROR)
+            content.append("✗ ", style=ERROR)
 
-        content.append(self._tool_name, style=self.GREY)
+        content.append(self._tool_name, style=GREY)
 
         if self._status in ("success", "error") and self._started_at:
             import time
             elapsed = int(time.monotonic() - self._started_at)
-            content.append(f" ({elapsed}s)", style=self.GREY)
+            content.append(f" ({elapsed}s)", style=GREY)
 
         self.update(content)
 
@@ -632,8 +621,6 @@ class ToolCallMessage(Static):
 class ToolResultMessage(Static):
     """Tool result display widget."""
 
-    GREY = "#7a7e86"
-
     DEFAULT_CSS = """
     ToolResultMessage {
         width: 100%;
@@ -654,11 +641,11 @@ class ToolResultMessage(Static):
         content = Text()
         if self._show_prefix:
             # Match original format: "  ⎿  " (2 spaces + arrow + 2 spaces)
-            content.append("  ⎿  ", style=self.GREY)
+            content.append("  ⎿  ", style=GREY)
         else:
             # Continuation lines: 7 spaces for alignment
-            content.append("       ", style=self.GREY)
-        content.append(self._result, style=self.GREY)
+            content.append("       ", style=GREY)
+        content.append(self._result, style=GREY)
         self.update(content)
 
 
@@ -794,8 +781,6 @@ class InterruptMessage(Static):
     }
     """
 
-    INTERRUPT_COLOR = "#ffb347"
-
     def __init__(self, message: str = "Interrupted · What should I do instead?") -> None:
         super().__init__()
         self.add_class("interrupt-message")
@@ -805,6 +790,6 @@ class InterruptMessage(Static):
         """Render interrupt message on mount."""
         from rich.text import Text
         content = Text()
-        content.append("│ ", style=self.INTERRUPT_COLOR)
-        content.append(self._message, style=self.INTERRUPT_COLOR)
+        content.append("│ ", style=WARNING)
+        content.append(self._message, style=WARNING)
         self.update(content)
