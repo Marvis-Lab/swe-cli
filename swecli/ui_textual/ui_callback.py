@@ -332,15 +332,13 @@ class TextualUICallback:
 
         # Bash commands: handle background vs immediate differently
         if tool_name in ("bash_execute", "run_command") and isinstance(result, dict):
-            # Add blank line before tool result for consistent spacing
-            self._run_on_ui(self.conversation.write, Text(""))
-
             background_task_id = result.get("background_task_id")
 
             if background_task_id:
-                # Background task - show header + simple message together
+                # Background task - show header + simple message together (atomic)
                 header_display = build_tool_call_text(tool_name, display_args)
                 combined = Text()
+                combined.append("\n")  # Blank line before for spacing
                 combined.append(TOOL_CALL_PREFIX, style=SUCCESS)
                 combined.append_text(header_display)
                 combined.append("\n")
@@ -354,9 +352,10 @@ class TextualUICallback:
 
             is_error = not result.get("success", True)
 
-            # Show header first
+            # Show header with leading blank line for spacing
             header_display = build_tool_call_text(tool_name, display_args)
             header_line = Text()
+            header_line.append("\n")  # Blank line before for spacing
             header_line.append(TOOL_CALL_PREFIX, style=SUCCESS)
             header_line.append_text(header_display)
             self._run_on_ui(self.conversation.write, header_line)
@@ -395,15 +394,14 @@ class TextualUICallback:
                 self._run_on_ui(self.chat_app.resume_reasoning_spinner)
             return
 
-        # Add blank line before tool result for consistent spacing
-        self._run_on_ui(self.conversation.write, Text(""))
-
         # Build combined header + result as single Text (atomic write for parallel tools)
+        # Include leading newline for spacing between sections
         success = result.get("success", True) if isinstance(result, dict) else True
 
-        # Build header line
+        # Build header line with leading blank line for spacing
         header_display = build_tool_call_text(tool_name, display_args)
         combined = Text()
+        combined.append("\n")  # Blank line before for spacing
         combined.append(TOOL_CALL_PREFIX, style=SUCCESS)
         combined.append_text(header_display)
         combined.append("\n")
