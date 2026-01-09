@@ -269,9 +269,11 @@ class StreamingMessageBase(Static):
 
 
 class AssistantMessage(Static):
-    """Assistant message with streaming Markdown support."""
+    """Assistant message with colored bullet prefix."""
 
-    BLUE = "#82a0ff"
+    # Use SUCCESS green for the bullet dot (matches completed state)
+    DOT_COLOR = "#6ad18f"
+    TEXT_COLOR = "#d0d4dc"
 
     DEFAULT_CSS = """
     AssistantMessage {
@@ -285,59 +287,39 @@ class AssistantMessage(Static):
         super().__init__()
         self.add_class("assistant-message")
         self._content = content
-        self._markdown: Markdown | None = None
-        self._stream: MarkdownStream | None = None
-        self._dot_rendered = False
 
     def on_mount(self) -> None:
-        """Initialize the message on mount."""
+        """Render the message on mount - identical to UserMessage pattern."""
         from rich.text import Text
-        # Render the blue dot prefix
-        if not self._dot_rendered:
-            dot = Text("● ", style=self.BLUE)
-            self.update(dot)
-            self._dot_rendered = True
 
-    def _ensure_markdown(self) -> Markdown:
-        """Create markdown widget if needed."""
-        if self._markdown is None:
-            self._markdown = SelectableMarkdown("")
-            self.mount(self._markdown)
-        return self._markdown
-
-    def _ensure_stream(self) -> MarkdownStream:
-        if self._stream is None:
-            self._stream = Markdown.get_stream(self._ensure_markdown())
-        return self._stream
+        text = Text()
+        text.append("● ", style=self.DOT_COLOR)
+        text.append(self._content, style=self.TEXT_COLOR)
+        self.update(text)
 
     async def append_content(self, content: str) -> None:
         """Append streaming content to the message."""
         if not content:
             return
         self._content += content
-        stream = self._ensure_stream()
-        await stream.write(content)
+        # Re-render with updated content
+        from rich.text import Text
 
-    async def write_initial_content(self) -> None:
-        """Write the initial content if any."""
-        if self._content:
-            stream = self._ensure_stream()
-            await stream.write(self._content)
+        text = Text()
+        text.append("● ", style=self.DOT_COLOR)
+        text.append(self._content, style=self.TEXT_COLOR)
+        self.update(text)
 
     async def stop_stream(self) -> None:
-        """Stop the streaming and finalize content."""
-        if self._stream is None:
-            return
-        await self._stream.stop()
-        self._stream = None
+        """Stop the streaming (no-op for Static-based rendering)."""
+        pass
 
-    @property
-    def content(self) -> str:
-        """Get the full content."""
+    def get_text_content(self) -> str:
+        """Get the raw text content (without the dot prefix)."""
         return self._content
 
 
-class ThinkingMessage(Static):
+class ThinkingMessage(Vertical):
     """Thinking/reasoning message with collapsible content."""
 
     THINKING_COLOR = "#5a5e66"
@@ -348,12 +330,20 @@ class ThinkingMessage(Static):
         height: auto;
         margin: 0 0 1 0;
     }
+    ThinkingMessage > .header-widget {
+        width: auto;
+        height: auto;
+    }
+    ThinkingMessage > .content-widget {
+        width: 100%;
+        height: auto;
+    }
     """
 
     SPINNING_TEXT = "Thinking"
     COMPLETED_TEXT = "Thought"
 
-    def __init__(self, content: str = "", collapsed: bool = True) -> None:
+    def __init__(self, content: str = "", collapsed: bool = False) -> None:
         super().__init__()
         self.add_class("thinking-message")
         self._content = content
@@ -361,6 +351,19 @@ class ThinkingMessage(Static):
         self._completed = False
         self._markdown: Markdown | None = None
         self._stream: MarkdownStream | None = None
+        self._header_widget: Static | None = None
+
+    def compose(self) -> ComposeResult:
+        """Compose the thinking message with header and content widgets."""
+        # Create header widget
+        self._header_widget = Static("", classes="header-widget")
+        yield self._header_widget
+
+        # Create markdown content widget (hidden if collapsed)
+        self._markdown = SelectableMarkdown("")
+        self._markdown.add_class("content-widget")
+        self._markdown.display = not self.collapsed
+        yield self._markdown
 
     def on_mount(self) -> None:
         """Initialize the thinking message on mount."""
@@ -375,12 +378,15 @@ class ThinkingMessage(Static):
         header.append(label, style=f"italic {self.THINKING_COLOR}")
         triangle = " ▶" if self.collapsed else " ▼"
         header.append(triangle, style=self.THINKING_COLOR)
-        self.update(header)
+        if self._header_widget is not None:
+            self._header_widget.update(header)
 
     def _ensure_markdown(self) -> Markdown:
-        """Create markdown widget if needed."""
+        """Get the markdown widget."""
         if self._markdown is None:
+            # Fallback if compose hasn't run yet
             self._markdown = SelectableMarkdown("")
+            self._markdown.add_class("content-widget")
             self._markdown.display = not self.collapsed
             self.mount(self._markdown)
         return self._markdown

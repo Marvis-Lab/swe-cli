@@ -39,6 +39,146 @@ if TYPE_CHECKING:
     from typing_extensions import Self
 
 
+class VirtualLine:
+    """Wrapper that makes a Static widget look like a Strip/Text object.
+
+    This enables compatibility with renderers that expect .plain and .text attributes
+    on line objects (like message_renderer, tool_renderer, spinner_manager).
+    """
+
+    def __init__(self, widget: Static):
+        self._widget = widget
+
+    @property
+    def plain(self) -> str:
+        """Get plain text content (used by renderers for spacing checks)."""
+        # Static widgets use .content property to store Rich objects
+        if hasattr(self._widget, "content"):
+            content = self._widget.content
+        elif hasattr(self._widget, "renderable"):
+            content = self._widget.renderable
+        else:
+            return ""
+
+        if content is None:
+            return ""
+        if isinstance(content, Text):
+            return content.plain
+        if hasattr(content, "plain"):
+            return content.plain
+        return str(content) if content else ""
+
+    @property
+    def text(self) -> str:
+        """Alias for plain (some code uses .text instead of .plain)."""
+        return self.plain
+
+    def __str__(self) -> str:
+        return self.plain
+
+
+class VirtualLineList:
+    """List-like object that intercepts operations and syncs with widgets.
+
+    This is the key to V2 compatibility - it makes `self.log.lines` behave like
+    a real list while actually managing Static widgets underneath.
+
+    Supports all patterns used by renderers:
+    - len(self.log.lines)
+    - self.log.lines[-1].plain
+    - self.log.lines[idx] = strip  (in-place update)
+    - del self.log.lines[idx]
+    - del self.log.lines[start:]
+    - self.log.lines.insert(idx, item)
+    - if self.log.lines:  (truthiness check)
+    """
+
+    def __init__(self, log: "ConversationLogV2"):
+        self._log = log
+        self._lines: list[VirtualLine] = []
+
+    def __len__(self) -> int:
+        return len(self._lines)
+
+    def __bool__(self) -> bool:
+        return len(self._lines) > 0
+
+    def __iter__(self):
+        return iter(self._lines)
+
+    def __getitem__(self, key):
+        if isinstance(key, slice):
+            return self._lines[key]
+        return self._lines[key]
+
+    def __setitem__(self, key, value):
+        """Support self.log.lines[idx] = strip (in-place update)."""
+        if isinstance(key, int):
+            # Handle negative indices
+            if key < 0:
+                key = len(self._lines) + key
+            if 0 <= key < len(self._lines):
+                vline = self._lines[key]
+                # Convert Strip to Text if needed
+                if hasattr(value, "__iter__") and hasattr(value, "cell_length"):
+                    # Strip object - convert segments to Text
+                    text = self._strip_to_text(value)
+                    vline._widget.update(text)
+                else:
+                    vline._widget.update(value)
+
+    def __delitem__(self, key):
+        """Support del self.log.lines[idx] and del self.log.lines[start:]"""
+        if isinstance(key, int):
+            # Handle negative indices
+            if key < 0:
+                key = len(self._lines) + key
+            if 0 <= key < len(self._lines):
+                vline = self._lines.pop(key)
+                vline._widget.remove()
+        elif isinstance(key, slice):
+            indices = range(*key.indices(len(self._lines)))
+            # Delete in reverse order to maintain correct indices
+            for i in sorted(indices, reverse=True):
+                if 0 <= i < len(self._lines):
+                    vline = self._lines.pop(i)
+                    vline._widget.remove()
+
+    def append(self, item: VirtualLine) -> None:
+        """Append a VirtualLine to the list."""
+        self._lines.append(item)
+
+    def insert(self, idx: int, item: VirtualLine) -> None:
+        """Support self.log.lines.insert(idx, strip).
+
+        Used by spinner_manager for in-place updates.
+        """
+        self._lines.insert(idx, item)
+        # Reorder widget in DOM to match list position
+        if idx < len(self._lines) - 1 and self._log is not None:
+            next_widget = self._lines[idx + 1]._widget
+            try:
+                item._widget.move_before(next_widget)
+            except Exception:
+                pass  # Widget may not be mounted yet
+
+    def clear(self) -> None:
+        """Remove all lines and their widgets."""
+        for vline in self._lines:
+            try:
+                vline._widget.remove()
+            except Exception:
+                pass  # Widget may already be removed
+        self._lines.clear()
+
+    def _strip_to_text(self, strip) -> Text:
+        """Convert Strip (list of Segments) to Rich Text."""
+        text = Text()
+        for segment in strip:
+            text.append(segment.text, style=segment.style)
+        return text
+
+
 class ConversationLogV2(VerticalScroll):
     """VerticalScroll-based conversation log with text selection support.
 
@@ -73,6 +213,16 @@ class ConversationLogV2(VerticalScroll):
         self._current_tool_widget: ToolCallMessage | None = None
         self._debug_enabled = False
         self._resize_timer: Any | None = None
+        # Virtual lines list for compatibility with V1 renderers
+        self._line_list = VirtualLineList(self)
+        # Protected lines tracking (compatibility with V1)
+        self._protected_lines: set[int] = set()
+        # Skip renderable storage flag (for temporary content like spinner)
+        self._skip_renderable_storage: bool = False
+        # Pending spacing line (for tool result continuation)
+        self._pending_spacing_line: int | None = None
+        # Deduplication for assistant messages (prevents double-render)
+        self._last_assistant_message: str | None = None
 
     # --- Properties ---
 
@@ -144,8 +294,7 @@ class ConversationLogV2(VerticalScroll):
         self._current_assistant_widget = widget
         if self._auto_scroll:
             widget.scroll_visible()
-        # Write initial content
-        self.call_later(widget.write_initial_content)
+        # Rely on on_mount for rendering (same pattern as UserMessage)
 
     def start_assistant_streaming(self) -> None:
         """Start a new streaming assistant message."""
@@ -191,7 +340,7 @@ class ConversationLogV2(VerticalScroll):
 
     def add_thinking_block(self, content: str) -> None:
         """Add a thinking block widget."""
-        widget = ThinkingMessage(content, collapsed=True)
+        widget = ThinkingMessage(content, collapsed=False)  # Show expanded by default
         self.mount(widget)
         self._current_thinking_widget = widget
         if self._auto_scroll:
@@ -201,7 +350,7 @@ class ConversationLogV2(VerticalScroll):
 
     def start_thinking_streaming(self) -> None:
         """Start a new streaming thinking block."""
-        widget = ThinkingMessage("", collapsed=True)
+        widget = ThinkingMessage("", collapsed=False)  # Show expanded by default
         self.mount(widget)
         self._current_thinking_widget = widget
         if self._auto_scroll:
@@ -559,32 +708,44 @@ class ConversationLogV2(VerticalScroll):
 
         Converts Rich renderables to Static widgets for mounting.
         Static widgets can accept Rich Text objects directly and preserve styling.
-        Skips empty content to avoid creating widgets that take up vertical space.
+
+        IMPORTANT: Unlike the previous implementation, we DO create widgets for
+        empty content (spacers) because renderers use write(Text("")) for spacing
+        between messages and tool results.
         """
-        # Skip empty content - don't create widgets for blank lines
-        # In RichLog, write(Text("")) adds a blank line, but here it would create
-        # a widget that takes up space even when empty
+        # Create widget for content
         if isinstance(content, Text):
             if not content.plain.strip():
-                return self  # Skip empty Text objects
-            widget = Static(content)  # Static accepts Rich Text directly!
-        elif hasattr(content, '__rich__') or hasattr(content, '__rich_console__'):
-            # Other Rich renderables (Panel, Syntax, etc.) - don't skip these
+                # Create spacer widget for blank lines (needed for spacing!)
+                widget = Static("")
+                widget.styles.height = 1  # Ensure it takes visual space
+            else:
+                widget = Static(content)  # Static accepts Rich Text directly!
+        elif hasattr(content, "__rich__") or hasattr(content, "__rich_console__"):
+            # Other Rich renderables (Panel, Syntax, etc.)
             widget = Static(content)
         else:
             text_content = str(content)
             if not text_content.strip():
-                return self  # Skip empty strings
-            widget = NoMarkupStatic(text_content)
+                # Create spacer widget
+                widget = Static("")
+                widget.styles.height = 1
+            else:
+                widget = NoMarkupStatic(text_content)
 
-        # Remove margin for write() calls - they're inline content, not message blocks
+        # Configure widget styling
         widget.styles.margin = (0, 0, 0, 0)
         widget.styles.padding = (0, 0, 0, 0)
-        widget.styles.height = "auto"
+        if widget.styles.height != 1:  # Don't override spacer height
+            widget.styles.height = "auto"
 
         # Enable text selection on this widget
         widget.can_focus = True
         widget.ALLOW_SELECT = True
+
+        # Track in virtual lines list (unless skipping for temporary content)
+        if not self._skip_renderable_storage:
+            self._line_list.append(VirtualLine(widget))
 
         self.mount(widget)
 
@@ -594,17 +755,26 @@ class ConversationLogV2(VerticalScroll):
         return self
 
     def refresh_line(self, y: int) -> None:
-        """Compatibility stub - widgets refresh themselves."""
+        """Refresh a specific line by refreshing its widget.
+
+        Used by spinner managers to update animated spinner lines.
+        """
+        if 0 <= y < len(self._line_list):
+            self._line_list[y]._widget.refresh()
         self.refresh()
 
     @property
-    def lines(self) -> list:
-        """Compatibility property - returns empty list.
+    def lines(self) -> VirtualLineList:
+        """Return virtual lines list for renderer compatibility.
 
-        The new widget-based architecture doesn't use lines.
-        This prevents AttributeError for code that checks lines.
+        This enables patterns like:
+        - if self.log.lines:  (truthiness check)
+        - len(self.log.lines)  (line count)
+        - self.log.lines[-1].plain  (last line content)
+        - self.log.lines[idx] = strip  (in-place update)
+        - del self.log.lines[idx]  (deletion)
         """
-        return []
+        return self._line_list
 
     def scroll_partial_page(self, direction: int) -> None:
         """Scroll a fraction of the viewport."""
@@ -615,7 +785,10 @@ class ConversationLogV2(VerticalScroll):
     # --- Clear ---
 
     def clear(self) -> "Self":
-        """Clear all content."""
+        """Clear all content and reset virtual lines."""
+        self._line_list.clear()
+        self._protected_lines.clear()
+        # Clear any remaining children not tracked in _line_list
         for child in list(self.children):
             child.remove()
         return self
