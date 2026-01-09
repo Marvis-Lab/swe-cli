@@ -88,8 +88,10 @@ def render_markdown_text_segment(content: str, *, leading: bool = False) -> Tupl
         if heading_match:
             level = len(heading_match.group(1))
             title = heading_match.group(2).strip()
+            rendered = _render_inline_markdown(title)
             style = "bold underline" if level == 1 else "bold"
-            emit(Text(title, style=style))
+            rendered.stylize(style)
+            emit(rendered)
             index += 1
             continue
 
