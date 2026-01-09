@@ -281,8 +281,11 @@ class TextualUICallback:
         if self.chat_app and hasattr(self.chat_app, "_stop_local_spinner"):
             self._run_on_ui(self.chat_app._stop_local_spinner)
 
-        # Claude Code style: No tool call headers shown
-        # Results appear directly with ⎿ prefix in on_tool_result
+        # Show tool call header: ⏺ ToolName (args)
+        normalized_args = self._normalize_arguments(tool_args)
+        display_args = self._resolve_paths_in_args(normalized_args)
+        tool_line = ToolResultFormatter.format_tool_call(tool_name, display_args)
+        self._run_on_ui(self.conversation.write, tool_line)
 
     def on_tool_result(
         self,
