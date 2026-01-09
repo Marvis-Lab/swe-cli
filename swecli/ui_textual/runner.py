@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import atexit
 import contextlib
 import os
 import queue
@@ -12,27 +11,6 @@ import sys
 import threading
 from pathlib import Path
 from typing import Any, Callable, Optional
-
-
-def _reset_terminal_mouse_mode() -> None:
-    """Send escape sequences to disable mouse tracking.
-
-    This ensures mouse mode is properly cleaned up even if the app
-    crashes or exits unexpectedly. Registered with atexit for reliability.
-    """
-    try:
-        # Disable SGR mouse mode and basic mouse tracking
-        sys.stdout.write("\033[?1006l")  # Disable SGR extended mouse mode
-        sys.stdout.write("\033[?1003l")  # Disable any-event tracking
-        sys.stdout.write("\033[?1002l")  # Disable button-event tracking
-        sys.stdout.write("\033[?1000l")  # Disable basic mouse mode
-        sys.stdout.flush()
-    except Exception:
-        pass  # Ignore errors during cleanup
-
-
-# Register cleanup to run on exit
-atexit.register(_reset_terminal_mouse_mode)
 
 
 
@@ -159,6 +137,14 @@ class TextualRunner:
 
     def _setup_components(self, auto_connect_mcp: bool) -> None:
         """Initialize helper components (History, DOM, MCP, etc)."""
+        # Initialize background task manager for long-running commands
+        from swecli.core.context_engineering.tools.background_task_manager import BackgroundTaskManager
+        self._task_manager = BackgroundTaskManager(self.working_dir)
+
+        # Inject task manager into REPL's bash_tool if available
+        if hasattr(self.repl, 'bash_tool') and self.repl.bash_tool is not None:
+            self.repl.bash_tool._task_manager = self._task_manager
+
         self._history_hydrator = HistoryHydrator(
             session_manager=self.session_manager,
             working_dir=self.working_dir,
@@ -264,9 +250,16 @@ class TextualRunner:
 
         # Store runner reference on app for queue indicator updates
         self.app._runner = self
-        
+
         # Link console bridge to app for rendering
         self.console_bridge.set_app(self.app)
+
+        # Set up background task manager on app for UI integration
+        self.app._task_manager = self._task_manager
+
+        # Create status provider to update footer when tasks change
+        from swecli.ui_textual.managers.background_task_status import BackgroundTaskStatusProvider
+        self._task_status_provider = BackgroundTaskStatusProvider(self.app, self._task_manager)
 
 
     def _configure_session(self, resume: Optional[str], continue_session: bool) -> None:
@@ -580,7 +573,6 @@ Work through each implementation step in order. Mark each todo item as 'in_progr
         try:
             self._loop.run_until_complete(self._run_app())
         finally:
-            _reset_terminal_mouse_mode()  # Ensure mouse mode is disabled
             self.repl._cleanup()
             with contextlib.suppress(RuntimeError):
                 self._loop.run_until_complete(self._loop.shutdown_asyncgens())
@@ -596,8 +588,8 @@ Work through each implementation step in order. Mark each todo item as 'in_progr
         self.console_bridge.start(self._loop)
         try:
             # Use alternate screen mode (inline=False) for clean TUI with no terminal noise
-            # Enable mouse for scroll support; text selection requires Option/Alt + drag
-            await self.app.run_async(inline=False, mouse=False)
+            # Enable mouse for scroll and text selection support
+            await self.app.run_async(inline=False, mouse=True)
         finally:
             # Stop message processor thread
             self.message_processor.stop()

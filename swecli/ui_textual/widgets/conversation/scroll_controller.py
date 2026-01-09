@@ -145,9 +145,6 @@ class DefaultScrollController:
 
     def on_mouse_scroll_down(self, event: MouseScrollDown) -> None:
         """Handle mouse scroll down (wheel down / two-finger swipe down)."""
-        # When Option (meta) key is pressed, allow default behavior for text selection scrolling
-        if event.meta:
-            return  # Don't stop event, let terminal handle it
         self._user_scrolled = True
         self.auto_scroll = False
         if hasattr(self.log, 'scroll_relative'):
@@ -156,8 +153,6 @@ class DefaultScrollController:
 
     def on_mouse_scroll_up(self, event: MouseScrollUp) -> None:
         """Handle mouse scroll up (wheel up / two-finger swipe up)."""
-        if event.meta:
-            return
         self._user_scrolled = True
         self.auto_scroll = False
         if hasattr(self.log, 'scroll_relative'):

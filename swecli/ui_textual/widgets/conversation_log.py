@@ -11,6 +11,7 @@ from rich.panel import Panel
 from rich.text import Text
 from textual.events import MouseDown, MouseMove, MouseScrollDown, MouseScrollUp, MouseUp, Resize
 from textual.geometry import Size
+from textual.selection import Selection
 from textual.widgets import RichLog
 from swecli.ui_textual.style_tokens import SUBTLE, CYAN
 
@@ -43,6 +44,36 @@ class ConversationLog(RichLog):
     can_focus = True
     ALLOW_SELECT = True
 
+    @property
+    def allow_select(self) -> bool:
+        """Enable text selection even though this is technically a container.
+
+        RichLog inherits from ScrollableContainer which has `layout: vertical`,
+        making `is_container` return True. Textual's default `allow_select`
+        returns `ALLOW_SELECT and not is_container`, which blocks selection.
+        We override to bypass this gate.
+        """
+        return self.ALLOW_SELECT
+
+    def get_selection(self, selection: Selection) -> tuple[str, str] | None:
+        """Extract selected text from the conversation log.
+
+        RichLog stores content as Strip objects in self.lines.
+        Convert to plain text for selection extraction.
+
+        Args:
+            selection: The Selection object describing the selected region.
+
+        Returns:
+            Tuple of (selected_text, line_ending) or None if no text available.
+        """
+        if not self.lines:
+            return None
+
+        # Convert Strip objects to plain text
+        text = "\n".join(str(line) for line in self.lines)
+        return selection.extract(text), "\n"
+
     def __init__(self, **kwargs):
         super().__init__(
             **kwargs,
@@ -60,6 +91,7 @@ class ConversationLog(RichLog):
         self._last_assistant_rendered: str | None = None
         self._spinner_active = False
         self._approval_start: int | None = None
+        self._pending_approval_clear: bool = False  # Deferred approval panel clearing
         self._debug_enabled = False  # Enable debug messages by default
         self._protected_lines: set[int] = set()  # Lines that should not be truncated
         self.MAX_PROTECTED_LINES = 200
@@ -88,6 +120,13 @@ class ConversationLog(RichLog):
         animate: bool = False,
     ) -> "Self":
         """Extended write that stores original renderables for resize reflow."""
+        # Clear pending approval panel right before writing new content (no flash)
+        if self._pending_approval_clear:
+            self._pending_approval_clear = False
+            if self._approval_start is not None and self._approval_start < len(self.lines):
+                del self.lines[self._approval_start:]
+            self._approval_start = None
+
         # Skip storage during re-render OR for temporary content (spinner)
         if self._is_rerendering or self._skip_renderable_storage:
             return super().write(content, width, expand, shrink, scroll_end, animate)
@@ -378,8 +417,17 @@ class ConversationLog(RichLog):
         if self._approval_start < len(self.lines):
              del self.lines[self._approval_start:]
              self.refresh()
-        
+
         self._approval_start = None
+        self._pending_approval_clear = False
+
+    def defer_approval_clear(self) -> None:
+        """Mark approval panel for deferred clearing (cleared on next write).
+
+        This prevents the flash that occurs when clearing the panel
+        and then waiting for tool result to be written.
+        """
+        self._pending_approval_clear = True
 
     def add_tool_call(self, display: Text | str, *_: Any) -> None:
         self._tool_renderer.add_tool_call(display)

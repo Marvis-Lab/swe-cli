@@ -9,6 +9,7 @@ from rich.console import RenderableType
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, Vertical
+from textual.events import MouseUp
 from textual.widgets import Header, Rule, Static
 
 from swecli.ui_textual.widgets import ConversationLog
@@ -35,17 +36,20 @@ class SWECLIChatApp(App):
 
     CSS_PATH = "styles/chat.tcss"
 
-    # Disable mouse to avoid escape sequence issues and random character input
-    ENABLE_MOUSE = False
+    # Mouse enabled for scroll and text selection support
+    # Text selection copies to clipboard on mouse release
 
     BINDINGS = [
         Binding("ctrl+c", "clear_or_quit", "", show=False, priority=True),
         Binding("ctrl+l", "clear_conversation", "", show=False),
         Binding("ctrl+t", "toggle_todo_panel", "Toggle Todos", show=False),
         Binding("ctrl+shift+t", "toggle_thinking", "Thinking", show=False),
+        Binding("ctrl+b", "show_tasks", "Background Tasks", show=False),
         Binding("escape", "interrupt", "", show=False),
         Binding("pageup", "scroll_up", "Scroll Up", show=False),
         Binding("pagedown", "scroll_down", "Scroll Down", show=False),
+        Binding("shift+up", "scroll_chat_up", "Scroll Up", show=False, priority=True),
+        Binding("shift+down", "scroll_chat_down", "Scroll Down", show=False, priority=True),
         Binding("up", "scroll_up_line", "Scroll Up One Line", show=False),
         Binding("down", "scroll_down_line", "Scroll Down One Line", show=False),
         Binding("ctrl+up", "focus_conversation", "Focus Conversation", show=False),
@@ -110,6 +114,7 @@ class SWECLIChatApp(App):
         self._tips_manager = TipsManager()
         self._model_picker: ModelPickerController = ModelPickerController(self)
         self._approval_controller = ApprovalPromptController(self)
+        self._task_manager = None  # Set by runner when BackgroundTaskManager is available
         self._spinner = SpinnerController(self, self._tips_manager, todo_handler=self.todo_handler)
         self.spinner_service = SpinnerService(self)
         self._console_buffer = ConsoleBufferManager(self)
@@ -525,6 +530,21 @@ class SWECLIChatApp(App):
         """Scroll conversation down (Page Down)."""
         self.conversation.scroll_partial_page(direction=1)
 
+    def action_scroll_chat_up(self) -> None:
+        """Scroll conversation up with Shift+Up for fine control."""
+        if hasattr(self, 'conversation'):
+            self.conversation.scroll_relative(y=-5)
+
+    def action_scroll_chat_down(self) -> None:
+        """Scroll conversation down with Shift+Down for fine control."""
+        if hasattr(self, 'conversation'):
+            self.conversation.scroll_relative(y=5)
+
+    def on_mouse_up(self, event: MouseUp) -> None:
+        """Copy selected text to clipboard on mouse release."""
+        from swecli.ui_textual.utils.clipboard import copy_selection_to_clipboard
+        copy_selection_to_clipboard(self)
+
     def action_scroll_up_line(self) -> None:
         """Scroll conversation up one line (Up Arrow)."""
         # Only scroll if conversation has focus, otherwise let input handle it
@@ -641,6 +661,14 @@ class SWECLIChatApp(App):
             status_bar.set_thinking_enabled(self._thinking_visible)
         except Exception:  # pragma: no cover - defensive
             pass
+
+    async def action_show_tasks(self) -> None:
+        """Show background tasks list (Ctrl+B).
+
+        Triggers the /tasks command to display all running background tasks.
+        """
+        if self._command_router is not None:
+            await self._command_router.handle("/tasks")
 
 
 def create_chat_app(
