@@ -9,9 +9,10 @@ from typing import Any, Dict, Optional
 from swecli.ui_textual.formatters.style_formatter import StyleFormatter
 from swecli.ui_textual.formatters.result_formatter import (
     RESULT_PREFIX,
+    TOOL_CALL_PREFIX,
     ToolResultFormatter,
 )
-from swecli.ui_textual.style_tokens import GREY, PRIMARY
+from swecli.ui_textual.style_tokens import GREY, PRIMARY, SUCCESS
 from swecli.ui_textual.utils.tool_display import build_tool_call_text
 from swecli.models.message import ToolCall
 
@@ -327,28 +328,35 @@ class TextualUICallback:
             return
 
         normalized_args = self._normalize_arguments(tool_args)
-
-        # Show tool call header first: ⏺ ToolName (args)
-        # This ensures header + result appear together for parallel tools
         display_args = self._resolve_paths_in_args(normalized_args)
-        tool_line = ToolResultFormatter.format_tool_call(tool_name, display_args)
-        self._run_on_ui(self.conversation.write, tool_line)
 
         # Bash commands: handle background vs immediate differently
         if tool_name in ("bash_execute", "run_command") and isinstance(result, dict):
             background_task_id = result.get("background_task_id")
 
             if background_task_id:
-                # Background task - show simple message
-                result_line = Text(RESULT_PREFIX, style=GREY)
-                result_line.append(f"Running in background ({background_task_id})", style=GREY)
-                self._run_on_ui(self.conversation.write, result_line)
+                # Background task - show header + simple message together
+                header_display = build_tool_call_text(tool_name, display_args)
+                combined = Text()
+                combined.append(TOOL_CALL_PREFIX, style=SUCCESS)
+                combined.append_text(header_display)
+                combined.append("\n")
+                combined.append(RESULT_PREFIX, style=GREY)
+                combined.append(f"Running in background ({background_task_id})", style=GREY)
+                self._run_on_ui(self.conversation.write, combined)
                 # Resume spinner - LLM is processing after tool completes
                 if self.chat_app and hasattr(self.chat_app, 'resume_reasoning_spinner'):
                     self._run_on_ui(self.chat_app.resume_reasoning_spinner)
                 return
 
             is_error = not result.get("success", True)
+
+            # Show header first
+            header_display = build_tool_call_text(tool_name, display_args)
+            header_line = Text()
+            header_line.append(TOOL_CALL_PREFIX, style=SUCCESS)
+            header_line.append_text(header_display)
+            self._run_on_ui(self.conversation.write, header_line)
 
             if hasattr(self.conversation, 'add_bash_output_box'):
                 import os
@@ -384,29 +392,34 @@ class TextualUICallback:
                 self._run_on_ui(self.chat_app.resume_reasoning_spinner)
             return
 
-        # Claude Code style: Format result line
+        # Build combined header + result as single Text (atomic write for parallel tools)
         success = result.get("success", True) if isinstance(result, dict) else True
 
+        # Build header line
+        header_display = build_tool_call_text(tool_name, display_args)
+        combined = Text()
+        combined.append(TOOL_CALL_PREFIX, style=SUCCESS)
+        combined.append_text(header_display)
+        combined.append("\n")
+
         if not success:
-            # Failed tool: Tool call header already shown in on_tool_call
-            # Just show error result line
+            # Failed tool: show header + error result
             error_msg = result.get("error", "") or result.get("message", "") or "Error"
             if isinstance(error_msg, str) and len(error_msg) > 100:
                 error_msg = error_msg[:97] + "..."
-            result_line = Text(RESULT_PREFIX, style=GREY)
-            result_line.append(error_msg, style=GREY)
-            self._run_on_ui(self.conversation.write, result_line)
+            combined.append(RESULT_PREFIX, style=GREY)
+            combined.append(error_msg, style=GREY)
+            self._run_on_ui(self.conversation.write, combined)
 
             # Resume spinner - LLM is processing after tool completes
-            # Uses resume_reasoning_spinner which checks _is_processing flag
             if self.chat_app and hasattr(self.chat_app, 'resume_reasoning_spinner'):
                 self._run_on_ui(self.chat_app.resume_reasoning_spinner)
         else:
-            # Successful tool: Just show result line with ⎿ prefix
+            # Successful tool: show header + result
             result_text = self._format_simple_result(tool_name, normalized_args, result)
-            result_line = Text(RESULT_PREFIX, style=GREY)
-            result_line.append(result_text, style=GREY)
-            self._run_on_ui(self.conversation.write, result_line)
+            combined.append(RESULT_PREFIX, style=GREY)
+            combined.append(result_text, style=GREY)
+            self._run_on_ui(self.conversation.write, combined)
 
             # Handle diff lines for edit_file (show after summary)
             if tool_name == "edit_file" and isinstance(result, dict):
