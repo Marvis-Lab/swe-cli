@@ -116,8 +116,9 @@ def render_markdown_text_segment(content: str, *, leading: bool = False) -> Tupl
             rendered = _render_inline_markdown(bullet_text)
             indent_level = max(0, len(bullet_indent) // 2)
             bullet_line = Text()
-            symbol = "   - " if indent_level == 0 else "     - "
-            bullet_line.append("   " * indent_level + symbol)
+            # emit() adds base indent, so just add dash here
+            symbol = "- " if indent_level == 0 else "  - "
+            bullet_line.append("  " * indent_level + symbol)
             bullet_line.append_text(rendered)
             emit(bullet_line, allow_leading=False)
             index += 1
@@ -131,10 +132,11 @@ def render_markdown_text_segment(content: str, *, leading: bool = False) -> Tupl
             rendered = _render_inline_markdown(item_text)
             indent_level = max(0, len(ordered_indent) // 2)
             ordered_line = Text()
+            # emit() adds base indent, so just add number here
             if indent_level == 0:
-                ordered_line.append(f"   {number}. ")
+                ordered_line.append(f"{number}. ")
             else:
-                ordered_line.append("   " * indent_level + "   – ")
+                ordered_line.append("  " * indent_level + "– ")
             ordered_line.append_text(rendered)
             emit(ordered_line, allow_leading=False)
             index += 1

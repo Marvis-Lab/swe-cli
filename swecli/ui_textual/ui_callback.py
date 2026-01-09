@@ -323,8 +323,17 @@ class TextualUICallback:
         if isinstance(result, dict) and result.get("interrupted"):
             return
 
-        # Skip displaying spawn_subagent results - the command handler shows its own result
+        # Show spawn_subagent tool call header (but skip the result details)
         if tool_name == "spawn_subagent":
+            from rich.text import Text
+            normalized_args = self._normalize_arguments(tool_args)
+            display_args = self._resolve_paths_in_args(normalized_args)
+            header_display = build_tool_call_text(tool_name, display_args)
+            header_line = Text()
+            header_line.append("\n")  # Blank line before for spacing
+            header_line.append(TOOL_CALL_PREFIX, style=SUCCESS)
+            header_line.append_text(header_display)
+            self._run_on_ui(self.conversation.write, header_line)
             return
 
         normalized_args = self._normalize_arguments(tool_args)
@@ -399,9 +408,19 @@ class TextualUICallback:
         success = result.get("success", True) if isinstance(result, dict) else True
 
         # Build header line with leading blank line for spacing
+        # Skip blank line if just after ThinkingMessage (spinner already added spacing)
         header_display = build_tool_call_text(tool_name, display_args)
         combined = Text()
-        combined.append("\n")  # Blank line before for spacing
+        skip_leading_blank = (
+            hasattr(self.conversation, 'is_after_thinking')
+            and self.conversation.is_after_thinking()
+        )
+        if not skip_leading_blank:
+            combined.append("\n")  # Blank line before for spacing
+        else:
+            # Clear thinking state so subsequent tools add normal spacing
+            if hasattr(self.conversation, 'clear_thinking_state'):
+                self.conversation.clear_thinking_state()
         combined.append(TOOL_CALL_PREFIX, style=SUCCESS)
         combined.append_text(header_display)
         combined.append("\n")
