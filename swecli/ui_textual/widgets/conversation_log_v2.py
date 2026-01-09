@@ -209,6 +209,8 @@ class ConversationLogV2(VerticalScroll):
         self._user_scrolled = False
         self._spinner_active = False
         self._spinner_widget: SpinnerWidget | None = None
+        self._spinner_blank_widget: Static | None = None  # Blank line added before spinner
+        self._spinner_after_thinking: bool = False  # True if spinner was started after ThinkingMessage
         self._current_assistant_widget: AssistantMessage | None = None
         self._current_thinking_widget: ThinkingMessage | None = None
         self._current_tool_widget: ToolCallMessage | None = None
@@ -619,10 +621,22 @@ class ConversationLogV2(VerticalScroll):
 
         # Add blank line before spinner ONLY if not after UserMessage
         # (UserMessage has bottom margin that provides spacing)
+        # Track the blank widget so we can remove it with the spinner (when after ThinkingMessage)
         from rich.text import Text as RichText
+        from textual.widgets import Static
         children = list(self.children)
+        self._spinner_blank_widget = None  # Reset
+        self._spinner_after_thinking = False  # Reset
         if children and not isinstance(children[-1], UserMessage):
-            self.write(RichText(""))
+            # Track if spinner started after ThinkingMessage
+            # (used to decide whether to remove blank when spinner stops)
+            self._spinner_after_thinking = isinstance(children[-1], ThinkingMessage)
+            # Create and mount blank widget directly (don't use write() to avoid side effects)
+            blank_widget = Static("")
+            blank_widget.styles.height = 1
+            blank_widget.styles.margin = (0, 0, 0, 0)
+            self.mount(blank_widget)
+            self._spinner_blank_widget = blank_widget
 
         self._spinner_widget = SpinnerWidget(message=text, tip=tip, classes="spinner-widget")
         self.mount(self._spinner_widget)
@@ -657,11 +671,18 @@ class ConversationLogV2(VerticalScroll):
         self._spinner_widget.update_message(text, tip)
 
     def stop_spinner(self) -> None:
-        """Stop the thinking spinner."""
+        """Stop the thinking spinner and conditionally remove its blank line."""
         self._spinner_active = False
         if self._spinner_widget:
             self._spinner_widget.remove()
             self._spinner_widget = None
+        # Only remove the blank line if spinner was started after ThinkingMessage
+        # (tool results have their own \n prefix, so we don't need the spinner's blank)
+        # For other transitions (e.g., Tool → Assistant), keep the blank for spacing
+        if self._spinner_after_thinking and self._spinner_blank_widget:
+            self._spinner_blank_widget.remove()
+            self._spinner_blank_widget = None
+        self._spinner_after_thinking = False
 
     def tick_spinner(self) -> None:
         """Advance spinner animation (handled automatically by SpinnerWidget)."""
