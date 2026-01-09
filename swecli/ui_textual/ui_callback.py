@@ -282,6 +282,16 @@ class TextualUICallback:
         if self.chat_app and hasattr(self.chat_app, "_stop_local_spinner"):
             self._run_on_ui(self.chat_app._stop_local_spinner)
 
+        # spawn_subagent: Show header immediately and start spinner
+        # (unlike other tools, spawn needs to show before nested tools execute)
+        if tool_name == "spawn_subagent":
+            normalized_args = self._normalize_arguments(tool_args)
+            display_args = self._resolve_paths_in_args(normalized_args)
+            header_display = build_tool_call_text(tool_name, display_args)
+            self._run_on_ui(self.conversation.add_tool_call, header_display)
+            self._run_on_ui(self.conversation.start_tool_execution)
+            return
+
         # Don't show tool call header here - show it in on_tool_result
         # This ensures header + result appear together even for parallel tools
 
@@ -323,17 +333,10 @@ class TextualUICallback:
         if isinstance(result, dict) and result.get("interrupted"):
             return
 
-        # Show spawn_subagent tool call header (but skip the result details)
+        # spawn_subagent: Stop the spinner that was started in on_tool_call
+        # (header was already shown there, just need to mark completion)
         if tool_name == "spawn_subagent":
-            from rich.text import Text
-            normalized_args = self._normalize_arguments(tool_args)
-            display_args = self._resolve_paths_in_args(normalized_args)
-            header_display = build_tool_call_text(tool_name, display_args)
-            header_line = Text()
-            header_line.append("\n")  # Blank line before for spacing
-            header_line.append(TOOL_CALL_PREFIX, style=SUCCESS)
-            header_line.append_text(header_display)
-            self._run_on_ui(self.conversation.write, header_line)
+            self._run_on_ui(self.conversation.stop_tool_execution, True)
             return
 
         normalized_args = self._normalize_arguments(tool_args)
@@ -408,9 +411,15 @@ class TextualUICallback:
         success = result.get("success", True) if isinstance(result, dict) else True
 
         # Build header line with leading blank line for spacing
+        # Skip blank if right after thinking (prevents double spacing)
         header_display = build_tool_call_text(tool_name, display_args)
         combined = Text()
-        combined.append("\n")  # Blank line before for spacing
+        skip_spacing = (
+            hasattr(self.conversation, 'should_skip_tool_spacing')
+            and self.conversation.should_skip_tool_spacing()
+        )
+        if not skip_spacing:
+            combined.append("\n")  # Blank line before for spacing
         combined.append(TOOL_CALL_PREFIX, style=SUCCESS)
         combined.append_text(header_display)
         combined.append("\n")

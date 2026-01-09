@@ -224,6 +224,8 @@ class ConversationLogV2(VerticalScroll):
         self._pending_spacing_line: int | None = None
         # Deduplication for assistant messages (prevents double-render)
         self._last_assistant_message: str | None = None
+        # Flag to skip tool result spacing after thinking (prevents double blank)
+        self._skip_next_tool_spacing: bool = False
 
     # --- Properties ---
 
@@ -345,6 +347,8 @@ class ConversationLogV2(VerticalScroll):
         widget = ThinkingMessage(content, collapsed=False)  # Show expanded by default
         self.mount(widget)
         self._current_thinking_widget = widget
+        # Set flag to skip spacing for first tool result after thinking
+        self._skip_next_tool_spacing = True
         if self._auto_scroll:
             widget.scroll_visible()
         # Write initial content
@@ -675,6 +679,17 @@ class ConversationLogV2(VerticalScroll):
     def tick_spinner(self) -> None:
         """Advance spinner animation (handled automatically by SpinnerWidget)."""
         pass
+
+    def should_skip_tool_spacing(self) -> bool:
+        """Check if tool result should skip leading blank line.
+
+        Returns True once after thinking block, then resets the flag.
+        Used by ui_callback to prevent double spacing after ThinkingMessage.
+        """
+        if self._skip_next_tool_spacing:
+            self._skip_next_tool_spacing = False
+            return True
+        return False
 
     # --- Approval Prompts ---
 
