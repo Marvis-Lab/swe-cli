@@ -84,6 +84,8 @@ class TextualRunner:
         self._loop = asyncio.new_event_loop()
         self._console_task: asyncio.Task[None] | None = None
         self._queue_update_callback: Callable[[int], None] | None = getattr(self.app, "update_queue_indicator", None)
+        # Track current ui_callback for deduplication in _render_responses
+        self._current_ui_callback = None
 
     def _setup_runtime(
         self,
@@ -351,11 +353,14 @@ class TextualRunner:
 
                 from swecli.ui_textual.ui_callback import TextualUICallback
                 ui_callback = TextualUICallback(conversation_widget, self.app, self.working_dir)
+                # Store for deduplication check in _render_responses
+                self._current_ui_callback = ui_callback
             else:
                 # Create a mock callback for when app is not mounted (e.g., during testing)
                 # BaseUICallback provides no-op implementations for all methods
                 from swecli.ui_textual.callback_interface import BaseUICallback
                 ui_callback = BaseUICallback()
+                self._current_ui_callback = None
 
             # Temporarily disable console bridge to prevent duplicate rendering
             # All relevant messages are already in session.messages
@@ -538,20 +543,21 @@ Work through each implementation step in order. Mark each todo item as 'in_progr
 
                 # Only render assistant messages that DON'T have tool calls
                 # Messages with tool calls were already displayed in real-time by callbacks
-                # Note: Simple text messages may also have been displayed via on_assistant_message
-                # callback - add_assistant_message has deduplication to prevent double-render
                 has_tool_calls = getattr(msg, "tool_calls", None) and len(msg.tool_calls) > 0
 
-                if content and not has_tool_calls:
+                # Check if this message was already displayed via on_assistant_message callback
+                # Use the stored ui_callback which tracks displayed messages synchronously
+                ui_callback = getattr(self, "_current_ui_callback", None)
+                is_duplicate = ui_callback and hasattr(ui_callback, "was_message_displayed") and ui_callback.was_message_displayed(content)
+
+                if content and not has_tool_calls and not is_duplicate:
                     self.app.conversation.add_assistant_message(msg.content)
                     # Force refresh to ensure immediate visual update
                     if hasattr(self.app.conversation, 'refresh'):
                         self.app.conversation.refresh()
                     if hasattr(self.app, "record_assistant_message"):
                         self.app.record_assistant_message(msg.content)
-                    if hasattr(self.app, "record_assistant_message"):
-                        self.app.record_assistant_message(msg.content)
-                    
+
                     self.console_bridge.set_last_assistant_message(content)
                     self.console_bridge.set_suppress_duplicate(True)
                     assistant_text_rendered = True

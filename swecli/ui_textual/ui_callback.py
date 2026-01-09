@@ -32,17 +32,16 @@ class TextualUICallback:
         self._app = chat_app
         self.formatter = StyleFormatter()
         self._current_thinking = False
-        # Spinner IDs for tracking active spinners via SpinnerService
+        # Spinner ID for progress operations (thinking spinner)
         self._progress_spinner_id: str = ""
-        # Dict to track multiple tool spinners for parallel execution
-        # Maps tool_call_id -> spinner_id
-        self._tool_spinner_ids: Dict[str, str] = {}
         # Working directory for resolving relative paths
         self._working_dir = working_dir
         # Collector for nested tool calls (for session storage)
         self._pending_nested_calls: list[ToolCall] = []
         # Thinking mode visibility toggle
         self._thinking_visible = True
+        # Track displayed assistant messages (for deduplication in _render_responses)
+        self._displayed_assistant_messages: set[str] = set()
 
     def on_thinking_start(self) -> None:
         """Called when the agent starts thinking."""
@@ -115,6 +114,9 @@ class TextualUICallback:
             content: The assistant's message/thinking
         """
         if content and content.strip():
+            # Track this message SYNCHRONOUSLY for deduplication (before async UI calls)
+            self._displayed_assistant_messages.add(content.strip())
+
             # Stop spinner before showing assistant message
             # Note: Only call _stop_local_spinner which goes through SpinnerController
             # with grace period. Don't call conversation.stop_spinner directly as it
@@ -125,9 +127,16 @@ class TextualUICallback:
             # Display the assistant's thinking/message
             if hasattr(self.conversation, 'add_assistant_message'):
                 self._run_on_ui(self.conversation.add_assistant_message, content)
-                # Force refresh to ensure immediate visual update
-                if hasattr(self.conversation, 'refresh'):
-                    self._run_on_ui(self.conversation.refresh)
+
+            # Record for tool summary manager
+            if self.chat_app and hasattr(self.chat_app, "record_assistant_message"):
+                self._run_on_ui(self.chat_app.record_assistant_message, content)
+
+    def was_message_displayed(self, content: str) -> bool:
+        """Check if a message was already displayed via on_assistant_message."""
+        if not content:
+            return False
+        return content.strip() in self._displayed_assistant_messages
 
     def on_message(self, message: str) -> None:
         """Called to display a simple progress message (no spinner).
@@ -203,63 +212,23 @@ class TextualUICallback:
                 self._run_on_ui(self.conversation.write, result_line)
 
     def on_interrupt(self) -> None:
-        """Called when execution is interrupted by user.
-
-        Displays the interrupt message directly by replacing the blank line after user prompt.
-        """
-        # Stop any active spinners via SpinnerService
+        """Called when execution is interrupted by user."""
+        # Stop any active progress spinners via SpinnerService
         if self._app is not None and hasattr(self._app, 'spinner_service'):
-            if self._tool_spinner_id:
-                self._app.spinner_service.stop(self._tool_spinner_id, success=False)
-                self._tool_spinner_id = ""
             if self._progress_spinner_id:
                 self._app.spinner_service.stop(self._progress_spinner_id, success=False)
                 self._progress_spinner_id = ""
 
-        # Stop spinner first - this removes spinner lines but leaves the blank line after user prompt
+        # Stop spinner
         if hasattr(self.conversation, 'stop_spinner'):
             self._run_on_ui(self.conversation.stop_spinner)
         if self.chat_app and hasattr(self.chat_app, "_stop_local_spinner"):
             self._run_on_ui(self.chat_app._stop_local_spinner)
 
-        # The key insight: after user message, there's a blank line (added by add_user_message)
-        # After stopping spinner, this blank line is the last line
-        # We need to remove it using _truncate_from to properly update widget state
-        def write_interrupt_replacing_blank_line():
-            from rich.text import Text
-
-            # Check if we have lines and last line is blank
-            if hasattr(self.conversation, 'lines') and len(self.conversation.lines) > 0:
-                # Check if last line is blank
-                last_line = self.conversation.lines[-1]
-
-                # RichLog stores lines as Strip objects, not Text objects
-                # A blank line is a Strip with empty segments or a single empty Segment
-                is_blank = False
-
-                # Check if it's a Strip object with empty content
-                if hasattr(last_line, '_segments'):
-                    segments = last_line._segments
-                    if len(segments) == 0:
-                        is_blank = True
-                    elif len(segments) == 1 and segments[0].text == '':
-                        is_blank = True
-                elif hasattr(last_line, 'plain'):
-                    # Fallback for Text objects
-                    if last_line.plain.strip() == "":
-                        is_blank = True
-
-                if is_blank:
-                    # Use _truncate_from to properly remove the blank line and update widget state
-                    if hasattr(self.conversation, '_truncate_from'):
-                        self.conversation._truncate_from(len(self.conversation.lines) - 1)
-
-            # Now write the interrupt message using shared utility
-            from swecli.ui_textual.utils.interrupt_utils import create_interrupt_text, THINKING_INTERRUPT_MESSAGE
-            interrupt_line = create_interrupt_text(THINKING_INTERRUPT_MESSAGE)
-            self.conversation.write(interrupt_line)
-
-        self._run_on_ui(write_interrupt_replacing_blank_line)
+        # Write the interrupt message
+        from swecli.ui_textual.utils.interrupt_utils import create_interrupt_text, THINKING_INTERRUPT_MESSAGE
+        interrupt_line = create_interrupt_text(THINKING_INTERRUPT_MESSAGE)
+        self._run_on_ui(self.conversation.write, interrupt_line)
 
     def on_bash_output_line(self, line: str, is_stderr: bool = False) -> None:
         """Called for each line of bash output during execution.
@@ -281,6 +250,9 @@ class TextualUICallback:
         tool_call_id: Optional[str] = None,
     ) -> None:
         """Called when a tool call is about to be executed.
+
+        Claude Code style: Don't show anything during tool execution.
+        Results appear only when the tool completes via on_tool_result.
 
         Args:
             tool_name: Name of the tool being called
@@ -305,25 +277,8 @@ class TextualUICallback:
         if self.chat_app and hasattr(self.chat_app, "_stop_local_spinner"):
             self._run_on_ui(self.chat_app._stop_local_spinner)
 
-        normalized_args = self._normalize_arguments(tool_args)
-        # Resolve relative paths to absolute for display
-        display_args = self._resolve_paths_in_args(normalized_args)
-        display_text = build_tool_call_text(tool_name, display_args)
-
-        # Use SpinnerService for unified spinner management
-        if self._app is not None and hasattr(self._app, 'spinner_service'):
-            # Bash commands don't need placeholders - their output is rendered separately
-            is_bash = tool_name in ("bash_execute", "run_command")
-            spinner_id = self._app.spinner_service.start(display_text, skip_placeholder=is_bash)
-            # Track spinner by tool_call_id for parallel execution
-            key = tool_call_id or f"_default_{id(tool_args)}"
-            self._tool_spinner_ids[key] = spinner_id
-        else:
-            # Fallback to direct calls if SpinnerService not available
-            if hasattr(self.conversation, 'add_tool_call') and self._app is not None:
-                self._app.call_from_thread(self.conversation.add_tool_call, display_text)
-            if hasattr(self.conversation, 'start_tool_execution') and self._app is not None:
-                self._app.call_from_thread(self.conversation.start_tool_execution)
+        # Claude Code style: No spinner during tool execution
+        # Results appear only in on_tool_result with ⎿ prefix
 
     def on_tool_result(
         self,
@@ -334,18 +289,22 @@ class TextualUICallback:
     ) -> None:
         """Called when a tool execution completes.
 
+        Claude Code style: Show simple result line with ⎿ prefix.
+        Format: "  ⎿  Read filename (N lines)"
+
         Args:
             tool_name: Name of the tool that was executed
             tool_args: Arguments that were used
             result: Result of the tool execution (can be dict or string)
             tool_call_id: Unique ID for this tool call (for parallel tracking)
         """
+        from rich.text import Text
+
         # Handle string results by converting to dict format
         if isinstance(result, str):
             result = {"success": True, "output": result}
 
         # Special handling for think tool - display via on_thinking callback
-        # Check BEFORE spinner handling since we didn't start a spinner for think
         if tool_name == "think" and isinstance(result, dict):
             thinking_content = result.get("_thinking_content", "")
             if thinking_content:
@@ -355,62 +314,44 @@ class TextualUICallback:
                     self._run_on_ui(self.chat_app._start_local_spinner)
             return  # Don't show as standard tool result
 
-        # Stop spinner animation
-        # Pass success status to color the bullet (green for success, red for failure)
-        success = result.get("success", True) if isinstance(result, dict) else True
-
-        # Look up spinner_id by tool_call_id for parallel execution
-        key = tool_call_id or f"_default_{id(tool_args)}"
-        spinner_id = self._tool_spinner_ids.pop(key, None)
-
         # Skip displaying interrupted operations
-        # These are already shown by the approval controller interrupt message
         if isinstance(result, dict) and result.get("interrupted"):
-            # Still stop the spinner
-            if spinner_id and self._app is not None and hasattr(self._app, 'spinner_service'):
-                self._app.spinner_service.stop(spinner_id, False, "Interrupted")
             return
 
         # Skip displaying spawn_subagent results - the command handler shows its own result
         if tool_name == "spawn_subagent":
-            if spinner_id and self._app is not None and hasattr(self._app, 'spinner_service'):
-                self._app.spinner_service.stop(spinner_id, success)
             return
+
+        normalized_args = self._normalize_arguments(tool_args)
 
         # Bash commands: handle background vs immediate differently
         if tool_name in ("bash_execute", "run_command") and isinstance(result, dict):
             background_task_id = result.get("background_task_id")
 
             if background_task_id:
-                # Background task - show special message (Claude Code style)
-                if spinner_id and self._app is not None and hasattr(self._app, 'spinner_service'):
-                    self._app.spinner_service.stop(spinner_id, success, f"Running in background ({background_task_id})")
+                # Background task - show simple message
+                result_line = Text("  ⎿  ", style=GREY)
+                result_line.append(f"Running in background ({background_task_id})", style=GREY)
+                self._run_on_ui(self.conversation.write, result_line)
+                # Resume spinner - LLM is processing after tool completes
+                if self.chat_app and hasattr(self.chat_app, 'resume_reasoning_spinner'):
+                    self._run_on_ui(self.chat_app.resume_reasoning_spinner)
                 return
-
-            # Quick command - stop spinner first, then show bash output box
-            if spinner_id and self._app is not None and hasattr(self._app, 'spinner_service'):
-                self._app.spinner_service.stop(spinner_id, success, "")
 
             is_error = not result.get("success", True)
 
             if hasattr(self.conversation, 'add_bash_output_box'):
                 import os
-                command = self._normalize_arguments(tool_args).get("command", "")
+                command = normalized_args.get("command", "")
                 working_dir = os.getcwd()
-                # Use "output" key (combined stdout+stderr from process_handlers),
-                # falling back to "stdout" for compatibility
                 output = result.get("output") or result.get("stdout") or ""
                 stderr = result.get("stderr") or ""
-                # Combine stdout and stderr for display
                 if stderr and stderr not in output:
                     output = (output + "\n" + stderr).strip() if output else stderr
-                # Filter out placeholder messages
                 if output in ("Command executed", "Command execution failed"):
                     output = ""
 
-                # Add OK prefix for successful commands (Claude Code style)
                 if not is_error:
-                    # Extract command name for the OK message
                     cmd_name = command.split()[0] if command else "command"
                     ok_line = f"OK: {cmd_name} ran successfully"
                     if output:
@@ -424,64 +365,148 @@ class TextualUICallback:
                     is_error,
                     command,
                     working_dir,
-                    0,  # depth
+                    0,
                 )
 
+            # Resume spinner - LLM is processing after tool completes
+            # Uses resume_reasoning_spinner which checks _is_processing flag
+            if self.chat_app and hasattr(self.chat_app, 'resume_reasoning_spinner'):
+                self._run_on_ui(self.chat_app.resume_reasoning_spinner)
             return
 
-        # Format the result using the Claude-style formatter
-        normalized_args = self._normalize_arguments(tool_args)
-        formatted = self.formatter.format_tool_result(tool_name, normalized_args, result)
+        # Claude Code style: Format result line
+        success = result.get("success", True) if isinstance(result, dict) else True
 
-        # Extract the result line(s) from the formatted output
-        # First ⎿ line goes to spinner result placeholder, additional lines displayed separately
-        summary_lines: list[str] = []
-        collected_lines: list[str] = []
-        if isinstance(formatted, str):
-            lines = formatted.splitlines()
-            first_result_line_seen = False
-            for line in lines:
-                stripped = line.strip()
-                if stripped.startswith("⎿"):
-                    result_text = stripped.lstrip("⎿").strip()
-                    if result_text:
-                        if not first_result_line_seen:
-                            # First ⎿ line goes to placeholder only
-                            first_result_line_seen = True
-                            summary_lines.append(result_text)
-                        else:
-                            # Subsequent ⎿ lines go to collected_lines (e.g., diff content)
-                            # Skip @@ header lines
-                            if not result_text.startswith("@@"):
-                                collected_lines.append(result_text)
+        if not success:
+            # Failed tool: Show tool call line with ⏺ then error on next line
+            from swecli.ui_textual.style_tokens import WARNING
+            from swecli.ui_textual.utils.tool_display import build_tool_call_text
+            display_args = self._resolve_paths_in_args(normalized_args)
+            display_text = build_tool_call_text(tool_name, display_args)
+
+            # Tool call line with warning color
+            tool_line = Text()
+            tool_line.append("⏺ ", style=WARNING)
+            tool_line.append_text(display_text)
+            self._run_on_ui(self.conversation.write, tool_line)
+
+            # Error result line
+            error_msg = result.get("error", "") or result.get("message", "") or "Error"
+            if isinstance(error_msg, str) and len(error_msg) > 100:
+                error_msg = error_msg[:97] + "..."
+            result_line = Text("  ⎿  ", style=GREY)
+            result_line.append(error_msg, style=GREY)
+            self._run_on_ui(self.conversation.write, result_line)
+
+            # Resume spinner - LLM is processing after tool completes
+            # Uses resume_reasoning_spinner which checks _is_processing flag
+            if self.chat_app and hasattr(self.chat_app, 'resume_reasoning_spinner'):
+                self._run_on_ui(self.chat_app.resume_reasoning_spinner)
         else:
-            self._run_on_ui(self.conversation.write, formatted)
-            if hasattr(formatted, "renderable") and hasattr(formatted, "title"):
-                # Panels typically summarize tool output in title/body; try to capture text
-                renderable = getattr(formatted, "renderable", None)
-                if isinstance(renderable, str):
-                    summary_lines.append(renderable.strip())
+            # Successful tool: Just show result line with ⎿ prefix
+            result_text = self._format_simple_result(tool_name, normalized_args, result)
+            result_line = Text("  ⎿  ", style=GREY)
+            result_line.append(result_text, style=GREY)
+            self._run_on_ui(self.conversation.write, result_line)
 
-        # Stop spinner WITH the first summary line (for parallel tool display)
-        first_summary = summary_lines[0] if summary_lines else ""
-        if spinner_id and self._app is not None and hasattr(self._app, 'spinner_service'):
-            self._app.spinner_service.stop(spinner_id, success, first_summary)
-        else:
-            # Fallback to direct calls if SpinnerService not available
-            if hasattr(self.conversation, 'stop_tool_execution'):
-                self._run_on_ui(lambda: self.conversation.stop_tool_execution(success))
+            # Handle diff lines for edit_file (show after summary)
+            if tool_name == "edit_file" and isinstance(result, dict):
+                formatted = self.formatter.format_tool_result(tool_name, normalized_args, result)
+                if isinstance(formatted, str):
+                    collected_lines = []
+                    for line in formatted.splitlines():
+                        stripped = line.strip()
+                        if stripped.startswith("⎿"):
+                            text = stripped.lstrip("⎿").strip()
+                            if text and not text.startswith("@@") and "Updated" not in text:
+                                collected_lines.append(text)
+                    if collected_lines:
+                        self._run_on_ui(self.conversation.add_tool_result_continuation, collected_lines)
 
-        # Write tool result continuation (e.g., diff lines for edit_file)
-        # These follow the summary line, so no ⎿ prefix needed - just space indentation
-        if collected_lines:
-            self._run_on_ui(self.conversation.add_tool_result_continuation, collected_lines)
+            if self.chat_app and hasattr(self.chat_app, "record_tool_summary"):
+                self._run_on_ui(self.chat_app.record_tool_summary, tool_name, normalized_args, [result_text])
 
-        if summary_lines and self.chat_app and hasattr(self.chat_app, "record_tool_summary"):
-            self._run_on_ui(self.chat_app.record_tool_summary, tool_name, normalized_args, summary_lines.copy())
+        # Restart spinner - LLM is still processing after tool completes
+        if self.chat_app and hasattr(self.chat_app, '_start_local_spinner'):
+            self._run_on_ui(self.chat_app._start_local_spinner)
 
         # Auto-refresh todo panel after todo tool execution
         if tool_name in {"write_todos", "update_todo", "complete_todo"}:
             self._refresh_todo_panel()
+
+    def _format_simple_result(self, tool_name: str, tool_args: Dict[str, Any], result: Any) -> str:
+        """Format tool result in Claude Code style (simple, one line).
+
+        Args:
+            tool_name: Name of the tool
+            tool_args: Tool arguments
+            result: Tool result
+
+        Returns:
+            Simple one-line result string like "Read filename (N lines)"
+        """
+        if tool_name == "read_file":
+            path = tool_args.get("file_path", "")
+            filename = Path(path).name if path else "file"
+            # Calculate lines from output content
+            output = result.get("output", "") if isinstance(result, dict) else ""
+            lines = output.count("\n") + 1 if output else 0
+            return f"Read {filename} ({lines} lines)"
+
+        elif tool_name == "edit_file":
+            path = tool_args.get("file_path", "")
+            filename = Path(path).name if path else "file"
+            if isinstance(result, dict):
+                added = result.get("lines_added", 0) or 0
+                removed = result.get("lines_removed", 0) or 0
+                add_str = f"{added} addition" if added == 1 else f"{added} additions"
+                rem_str = f"{removed} removal" if removed == 1 else f"{removed} removals"
+                return f"Updated {filename} with {add_str} and {rem_str}"
+            return f"Updated {filename}"
+
+        elif tool_name == "write_file":
+            path = tool_args.get("file_path", "")
+            filename = Path(path).name if path else "file"
+            return f"Wrote {filename}"
+
+        elif tool_name == "list_files":
+            path = tool_args.get("path", ".")
+            dirname = Path(path).name if path else "."
+            count = 0
+            if isinstance(result, dict):
+                files = result.get("files", [])
+                count = len(files) if isinstance(files, list) else 0
+            return f"Listed {count} files in {dirname}"
+
+        elif tool_name == "search":
+            pattern = tool_args.get("pattern", "")
+            count = 0
+            if isinstance(result, dict):
+                matches = result.get("matches", [])
+                count = len(matches) if isinstance(matches, list) else 0
+            return f"Found {count} matches for '{pattern}'"
+
+        elif tool_name == "fetch_url":
+            url = tool_args.get("url", "")
+            # Truncate long URLs
+            if len(url) > 50:
+                url = url[:47] + "..."
+            return f"Fetched {url}"
+
+        elif tool_name in ("bash_execute", "run_command"):
+            command = tool_args.get("command", "")
+            cmd_name = command.split()[0] if command else "command"
+            success = result.get("success", True) if isinstance(result, dict) else True
+            if success:
+                return f"Ran {cmd_name}"
+            return f"Failed: {cmd_name}"
+
+        else:
+            # Generic format for unknown tools
+            success = result.get("success", True) if isinstance(result, dict) else True
+            if success:
+                return f"{tool_name} completed"
+            return f"{tool_name} failed"
 
     def on_nested_tool_call(
         self,

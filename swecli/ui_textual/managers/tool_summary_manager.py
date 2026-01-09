@@ -20,6 +20,7 @@ class ToolSummaryManager:
         self._pending: list[str] = []
         self._saw_tool_result = False
         self._assistant_response_received = False
+        self._last_assistant_content: str | None = None
 
     def record_summary(
         self,
@@ -39,8 +40,15 @@ class ToolSummaryManager:
 
     def on_assistant_message(self, message: str) -> None:
         self._assistant_response_received = True
+        self._last_assistant_content = message.strip() if message else None
         self._pending.clear()
         self._saw_tool_result = False
+
+    def is_duplicate_message(self, message: str) -> bool:
+        """Check if this message was already displayed."""
+        if not message or not self._last_assistant_content:
+            return False
+        return message.strip() == self._last_assistant_content
 
     def emit_follow_up_if_needed(self) -> None:
         conversation = getattr(self.app, "conversation", None)
