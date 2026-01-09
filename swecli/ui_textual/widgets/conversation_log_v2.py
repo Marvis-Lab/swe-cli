@@ -620,6 +620,10 @@ class ConversationLogV2(VerticalScroll):
         else:
             text = plain.strip()
 
+        # Add blank line before spinner for spacing
+        from rich.text import Text as RichText
+        self.write(RichText(""))
+
         self._spinner_widget = SpinnerWidget(message=text, tip=tip, classes="spinner-widget")
         self.mount(self._spinner_widget)
         if self._auto_scroll:
