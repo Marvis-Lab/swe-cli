@@ -67,10 +67,14 @@ class SwecliAgent(BaseAgent):
         # This ensures think tool is filtered when thinking mode is OFF
         tool_schemas = self._schema_builder.build(thinking_visible=thinking_visible)
 
-        # Only require tool use on FIRST iteration when thinking is visible
-        # This ensures think tool is called first, but allows normal flow after
-        # Without this, model would be stuck in infinite thinking loop
-        tool_choice = "required" if (thinking_visible and iteration_count == 1) else "auto"
+        # On first iteration when thinking is visible, specifically require the think tool
+        # This ensures reasoning happens first before any actions
+        # Using "required" alone would let the model choose any tool (including ones needing approval)
+        if thinking_visible and iteration_count == 1:
+            # Force specifically the think tool on first iteration
+            tool_choice = {"type": "function", "function": {"name": "think"}}
+        else:
+            tool_choice = "auto"
 
         payload = {
             "model": self.config.model,
@@ -294,7 +298,7 @@ class SwecliAgent(BaseAgent):
 
                 # Notify UI callback before tool execution
                 if ui_callback and hasattr(ui_callback, "on_tool_call"):
-                    ui_callback.on_tool_call(tool_name, tool_args)
+                    ui_callback.on_tool_call(tool_name, tool_args, tool_call_id=tool_call["id"])
 
                 # Check if this is a subagent (has overridden system prompt)
                 is_subagent = hasattr(self, "_subagent_system_prompt") and self._subagent_system_prompt is not None
@@ -318,7 +322,7 @@ class SwecliAgent(BaseAgent):
 
                 # Notify UI callback after tool execution
                 if ui_callback and hasattr(ui_callback, "on_tool_result"):
-                    ui_callback.on_tool_result(tool_name, tool_args, result)
+                    ui_callback.on_tool_result(tool_name, tool_args, result, tool_call_id=tool_call["id"])
 
                 # Check if tool execution was interrupted (e.g., subagent cancelled via Escape)
                 if result.get("interrupted"):
