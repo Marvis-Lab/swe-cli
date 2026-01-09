@@ -7,7 +7,11 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from swecli.ui_textual.formatters.style_formatter import StyleFormatter
-from swecli.ui_textual.style_tokens import GREY, PRIMARY, SUCCESS
+from swecli.ui_textual.formatters.result_formatter import (
+    RESULT_PREFIX,
+    ToolResultFormatter,
+)
+from swecli.ui_textual.style_tokens import GREY, PRIMARY
 from swecli.ui_textual.utils.tool_display import build_tool_call_text
 from swecli.models.message import ToolCall
 
@@ -207,7 +211,7 @@ class TextualUICallback:
 
             # Show result line (if message provided)
             if message:
-                result_line = Text("  ⎿  ", style=GREY)
+                result_line = Text(RESULT_PREFIX, style=GREY)
                 result_line.append(message, style=GREY)
                 self._run_on_ui(self.conversation.write, result_line)
 
@@ -277,16 +281,10 @@ class TextualUICallback:
         if self.chat_app and hasattr(self.chat_app, "_stop_local_spinner"):
             self._run_on_ui(self.chat_app._stop_local_spinner)
 
-        # Show tool call header with green bullet
-        from rich.text import Text
-
+        # Show tool call header using centralized formatter
         normalized_args = self._normalize_arguments(tool_args)
         display_args = self._resolve_paths_in_args(normalized_args)
-        display_text = build_tool_call_text(tool_name, display_args)
-
-        tool_line = Text()
-        tool_line.append("⏺ ", style=SUCCESS)
-        tool_line.append_text(display_text)
+        tool_line = ToolResultFormatter.format_tool_call(tool_name, display_args)
         self._run_on_ui(self.conversation.write, tool_line)
 
     def on_tool_result(
@@ -339,7 +337,7 @@ class TextualUICallback:
 
             if background_task_id:
                 # Background task - show simple message
-                result_line = Text("  ⎿  ", style=GREY)
+                result_line = Text(RESULT_PREFIX, style=GREY)
                 result_line.append(f"Running in background ({background_task_id})", style=GREY)
                 self._run_on_ui(self.conversation.write, result_line)
                 # Resume spinner - LLM is processing after tool completes
@@ -392,7 +390,7 @@ class TextualUICallback:
             error_msg = result.get("error", "") or result.get("message", "") or "Error"
             if isinstance(error_msg, str) and len(error_msg) > 100:
                 error_msg = error_msg[:97] + "..."
-            result_line = Text("  ⎿  ", style=GREY)
+            result_line = Text(RESULT_PREFIX, style=GREY)
             result_line.append(error_msg, style=GREY)
             self._run_on_ui(self.conversation.write, result_line)
 
@@ -403,7 +401,7 @@ class TextualUICallback:
         else:
             # Successful tool: Just show result line with ⎿ prefix
             result_text = self._format_simple_result(tool_name, normalized_args, result)
-            result_line = Text("  ⎿  ", style=GREY)
+            result_line = Text(RESULT_PREFIX, style=GREY)
             result_line.append(result_text, style=GREY)
             self._run_on_ui(self.conversation.write, result_line)
 

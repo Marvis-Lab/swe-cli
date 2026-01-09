@@ -40,7 +40,14 @@ class ResultType(Enum):
     INFO = "info"
 
 
-# Standard prefix used for all result lines (2-space indent + arrow + 2-space)
+# =============================================================================
+# STANDARD SYMBOLS - SINGLE SOURCE OF TRUTH
+# All tool display code should import these constants, not hardcode symbols.
+# =============================================================================
+
+# Tool call header prefix (bullet + space)
+TOOL_CALL_PREFIX = "⏺ "
+# Tool result line prefix (2-space indent + arrow + 2-space)
 RESULT_PREFIX = "  ⎿  "
 # Continuation prefix for multi-line messages (aligns with content after ⎿)
 RESULT_CONTINUATION = "     "
@@ -48,15 +55,39 @@ RESULT_CONTINUATION = "     "
 
 class ToolResultFormatter:
     """Centralized formatter for tool result display.
-    
+
     This is the standard API for displaying tool results. All new code
     should use this class rather than constructing result strings manually.
-    
+
     Format pattern:
-        ⏺ Tool Name (params)      <- Header (handled by CommandHandler.print_command_header)
-          ⎿  Result message       <- Result line (this class)
+        ⏺ Tool Name (params)      <- Header (format_tool_call)
+          ⎿  Result message       <- Result line (format_result)
     """
-    
+
+    @staticmethod
+    def format_tool_call(
+        tool_name: str,
+        tool_args: dict,
+        style: str | None = None,
+    ) -> Text:
+        """Format a tool call header line.
+
+        Args:
+            tool_name: Name of the tool being called
+            tool_args: Arguments passed to the tool
+            style: Optional style override (defaults to SUCCESS green)
+
+        Returns:
+            Rich Text like "⏺ read_file (path=/foo/bar.py)"
+        """
+        from swecli.ui_textual.utils.tool_display import build_tool_call_text
+
+        display_text = build_tool_call_text(tool_name, tool_args)
+        line = Text()
+        line.append(TOOL_CALL_PREFIX, style=style or style_tokens.SUCCESS)
+        line.append_text(display_text)
+        return line
+
     def format_result(
         self,
         message: str,
@@ -206,7 +237,9 @@ def format_info(message: str, secondary: Optional[str] = None) -> Text:
 __all__ = [
     "ResultType",
     "ToolResultFormatter",
+    "TOOL_CALL_PREFIX",
     "RESULT_PREFIX",
+    "RESULT_CONTINUATION",
     "get_formatter",
     "format_success",
     "format_error",

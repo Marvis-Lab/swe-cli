@@ -20,6 +20,7 @@ from textual.containers import VerticalScroll
 from textual.events import MouseScrollDown, MouseScrollUp, Resize
 from textual.widgets import Static
 
+from swecli.ui_textual.formatters.result_formatter import RESULT_PREFIX, RESULT_CONTINUATION
 from swecli.ui_textual.style_tokens import SUBTLE, CYAN, ERROR, PRIMARY
 from swecli.ui_textual.widgets.messages import (
     AssistantMessage,
@@ -483,8 +484,8 @@ class ConversationLogV2(VerticalScroll):
         """Write a single bash output line with proper formatting."""
         # Normalize line (remove control characters)
         normalized = ''.join(c for c in line if c >= ' ' or c in '\t\n')
-        # Use ⎿ prefix for first line, spaces for rest
-        prefix = f"{indent}  ⎿  " if is_first else f"{indent}       "
+        # Use centralized prefixes for consistent formatting
+        prefix = f"{indent}{RESULT_PREFIX}" if is_first else f"{indent}{RESULT_CONTINUATION}  "
         output_line = Text(prefix, style=self.GREY)
         output_line.append(normalized, style=self.ERROR_COLOR if is_error else self.GREY)
         self.write(output_line)

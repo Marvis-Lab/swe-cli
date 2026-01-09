@@ -5,31 +5,32 @@ from rich.panel import Panel
 from rich.text import Text
 
 from swecli.ui_textual import style_tokens
+from swecli.ui_textual.formatters.result_formatter import RESULT_PREFIX
 
 class DisplayFormatter:
     """Formats general UI messages like errors, info, and warnings."""
 
     def format_error(self, primary: str, secondary: Optional[str] = None) -> Text:
         """Formats an error message."""
-        text = Text.from_markup(f"  [{style_tokens.ERROR}]⎿  {primary}[/{style_tokens.ERROR}]")
+        text = Text.from_markup(f"[{style_tokens.ERROR}]{RESULT_PREFIX}{primary}[/{style_tokens.ERROR}]")
         if secondary:
-            text.append("\n  ⎿  ")
+            text.append(f"\n{RESULT_PREFIX}")
             text.append(secondary, style=style_tokens.SUBTLE)
         return text
 
     def format_info(self, primary: str, secondary: Optional[str] = None) -> Text:
         """Formats an info message."""
-        text = Text.from_markup(f"  ⎿  {primary}")
+        text = Text.from_markup(f"{RESULT_PREFIX}{primary}")
         if secondary:
-            text.append("\n  ⎿  ")
+            text.append(f"\n{RESULT_PREFIX}")
             text.append(secondary, style=style_tokens.SUBTLE)
         return text
 
     def format_warning(self, primary: str, secondary: Optional[str] = None) -> Text:
         """Formats a warning message."""
-        text = Text.from_markup(f"  [{style_tokens.WARNING}]⎿  {primary}[/{style_tokens.WARNING}]")
+        text = Text.from_markup(f"[{style_tokens.WARNING}]{RESULT_PREFIX}{primary}[/{style_tokens.WARNING}]")
         if secondary:
-            text.append("\n  ⎿  ")
+            text.append(f"\n{RESULT_PREFIX}")
             text.append(secondary, style=style_tokens.SUBTLE)
         return text
 

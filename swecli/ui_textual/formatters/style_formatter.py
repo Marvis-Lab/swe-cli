@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Dict, List
 
+from swecli.ui_textual.formatters.result_formatter import RESULT_PREFIX, TOOL_CALL_PREFIX
 from swecli.ui_textual.formatters_internal.formatter_base import STATUS_ICONS
 from swecli.ui_textual.utils.tool_display import get_tool_display_parts
 from swecli.ui_textual.constants import TOOL_ERROR_SENTINEL
@@ -41,8 +42,8 @@ class StyleFormatter:
             result_lines = self._format_generic_result(tool_name, tool_args, result)
 
         if result_lines:
-            return f"⏺ {tool_display}\n" + "\n".join(f"  ⎿  {line}" for line in result_lines)
-        return f"⏺ {tool_display}"
+            return f"{TOOL_CALL_PREFIX}{tool_display}\n" + "\n".join(f"{RESULT_PREFIX}{line}" for line in result_lines)
+        return f"{TOOL_CALL_PREFIX}{tool_display}"
 
     def _format_tool_call(self, tool_name: str, tool_args: Dict[str, Any]) -> str:
         verb, label = get_tool_display_parts(tool_name)
