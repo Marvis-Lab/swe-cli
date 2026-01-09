@@ -29,7 +29,7 @@ def render_markdown_text_segment(content: str, *, leading: bool = False) -> Tupl
     renderables: List[RenderableType] = []
     wrote_any = False
     leading_consumed = not leading
-    indent = "  "  # Consistent indentation for all response lines
+    indent = "   "  # 3-space indentation for readability
 
     def emit(renderable: RenderableType, allow_leading: bool = True) -> None:
         nonlocal wrote_any, leading_consumed
@@ -111,13 +111,13 @@ def render_markdown_text_segment(content: str, *, leading: bool = False) -> Tupl
 
         bullet_match = re.match(r"^(\s*)[-*+]\s+(.*)", raw_line)
         if bullet_match:
-            indent = bullet_match.group(1) or ""
+            bullet_indent = bullet_match.group(1) or ""
             bullet_text = bullet_match.group(2).strip()
             rendered = _render_inline_markdown(bullet_text)
-            indent_level = max(0, len(indent) // 2)
+            indent_level = max(0, len(bullet_indent) // 2)
             bullet_line = Text()
-            symbol = "  - " if indent_level == 0 else "    - "
-            bullet_line.append("  " * indent_level + symbol)
+            symbol = "   - " if indent_level == 0 else "     - "
+            bullet_line.append("   " * indent_level + symbol)
             bullet_line.append_text(rendered)
             emit(bullet_line, allow_leading=False)
             index += 1
@@ -125,16 +125,16 @@ def render_markdown_text_segment(content: str, *, leading: bool = False) -> Tupl
 
         ordered_match = re.match(r"^(\s*)(\d+)\.\s+(.*)", raw_line)
         if ordered_match:
-            indent = ordered_match.group(1) or ""
+            ordered_indent = ordered_match.group(1) or ""
             number = ordered_match.group(2)
             item_text = ordered_match.group(3).strip()
             rendered = _render_inline_markdown(item_text)
-            indent_level = max(0, len(indent) // 2)
+            indent_level = max(0, len(ordered_indent) // 2)
             ordered_line = Text()
             if indent_level == 0:
-                ordered_line.append(f"{number}. ")
+                ordered_line.append(f"   {number}. ")
             else:
-                ordered_line.append("  " * indent_level + "– ")
+                ordered_line.append("   " * indent_level + "   – ")
             ordered_line.append_text(rendered)
             emit(ordered_line, allow_leading=False)
             index += 1

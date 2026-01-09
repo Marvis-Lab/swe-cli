@@ -22,7 +22,7 @@ BLUE_BG_ACTIVE = "#1f2d3a"  # Active row background
 BLUE_TASK = "#2596be"       # Background task indicator
 
 # Greens
-GREEN_BRIGHT = "#00ff00"    # Auto mode, success indicators
+GREEN_BRIGHT = "#7ec699"    # Softer green for inline code
 GREEN_LIGHT = "#89d185"     # Plan mode indicator
 GREEN_PROMPT = "#7ee787"    # Terminal prompt ($)
 
