@@ -290,6 +290,10 @@ class ConversationLogV2(VerticalScroll):
         For non-streaming responses, pass the full message.
         For streaming, call start_assistant_streaming() instead.
         """
+        # Add blank line before assistant message for spacing
+        from rich.text import Text
+        self.write(Text(""))
+
         widget = AssistantMessage(message)
         self.mount(widget)
         self._current_assistant_widget = widget
