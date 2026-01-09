@@ -273,13 +273,18 @@ class FileOperations:
                 cmd.append(str(search_path))
             # If path is "." or "./" or not specified, ripgrep uses cwd (which we set below)
 
-            result = subprocess.run(
-                cmd,
-                cwd=self.working_dir,
-                capture_output=True,
-                text=True,
-                timeout=10,
-            )
+            try:
+                result = subprocess.run(
+                    cmd,
+                    cwd=self.working_dir,
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                    start_new_session=True,  # Prevent SIGINT from propagating to ripgrep
+                )
+            except KeyboardInterrupt:
+                # User cancelled, return empty matches gracefully
+                return []
 
             if result.returncode == 0:
                 for line in result.stdout.strip().split("\n"):
@@ -490,13 +495,18 @@ class FileOperations:
         search_path = str(self.working_dir / path) if path else str(self.working_dir)
         cmd.append(search_path)
 
-        result = subprocess.run(
-            cmd,
-            cwd=self.working_dir,
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
+        try:
+            result = subprocess.run(
+                cmd,
+                cwd=self.working_dir,
+                capture_output=True,
+                text=True,
+                timeout=30,
+                start_new_session=True,  # Prevent SIGINT from propagating to ast-grep
+            )
+        except KeyboardInterrupt:
+            # User cancelled, return empty matches gracefully
+            return []
 
         matches = []
         if result.returncode == 0 and result.stdout.strip():

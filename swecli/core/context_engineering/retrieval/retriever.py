@@ -161,6 +161,7 @@ class ContextRetriever:
                 capture_output=True,
                 text=True,
                 timeout=5,
+                start_new_session=True,  # Prevent SIGINT from propagating
             )
             if result.returncode != 0:
                 result = subprocess.run(
@@ -168,6 +169,7 @@ class ContextRetriever:
                     capture_output=True,
                     text=True,
                     timeout=5,
+                    start_new_session=True,  # Prevent SIGINT from propagating
                 )
 
             if result.returncode == 0:
