@@ -27,7 +27,7 @@ class DefaultMessageRenderer:
             if last_plain:
                 self.log.write(Text(""))
         self.log.write(Text(f"› {message}", style=f"bold {PRIMARY}"))
-        self.log.write(Text(""))
+        # No blank line after - let subsequent content handle its own spacing
 
     def add_assistant_message(self, message: str) -> None:
         """Render an assistant message, parsing markdown and code blocks."""
@@ -36,8 +36,14 @@ class DefaultMessageRenderer:
             return
 
         # Add blank line before message if previous line has content (for spacing)
-        if self.log.lines and hasattr(self.log.lines[-1], 'plain'):
-            last_plain = self.log.lines[-1].plain.strip() if self.log.lines[-1].plain else ""
+        # Handle both Text objects (plain attr) and Strip objects (text attr)
+        if self.log.lines:
+            last_line = self.log.lines[-1]
+            last_plain = ""
+            if hasattr(last_line, 'plain'):
+                last_plain = last_line.plain.strip() if last_line.plain else ""
+            elif hasattr(last_line, 'text'):
+                last_plain = last_line.text.strip() if last_line.text else ""
             if last_plain:
                 self.log.write(Text(""))
 
@@ -69,7 +75,7 @@ class DefaultMessageRenderer:
                     text_output = True
                     leading_used = True
 
-        self.log.write(Text(""))
+        # No trailing blank line - spacing is added BEFORE next element
 
     def add_system_message(self, message: str) -> None:
         """Render a system message."""
@@ -110,7 +116,7 @@ class DefaultMessageRenderer:
             text.append(f"\n  {line}", style=f"italic {THINKING}")
 
         self.log.write(text)
-        self.log.write(Text(""))  # Blank line after thinking
+        # No trailing blank line - spacing is added BEFORE next element
 
     # --- Helpers ---
 

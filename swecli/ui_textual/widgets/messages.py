@@ -167,7 +167,7 @@ class UserMessage(Static):
     UserMessage {
         width: 100%;
         height: auto;
-        margin: 0 0 1 0;
+        margin: 0;
     }
 
     .user-message-container {
@@ -273,7 +273,7 @@ class AssistantMessage(Static):
     AssistantMessage {
         width: 100%;
         height: auto;
-        margin: 0 0 1 0;
+        margin: 0;
     }
     """
 
@@ -283,26 +283,36 @@ class AssistantMessage(Static):
         self._content = content
 
     def on_mount(self) -> None:
-        """Render the message on mount - identical to UserMessage pattern."""
-        from rich.text import Text
+        """Render the message on mount with markdown processing."""
+        self._render_with_markdown()
 
-        text = Text()
-        text.append("● ", style=SUCCESS)
-        text.append(self._content, style=PRIMARY)
-        self.update(text)
+    def _render_with_markdown(self) -> None:
+        """Render content with markdown processing."""
+        from rich.console import Group
+        from rich.text import Text
+        from swecli.ui_textual.renderers import render_markdown_text_segment
+
+        if not self._content:
+            text = Text()
+            text.append("● ", style=SUCCESS)
+            self.update(text)
+            return
+
+        renderables, _ = render_markdown_text_segment(self._content, leading=True)
+        if renderables:
+            self.update(Group(*renderables))
+        else:
+            text = Text()
+            text.append("● ", style=SUCCESS)
+            self.update(text)
 
     async def append_content(self, content: str) -> None:
         """Append streaming content to the message."""
         if not content:
             return
         self._content += content
-        # Re-render with updated content
-        from rich.text import Text
-
-        text = Text()
-        text.append("● ", style=SUCCESS)
-        text.append(self._content, style=PRIMARY)
-        self.update(text)
+        # Re-render with markdown processing
+        self._render_with_markdown()
 
     async def stop_stream(self) -> None:
         """Stop the streaming (no-op for Static-based rendering)."""
@@ -320,7 +330,7 @@ class ThinkingMessage(Vertical):
     ThinkingMessage {
         width: 100%;
         height: auto;
-        margin: 0 0 1 0;
+        margin: 0;
         color: #7a7e86;
     }
     ThinkingMessage > .header-widget {
@@ -454,7 +464,7 @@ class SystemMessage(Static):
     SystemMessage {
         width: 100%;
         height: auto;
-        margin: 0 0 1 0;
+        margin: 0;
         color: #7a7e86;
         text-style: italic;
     }
@@ -472,7 +482,7 @@ class ErrorMessage(Static):
     ErrorMessage {
         width: 100%;
         height: auto;
-        margin: 0 0 1 0;
+        margin: 0;
     }
     """
 
@@ -512,7 +522,7 @@ class WarningMessage(Static):
     WarningMessage {
         width: 100%;
         height: auto;
-        margin: 0 0 1 0;
+        margin: 0;
     }
     """
 
@@ -656,7 +666,7 @@ class BashOutputMessage(Static):
     BashOutputMessage {
         width: 100%;
         height: auto;
-        margin: 0 0 1 0;
+        margin: 0;
     }
 
     .bash-output-container {

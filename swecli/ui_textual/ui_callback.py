@@ -332,6 +332,9 @@ class TextualUICallback:
 
         # Bash commands: handle background vs immediate differently
         if tool_name in ("bash_execute", "run_command") and isinstance(result, dict):
+            # Add blank line before tool result for consistent spacing
+            self._run_on_ui(self.conversation.write, Text(""))
+
             background_task_id = result.get("background_task_id")
 
             if background_task_id:
@@ -391,6 +394,9 @@ class TextualUICallback:
             if self.chat_app and hasattr(self.chat_app, 'resume_reasoning_spinner'):
                 self._run_on_ui(self.chat_app.resume_reasoning_spinner)
             return
+
+        # Add blank line before tool result for consistent spacing
+        self._run_on_ui(self.conversation.write, Text(""))
 
         # Build combined header + result as single Text (atomic write for parallel tools)
         success = result.get("success", True) if isinstance(result, dict) else True
