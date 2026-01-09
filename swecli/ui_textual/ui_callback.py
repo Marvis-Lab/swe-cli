@@ -281,11 +281,8 @@ class TextualUICallback:
         if self.chat_app and hasattr(self.chat_app, "_stop_local_spinner"):
             self._run_on_ui(self.chat_app._stop_local_spinner)
 
-        # Show tool call header: ⏺ ToolName (args)
-        normalized_args = self._normalize_arguments(tool_args)
-        display_args = self._resolve_paths_in_args(normalized_args)
-        tool_line = ToolResultFormatter.format_tool_call(tool_name, display_args)
-        self._run_on_ui(self.conversation.write, tool_line)
+        # Don't show tool call header here - show it in on_tool_result
+        # This ensures header + result appear together even for parallel tools
 
     def on_tool_result(
         self,
@@ -330,6 +327,12 @@ class TextualUICallback:
             return
 
         normalized_args = self._normalize_arguments(tool_args)
+
+        # Show tool call header first: ⏺ ToolName (args)
+        # This ensures header + result appear together for parallel tools
+        display_args = self._resolve_paths_in_args(normalized_args)
+        tool_line = ToolResultFormatter.format_tool_call(tool_name, display_args)
+        self._run_on_ui(self.conversation.write, tool_line)
 
         # Bash commands: handle background vs immediate differently
         if tool_name in ("bash_execute", "run_command") and isinstance(result, dict):
