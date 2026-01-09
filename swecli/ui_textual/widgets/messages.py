@@ -273,7 +273,7 @@ class AssistantMessage(Static):
     AssistantMessage {
         width: 100%;
         height: auto;
-        margin: 0;
+        margin: 0 0 1 0;
     }
     """
 
