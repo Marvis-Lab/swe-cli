@@ -290,10 +290,7 @@ class ConversationLogV2(VerticalScroll):
         For non-streaming responses, pass the full message.
         For streaming, call start_assistant_streaming() instead.
         """
-        # Add blank line before assistant message for spacing
-        from rich.text import Text
-        self.write(Text(""))
-
+        # No blank line needed - spinner already provides spacing before assistant
         widget = AssistantMessage(message)
         self.mount(widget)
         self._current_assistant_widget = widget
@@ -620,9 +617,12 @@ class ConversationLogV2(VerticalScroll):
         else:
             text = plain.strip()
 
-        # Add blank line before spinner for spacing
+        # Add blank line before spinner ONLY if not after UserMessage
+        # (UserMessage has bottom margin that provides spacing)
         from rich.text import Text as RichText
-        self.write(RichText(""))
+        children = list(self.children)
+        if children and not isinstance(children[-1], UserMessage):
+            self.write(RichText(""))
 
         self._spinner_widget = SpinnerWidget(message=text, tip=tip, classes="spinner-widget")
         self.mount(self._spinner_widget)
