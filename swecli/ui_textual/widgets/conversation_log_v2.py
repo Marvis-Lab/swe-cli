@@ -620,14 +620,9 @@ class ConversationLogV2(VerticalScroll):
         else:
             text = plain.strip()
 
-        # Add blank line before spinner only if previous line has content
-        # (e.g., tool results). Skip if coming right after UserMessage which has margin.
+        # Add blank line before spinner for spacing
         from rich.text import Text as RichText
-        if self._line_list:
-            last_line = self._line_list[-1]
-            last_plain = getattr(last_line, 'plain', '') or ''
-            if last_plain.strip():  # Has content - add spacing
-                self.write(RichText(""))
+        self.write(RichText(""))
 
         self._spinner_widget = SpinnerWidget(message=text, tip=tip, classes="spinner-widget")
         self.mount(self._spinner_widget)

@@ -167,7 +167,7 @@ class UserMessage(Static):
     UserMessage {
         width: 100%;
         height: auto;
-        margin: 0 0 1 0;
+        margin: 0;
     }
 
     .user-message-container {
