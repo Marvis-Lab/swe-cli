@@ -617,11 +617,18 @@ class ConversationLogV2(VerticalScroll):
         else:
             text = plain.strip()
 
-        # Add blank line before spinner ONLY if not after UserMessage
-        # (UserMessage has bottom margin that provides spacing)
+        # Add blank line before spinner ONLY if not after UserMessage or ThinkingMessage
+        # - UserMessage: has bottom margin that provides spacing
+        # - ThinkingMessage: tool result's \n prefix provides spacing
         from rich.text import Text as RichText
         children = list(self.children)
-        if children and not isinstance(children[-1], UserMessage):
+        # Check both: children[-1] type AND _current_thinking_widget flag
+        is_after_user = children and isinstance(children[-1], UserMessage)
+        is_after_thinking = (
+            self._current_thinking_widget is not None
+            or (children and isinstance(children[-1], ThinkingMessage))
+        )
+        if not is_after_user and not is_after_thinking:
             self.write(RichText(""))
 
         self._spinner_widget = SpinnerWidget(message=text, tip=tip, classes="spinner-widget")
@@ -662,6 +669,8 @@ class ConversationLogV2(VerticalScroll):
         if self._spinner_widget:
             self._spinner_widget.remove()
             self._spinner_widget = None
+        # Clear thinking state so subsequent spinners add blank normally
+        self._current_thinking_widget = None
 
     def tick_spinner(self) -> None:
         """Advance spinner animation (handled automatically by SpinnerWidget)."""
