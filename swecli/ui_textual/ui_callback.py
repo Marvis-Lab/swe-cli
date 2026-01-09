@@ -408,19 +408,9 @@ class TextualUICallback:
         success = result.get("success", True) if isinstance(result, dict) else True
 
         # Build header line with leading blank line for spacing
-        # Skip blank line if just after ThinkingMessage (spinner already added spacing)
         header_display = build_tool_call_text(tool_name, display_args)
         combined = Text()
-        skip_leading_blank = (
-            hasattr(self.conversation, 'is_after_thinking')
-            and self.conversation.is_after_thinking()
-        )
-        if not skip_leading_blank:
-            combined.append("\n")  # Blank line before for spacing
-        else:
-            # Clear thinking state so subsequent tools add normal spacing
-            if hasattr(self.conversation, 'clear_thinking_state'):
-                self.conversation.clear_thinking_state()
+        combined.append("\n")  # Blank line before for spacing
         combined.append(TOOL_CALL_PREFIX, style=SUCCESS)
         combined.append_text(header_display)
         combined.append("\n")
