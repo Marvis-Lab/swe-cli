@@ -650,7 +650,7 @@ def _handle_run_command(args) -> None:
                         console.print("[red]Error: Backend server thread terminated unexpectedly[/red]")
                         sys.exit(1)
 
-                except ImportError as e:
+                except ImportError:
                     console.print("[red]Error: Web dependencies not installed[/red]")
                     console.print("[yellow]Install with: pip install 'swe-cli[web]'[/yellow]")
                     sys.exit(1)

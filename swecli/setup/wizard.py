@@ -8,7 +8,6 @@ from typing import Optional
 from rich.console import Console
 from rich.panel import Panel
 from rich.prompt import Prompt, Confirm
-from rich.table import Table
 
 from .providers import get_provider_config, get_provider_choices, get_provider_models
 from .validator import validate_api_key
@@ -158,7 +157,7 @@ def validate_key(provider_id: str, api_key: str) -> bool:
         console.print(" [bold green]✓ Valid![/bold green]")
         return True
     else:
-        console.print(f" [bold red]✗ Failed[/bold red]")
+        console.print(" [bold red]✗ Failed[/bold red]")
         console.print(f"[red]Error: {error}[/red]")
         return False
 

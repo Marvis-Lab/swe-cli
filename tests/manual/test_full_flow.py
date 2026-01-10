@@ -7,7 +7,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 from swecli.ui_textual.runner import TextualRunner
-from swecli.models.message import Role
 
 def test_full_flow():
     """Test the complete message processing flow."""
@@ -30,10 +29,10 @@ def test_full_flow():
     print(f"\n📊 Got {len(new_messages)} new messages from session", file=sys.stdout)
 
     # Now render them (this is what _process_messages does)
-    print(f"\n🎨 Calling _render_responses...", file=sys.stdout)
+    print("\n🎨 Calling _render_responses...", file=sys.stdout)
     runner._render_responses(new_messages)
 
-    print(f"\n✅ Test complete! Check stderr for debug logs.", file=sys.stdout)
+    print("\n✅ Test complete! Check stderr for debug logs.", file=sys.stdout)
 
 if __name__ == "__main__":
     test_full_flow()

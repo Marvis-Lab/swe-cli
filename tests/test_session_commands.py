@@ -1,6 +1,5 @@
 """Tests for REPL session command helpers."""
 
-from pathlib import Path
 
 from rich.console import Console
 

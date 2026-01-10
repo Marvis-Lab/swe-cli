@@ -8,10 +8,10 @@ from pathlib import Path
 # Add the project to path
 sys.path.insert(0, str(Path(__file__).parent))
 
-from textual.app import App, ComposeResult
-from textual.containers import Container, Vertical
+from textual.app import App
+from textual.containers import Container
 from textual.widgets import Header, Footer, Static, Button
-from swecli.ui_textual.chat_app import ConversationLog, ChatTextArea
+from swecli.ui_textual.chat_app import ConversationLog
 from swecli.ui_textual.runner import TextualRunner
 from swecli.models.message import Role
 

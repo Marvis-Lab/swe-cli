@@ -3,7 +3,6 @@
 
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, str(Path(__file__).parent))
 
@@ -48,24 +47,24 @@ def test_no_duplication_with_fix():
         print(f"   Message {i+1}: {msg.role.value}")
 
     # Render the responses
-    print(f"\n🎨 Rendering responses...")
+    print("\n🎨 Rendering responses...")
     runner._render_responses(new_messages)
 
     # Verify results
-    print(f"\n" + "=" * 80)
-    print(f"VERIFICATION RESULTS:")
-    print(f"=" * 80)
+    print("\n" + "=" * 80)
+    print("VERIFICATION RESULTS:")
+    print("=" * 80)
     print(f"✓ add_assistant_message was called {call_count} time(s)")
 
     if call_count == 1:
-        print(f"✅ SUCCESS: No duplication! Message rendered exactly once.")
+        print("✅ SUCCESS: No duplication! Message rendered exactly once.")
         return True
     elif call_count == 0:
-        print(f"⚠️  WARNING: Message was never rendered!")
+        print("⚠️  WARNING: Message was never rendered!")
         return False
     else:
         print(f"❌ FAILURE: Duplication detected! Message rendered {call_count} times.")
-        print(f"\nRendered messages:")
+        print("\nRendered messages:")
         for i, msg in enumerate(messages_rendered, 1):
             print(f"  {i}. {msg[:100]}...")
         return False
@@ -96,9 +95,9 @@ def test_console_output_not_captured():
 
     new_messages = runner._run_query(test_query)
 
-    print(f"\n" + "=" * 80)
-    print(f"CONSOLE CAPTURE RESULTS:")
-    print(f"=" * 80)
+    print("\n" + "=" * 80)
+    print("CONSOLE CAPTURE RESULTS:")
+    print("=" * 80)
     print(f"✓ Enqueued {len(enqueued_texts)} console text(s)")
 
     # Check if any enqueued text contains the assistant response
@@ -108,16 +107,16 @@ def test_console_output_not_captured():
         assistant_content = assistant_messages[0].content
         for text in enqueued_texts:
             if assistant_content in text or text in assistant_content:
-                print(f"❌ FAILURE: Console output contains assistant message!")
-                print(f"   This would cause duplication!")
+                print("❌ FAILURE: Console output contains assistant message!")
+                print("   This would cause duplication!")
                 return False
 
     if len(enqueued_texts) == 0:
-        print(f"✅ SUCCESS: No console output captured (expected after fix)")
+        print("✅ SUCCESS: No console output captured (expected after fix)")
         return True
     else:
-        print(f"⚠️  Console output was captured but doesn't contain assistant message")
-        print(f"   Enqueued texts:")
+        print("⚠️  Console output was captured but doesn't contain assistant message")
+        print("   Enqueued texts:")
         for i, text in enumerate(enqueued_texts, 1):
             print(f"   {i}. {text[:100]}...")
         return True
@@ -145,7 +144,7 @@ def test_session_messages_only():
     session = runner.session_manager.get_current_session()
     final_count = len(session.messages) if session else 0
 
-    print(f"\n📊 Session messages:")
+    print("\n📊 Session messages:")
     print(f"   Initial: {initial_count}")
     print(f"   New: {len(new_messages)}")
     print(f"   Final: {final_count}")
@@ -158,7 +157,7 @@ def test_session_messages_only():
     print(f"✓ Total assistant messages in session: {assistant_in_session}")
 
     if assistant_in_new == 1:
-        print(f"✅ SUCCESS: Exactly 1 assistant message in new messages")
+        print("✅ SUCCESS: Exactly 1 assistant message in new messages")
         return True
     else:
         print(f"❌ FAILURE: Expected 1 assistant message, got {assistant_in_new}")

@@ -8,9 +8,8 @@ from __future__ import annotations
 
 import queue
 import threading
-from typing import Any, Callable, Optional
+from typing import Any, Callable
 
-from swecli.models.message import ChatMessage
 
 
 class MessageProcessor:

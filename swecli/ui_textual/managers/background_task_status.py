@@ -6,7 +6,7 @@ running task count and handle status updates.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from textual.app import App

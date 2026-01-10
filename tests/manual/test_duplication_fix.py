@@ -33,7 +33,7 @@ def test_no_duplication():
     session_after = runner.session_manager.get_current_session()
     messages_after = len(session_after.messages) if session_after else 0
 
-    print(f"\n📊 Results:")
+    print("\n📊 Results:")
     print(f"   Messages before: {messages_before}")
     print(f"   Messages after: {messages_after}")
     print(f"   New messages: {len(new_messages)}")
@@ -42,34 +42,34 @@ def test_no_duplication():
     assistant_messages = [msg for msg in new_messages if msg.role == Role.ASSISTANT]
     user_messages = [msg for msg in new_messages if msg.role == Role.USER]
 
-    print(f"\n📨 Message breakdown:")
+    print("\n📨 Message breakdown:")
     print(f"   User messages: {len(user_messages)}")
     print(f"   Assistant messages: {len(assistant_messages)}")
 
     # Verify expectations
-    print(f"\n✅ Verification:")
+    print("\n✅ Verification:")
 
     # Should have exactly 1 user message
     if len(user_messages) == 1:
-        print(f"   ✅ Correct: 1 user message")
+        print("   ✅ Correct: 1 user message")
     else:
         print(f"   ❌ FAIL: Expected 1 user message, got {len(user_messages)}")
         return False
 
     # Should have exactly 1 assistant message
     if len(assistant_messages) == 1:
-        print(f"   ✅ Correct: 1 assistant message")
+        print("   ✅ Correct: 1 assistant message")
     else:
         print(f"   ❌ FAIL: Expected 1 assistant message, got {len(assistant_messages)}")
         return False
 
     # Show the assistant message
     if assistant_messages:
-        print(f"\n💬 Assistant message:")
+        print("\n💬 Assistant message:")
         print(f"   {assistant_messages[0].content}")
 
     # Now simulate what _render_responses does
-    print(f"\n🎨 Simulating UI rendering:")
+    print("\n🎨 Simulating UI rendering:")
     assistant_count = 0
     for msg in new_messages:
         if msg.role == Role.ASSISTANT:
@@ -77,12 +77,12 @@ def test_no_duplication():
             print(f"   Rendering assistant message #{assistant_count}")
 
     if assistant_count == 1:
-        print(f"   ✅ Would render exactly 1 assistant message (no duplication!)")
+        print("   ✅ Would render exactly 1 assistant message (no duplication!)")
     else:
         print(f"   ❌ FAIL: Would render {assistant_count} assistant messages (DUPLICATION!)")
         return False
 
-    print(f"\n✅ ALL TESTS PASSED - No duplication detected!")
+    print("\n✅ ALL TESTS PASSED - No duplication detected!")
     return True
 
 if __name__ == "__main__":
