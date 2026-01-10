@@ -76,26 +76,17 @@ class ApprovalPromptController:
         if controller is not None:
             controller.reset()
 
-        # Stop thinking spinner before showing approval panel
         conversation = self.app.conversation
-        if hasattr(conversation, 'stop_spinner'):
-            conversation.stop_spinner()
-        if hasattr(self.app, '_stop_local_spinner'):
-            self.app._stop_local_spinner()
+        if getattr(conversation, "_tool_call_start", None) is not None:
+            timer = getattr(conversation, "_tool_spinner_timer", None)
+            if timer is not None:
+                timer.stop()
+                conversation._tool_spinner_timer = None
+            conversation._spinner_active = False
+            conversation._replace_tool_call_line("⏺")
 
-        # Clear any old tool call state (not used in Claude Code style)
-        conversation._tool_display = None
-        conversation._tool_call_start = None
-        if hasattr(conversation, '_tool_spinner_timer') and conversation._tool_spinner_timer is not None:
-            conversation._tool_spinner_timer.stop()
-            conversation._tool_spinner_timer = None
-        conversation._spinner_active = False
-
-        # Tool call header is now shown by on_tool_call() before we get here
         self._render()
         self.app.input_field.focus()
-        # Yield to event loop to let focus event process before accepting input
-        await asyncio.sleep(0)
 
         try:
             result = await self._future
@@ -126,15 +117,12 @@ class ApprovalPromptController:
         call_display = getattr(conversation, "_tool_display", None)
         call_start = getattr(conversation, "_tool_call_start", None)
 
+        conversation.clear_approval_prompt()
+
         if option.get("approved", True):
-            # Claude Code style: Defer panel clearing until tool result is written
-            # This prevents the flash between clearing and showing result
-            conversation.defer_approval_clear()
-            conversation._tool_display = None
-            conversation._tool_call_start = None
+            if call_display is not None:
+                conversation.start_tool_execution()
         else:
-            # For rejected case, clear immediately
-            conversation.clear_approval_prompt()
             if call_start is not None:
                 # DON'T truncate - preserve subagent history
                 # Just update the tool line in-place with red bullet and show interrupt message
@@ -172,10 +160,7 @@ class ApprovalPromptController:
 
     def _cleanup(self) -> None:
         conversation = self.app.conversation
-        # Only clear if not already set for deferred clearing
-        # (deferred clearing happens on next write, which avoids the flash)
-        if not getattr(conversation, '_pending_approval_clear', False):
-            conversation.clear_approval_prompt()
+        conversation.clear_approval_prompt()
         self._future = None
         self._active = False
         self._options = []
