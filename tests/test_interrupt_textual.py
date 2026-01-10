@@ -1,6 +1,5 @@
 """Test interrupt display in Textual UI."""
-import asyncio
-from unittest.mock import Mock, MagicMock
+from unittest.mock import Mock
 from swecli.ui_textual.runner import TextualRunner
 from swecli.repl.repl import REPL
 
@@ -49,7 +48,7 @@ def test_interrupt_during_thinking():
                 runner.app.conversation.write(interrupt_line)
 
     # Verify the message was written
-    print(f"\n=== Test Results ===")
+    print("\n=== Test Results ===")
     print(f"Number of lines written: {len(written_lines)}")
 
     if written_lines:

@@ -174,7 +174,7 @@ def test_sanitize_multiple_args():
     }
     result = _sanitize_local_paths(args)
     assert result["file_path"] == "main.py", f"Expected 'main.py', got '{result['file_path']}'"
-    assert result["content"] == "print('hello')", f"Content was modified unexpectedly"
+    assert result["content"] == "print('hello')", "Content was modified unexpectedly"
     assert result["output_path"] == "output.txt", f"Expected 'output.txt', got '{result['output_path']}'"
     print("✓ test_sanitize_multiple_args")
 
@@ -212,8 +212,8 @@ def test_rewrite_removes_local_keyword():
     task = "Implement the local PDF paper"
     result = _rewrite_task_for_docker(task, [], "/workspace")
     # The word "local " should be stripped
-    assert "local PDF" not in result, f"'local PDF' should be removed, got task body containing 'local PDF'"
-    assert "PDF paper" in result, f"'PDF paper' should remain in task"
+    assert "local PDF" not in result, "'local PDF' should be removed, got task body containing 'local PDF'"
+    assert "PDF paper" in result, "'PDF paper' should remain in task"
     print("✓ test_rewrite_removes_local_keyword")
 
 
@@ -221,8 +221,8 @@ def test_rewrite_replaces_in_this_repo():
     """Test that 'in this repo' is replaced with workspace path."""
     task = "Find all Python files in this repo"
     result = _rewrite_task_for_docker(task, [], "/workspace")
-    assert "in /workspace" in result, f"Expected 'in /workspace' in result"
-    assert "in this repo" not in result, f"'in this repo' should be replaced"
+    assert "in /workspace" in result, "Expected 'in /workspace' in result"
+    assert "in this repo" not in result, "'in this repo' should be replaced"
     print("✓ test_rewrite_replaces_in_this_repo")
 
 
@@ -230,8 +230,8 @@ def test_rewrite_replaces_local_directory_path():
     """Test that local directory paths are replaced with workspace."""
     task = "Read the file at /Users/nghibui/codes/test_opencli/main.py"
     result = _rewrite_task_for_docker(task, [], "/workspace", "/Users/nghibui/codes/test_opencli")
-    assert "/Users/nghibui/codes/test_opencli" not in result, f"Local path should be replaced"
-    assert "/workspace" in result, f"Workspace path should be present"
+    assert "/Users/nghibui/codes/test_opencli" not in result, "Local path should be replaced"
+    assert "/workspace" in result, "Workspace path should be present"
     print("✓ test_rewrite_replaces_local_directory_path")
 
 
@@ -239,9 +239,9 @@ def test_rewrite_includes_docker_preamble():
     """Test that Docker context preamble is included."""
     task = "Write a simple Python script"
     result = _rewrite_task_for_docker(task, [], "/workspace")
-    assert "CRITICAL" in result, f"Expected 'CRITICAL' in preamble"
-    assert "DOCKER" in result.upper(), f"Expected 'Docker' in preamble"
-    assert "NEVER use paths like" in result, f"Expected path warnings in preamble"
+    assert "CRITICAL" in result, "Expected 'CRITICAL' in preamble"
+    assert "DOCKER" in result.upper(), "Expected 'Docker' in preamble"
+    assert "NEVER use paths like" in result, "Expected path warnings in preamble"
     print("✓ test_rewrite_includes_docker_preamble")
 
 
@@ -250,8 +250,8 @@ def test_rewrite_replaces_input_file_paths():
     input_files = [Path("/Users/nghibui/codes/test_opencli/paper.pdf")]
     task = "Implement the paper at /Users/nghibui/codes/test_opencli/paper.pdf"
     result = _rewrite_task_for_docker(task, input_files, "/workspace", "/Users/nghibui/codes/test_opencli")
-    assert "/workspace/paper.pdf" in result, f"Expected '/workspace/paper.pdf' in result"
-    assert "/Users/nghibui" not in result, f"Local path should not be in result"
+    assert "/workspace/paper.pdf" in result, "Expected '/workspace/paper.pdf' in result"
+    assert "/Users/nghibui" not in result, "Local path should not be in result"
     print("✓ test_rewrite_replaces_input_file_paths")
 
 

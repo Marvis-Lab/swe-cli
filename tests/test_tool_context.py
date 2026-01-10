@@ -1,4 +1,3 @@
-import pytest
 from unittest.mock import MagicMock
 from swecli.core.context_engineering.tools.context import ToolExecutionContext
 

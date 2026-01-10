@@ -4,7 +4,7 @@ import json
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from enum import Enum, auto
-from typing import TYPE_CHECKING, Optional, Dict, Any, List
+from typing import TYPE_CHECKING, Optional, Dict, Any
 
 # Maximum number of tools to execute in parallel
 MAX_CONCURRENT_TOOLS = 5
@@ -171,7 +171,7 @@ class ReactExecutor:
             if ctx.ui_callback and hasattr(ctx.ui_callback, 'on_interrupt'):
                 ctx.ui_callback.on_interrupt()
             elif not ctx.ui_callback:
-                 self.console.print(f"  ⎿  [bold red]Interrupted · What should I do instead?[/bold red]")
+                 self.console.print("  ⎿  [bold red]Interrupted · What should I do instead?[/bold red]")
         else:
             self.console.print(f"[red]Error: {error_text}[/red]")
             fallback = ChatMessage(role=Role.ASSISTANT, content=f"{error_text}")

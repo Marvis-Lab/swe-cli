@@ -4,8 +4,7 @@ Tests the think tool and related components for capturing and displaying
 model reasoning content.
 """
 
-import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 from swecli.core.context_engineering.tools.handlers.thinking_handler import (
     ThinkingHandler,
@@ -420,7 +419,6 @@ class TestMessageRenderer:
     def test_add_thinking_block_writes_to_log(self):
         """Test add_thinking_block writes to log."""
         from swecli.ui_textual.widgets.conversation.message_renderer import DefaultMessageRenderer
-        from rich.text import Text
 
         mock_log = MagicMock()
         renderer = DefaultMessageRenderer(mock_log)
