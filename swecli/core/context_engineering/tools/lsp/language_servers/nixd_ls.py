@@ -17,7 +17,8 @@ from pathlib import Path
 from overrides import override
 
 from swecli.core.context_engineering.tools.lsp import ls_types
-from swecli.core.context_engineering.tools.lsp.ls import DocumentSymbols, LSPFileBuffer, SolidLanguageServer
+from swecli.core.context_engineering.tools.lsp.ls import SolidLanguageServer
+from swecli.core.context_engineering.tools.lsp.ls_structs import DocumentSymbols, LSPFileBuffer
 from swecli.core.context_engineering.tools.lsp.ls_config import LanguageServerConfig
 from swecli.core.context_engineering.tools.lsp.lsp_protocol_handler.lsp_types import InitializeParams
 from swecli.core.context_engineering.tools.lsp.lsp_protocol_handler.server import ProcessLaunchInfo

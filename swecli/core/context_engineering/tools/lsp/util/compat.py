@@ -36,8 +36,22 @@ def dump_pickle(obj: Any, path: str) -> None:
         pickle.dump(obj, f)
 
 
-def getstate(obj: Any) -> Any:
-    """Get state of an object for pickling."""
+def getstate(obj: Any, instance: Any = None, transient_properties: list[str] | None = None) -> Any:
+    """
+    Get state of an object for pickling.
+    Supports a 3-argument signature for backward compatibility with sensai's getstate.
+    If called with 1 argument, behaves like standard getstate.
+    If called with 3 arguments (obj is likely the class), uses instance and transient_properties.
+    """
+    if instance is not None:
+        # sensai-style call: getstate(Class, instance, transient_properties)
+        state = instance.__dict__.copy()
+        if transient_properties:
+            for prop in transient_properties:
+                state.pop(prop, None)
+        return state
+
+    # Standard call
     if hasattr(obj, "__getstate__"):
         return obj.__getstate__()
     return obj.__dict__.copy() if hasattr(obj, "__dict__") else None
