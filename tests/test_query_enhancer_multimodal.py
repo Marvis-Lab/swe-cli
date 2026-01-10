@@ -138,11 +138,9 @@ class TestPrepareMessagesMultimodal:
         enhanced = "analyze this image"
         image_blocks = [
             {
-                "type": "image",
-                "source": {
-                    "type": "base64",
-                    "media_type": "image/png",
-                    "data": "base64data",
+                "type": "image_url",
+                "image_url": {
+                    "url": "data:image/png;base64,base64data"
                 },
             }
         ]
@@ -163,9 +161,9 @@ class TestPrepareMessagesMultimodal:
         assert user_msg["content"][0]["type"] == "text"
         assert user_msg["content"][0]["text"] == enhanced
 
-        # Second block should be image
-        assert user_msg["content"][1]["type"] == "image"
-        assert user_msg["content"][1]["source"]["data"] == "base64data"
+        # Second block should be image_url
+        assert user_msg["content"][1]["type"] == "image_url"
+        assert "base64data" in user_msg["content"][1]["image_url"]["url"]
 
     def test_no_image_blocks_keeps_string_content(self, query_enhancer):
         """Test that None or empty image_blocks keeps string content."""
@@ -216,7 +214,7 @@ class TestImageIntegration:
 
             # Verify image block was created
             assert len(image_blocks) == 1
-            assert image_blocks[0]["type"] == "image"
+            assert image_blocks[0]["type"] == "image_url"
 
             # Prepare messages
             messages = enhancer.prepare_messages(
@@ -226,7 +224,7 @@ class TestImageIntegration:
             # Verify multimodal format
             user_msg = next(m for m in reversed(messages) if m["role"] == "user")
             assert isinstance(user_msg["content"], list)
-            assert user_msg["content"][1]["source"]["data"] == "base64imagedata"
+            assert "base64imagedata" in user_msg["content"][1]["image_url"]["url"]
 
 
 class TestEmailExclusion:

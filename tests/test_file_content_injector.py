@@ -78,7 +78,7 @@ class TestInjectionResult:
         """Test creating result with content."""
         result = InjectionResult(
             text_content="<file_content>...</file_content>",
-            image_blocks=[{"type": "image"}],
+            image_blocks=[{"type": "image_url"}],
             errors=["Error 1"],
         )
         assert "<file_content>" in result.text_content
@@ -287,8 +287,8 @@ class TestImageProcessing:
 
             assert '<image path="test.png" type="image/png">' in result.text_content
             assert len(result.image_blocks) == 1
-            assert result.image_blocks[0]["type"] == "image"
-            assert result.image_blocks[0]["source"]["data"] == "base64encodeddata"
+            assert result.image_blocks[0]["type"] == "image_url"
+            assert "base64encodeddata" in result.image_blocks[0]["image_url"]["url"]
 
 
 class TestPDFProcessing:
