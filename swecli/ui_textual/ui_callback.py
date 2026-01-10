@@ -292,6 +292,16 @@ class TextualUICallback:
             self._run_on_ui(self.conversation.start_tool_execution)
             return
 
+        # bash_execute: Show header immediately (before approval modal)
+        # This ensures the tool header is visible when user sees the approval prompt
+        if tool_name in ("bash_execute", "run_command"):
+            normalized_args = self._normalize_arguments(tool_args)
+            display_args = self._resolve_paths_in_args(normalized_args)
+            header_display = build_tool_call_text(tool_name, display_args)
+            self._run_on_ui(self.conversation.add_tool_call, header_display)
+            self._run_on_ui(self.conversation.start_tool_execution)
+            return
+
         # Don't show tool call header here - show it in on_tool_result
         # This ensures header + result appear together even for parallel tools
 
@@ -342,21 +352,17 @@ class TextualUICallback:
         normalized_args = self._normalize_arguments(tool_args)
         display_args = self._resolve_paths_in_args(normalized_args)
 
-        # Bash commands: handle background vs immediate differently
+        # Bash commands: header was already shown in on_tool_call, just show result
         if tool_name in ("bash_execute", "run_command") and isinstance(result, dict):
             background_task_id = result.get("background_task_id")
 
             if background_task_id:
-                # Background task - show header + simple message together (atomic)
-                header_display = build_tool_call_text(tool_name, display_args)
-                combined = Text()
-                combined.append("\n")  # Blank line before for spacing
-                combined.append(TOOL_CALL_PREFIX, style=SUCCESS)
-                combined.append_text(header_display)
-                combined.append("\n")
-                combined.append(RESULT_PREFIX, style=GREY)
-                combined.append(f"Running in background ({background_task_id})", style=GREY)
-                self._run_on_ui(self.conversation.write, combined)
+                # Background task - stop spinner and show message (header already shown)
+                self._run_on_ui(self.conversation.stop_tool_execution, True)
+                result_line = Text()
+                result_line.append(RESULT_PREFIX, style=GREY)
+                result_line.append(f"Running in background ({background_task_id})", style=GREY)
+                self._run_on_ui(self.conversation.write, result_line)
                 # Resume spinner - LLM is processing after tool completes
                 if self.chat_app and hasattr(self.chat_app, 'resume_reasoning_spinner'):
                     self._run_on_ui(self.chat_app.resume_reasoning_spinner)
@@ -364,13 +370,8 @@ class TextualUICallback:
 
             is_error = not result.get("success", True)
 
-            # Show header with leading blank line for spacing
-            header_display = build_tool_call_text(tool_name, display_args)
-            header_line = Text()
-            header_line.append("\n")  # Blank line before for spacing
-            header_line.append(TOOL_CALL_PREFIX, style=SUCCESS)
-            header_line.append_text(header_display)
-            self._run_on_ui(self.conversation.write, header_line)
+            # Stop spinner - header was already shown in on_tool_call
+            self._run_on_ui(self.conversation.stop_tool_execution, not is_error)
 
             if hasattr(self.conversation, 'add_bash_output_box'):
                 import os
