@@ -24,6 +24,7 @@ class ApprovalPromptController:
         self._selected_index = 0
         self._command: str = ""
         self._working_dir: str = "."
+        self._header_rendered = False  # Track if tool header was rendered
 
     # ------------------------------------------------------------------
     # Public API
@@ -77,13 +78,23 @@ class ApprovalPromptController:
             controller.reset()
 
         conversation = self.app.conversation
-        if getattr(conversation, "_tool_call_start", None) is not None:
-            timer = getattr(conversation, "_tool_spinner_timer", None)
+        # V2: Pause the tool widget spinner during approval (if using widget-based log)
+        current_widget = getattr(conversation, "_current_tool_widget", None)
+        if current_widget is not None and hasattr(current_widget, "_timer"):
+            timer = current_widget._timer
             if timer is not None:
                 timer.stop()
-                conversation._tool_spinner_timer = None
-            conversation._spinner_active = False
-            conversation._replace_tool_call_line("⏺")
+                current_widget._timer = None
+        # V1 fallback: pause old-style spinner (attributes are on _tool_renderer)
+        else:
+            tool_renderer = getattr(conversation, "_tool_renderer", None)
+            if tool_renderer is not None and getattr(tool_renderer, "_tool_call_start", None) is not None:
+                timer = getattr(tool_renderer, "_tool_spinner_timer", None)
+                if timer is not None:
+                    timer.stop()
+                    tool_renderer._tool_spinner_timer = None
+                tool_renderer._spinner_active = False
+                tool_renderer._replace_tool_call_line("⏺")
 
         self._render()
         self.app.input_field.focus()
@@ -114,36 +125,49 @@ class ApprovalPromptController:
         result = (option.get("approved", True), option["choice"], edited_command)
 
         conversation = self.app.conversation
-        call_display = getattr(conversation, "_tool_display", None)
-        call_start = getattr(conversation, "_tool_call_start", None)
 
         conversation.clear_approval_prompt()
 
+        # V2: Check for widget-based tool call
+        current_widget = getattr(conversation, "_current_tool_widget", None)
+        # V1: Check for line-based tool call (attributes are on _tool_renderer)
+        tool_renderer = getattr(conversation, "_tool_renderer", None)
+        call_display = getattr(tool_renderer, "_tool_display", None) if tool_renderer else None
+        call_start = getattr(tool_renderer, "_tool_call_start", None) if tool_renderer else None
+
         if option.get("approved", True):
-            if call_display is not None:
+            # Approved: start spinner (will be stopped by on_tool_result)
+            if current_widget is not None:
+                conversation.start_tool_execution()
+            elif call_display is not None:
                 conversation.start_tool_execution()
         else:
-            if call_start is not None:
+            # Denied: show error state
+            # V2: The spinner was stopped in start(), on_tool_result will handle the rest
+            # V1 fallback: handle old-style tool calls
+            if call_start is not None and tool_renderer is not None:
                 # DON'T truncate - preserve subagent history
                 # Just update the tool line in-place with red bullet and show interrupt message
-                timer = getattr(conversation, "_tool_spinner_timer", None)
+                timer = getattr(tool_renderer, "_tool_spinner_timer", None)
                 if timer is not None:
                     timer.stop()
-                    conversation._tool_spinner_timer = None
-                conversation._spinner_active = False
+                    tool_renderer._tool_spinner_timer = None
+                tool_renderer._spinner_active = False
 
                 # Update the tool line in-place with red bullet (preserves subagent history)
-                conversation._replace_tool_call_line("⏺", success=False)
+                tool_renderer._replace_tool_call_line("⏺", success=False)
 
                 # Add interrupt message after current content
                 from swecli.ui_textual.utils.interrupt_utils import create_interrupt_text, APPROVAL_INTERRUPT_MESSAGE
                 result_line = create_interrupt_text(APPROVAL_INTERRUPT_MESSAGE)
                 conversation.write(result_line, scroll_end=True, animate=False)
                 conversation.write(Text(""))
-            # Note: We don't show "Command cancelled." for the else case (when call_start is None)
-            # because the approval modal itself already shows the cancellation. This reduces noise.
-            conversation._tool_display = None
-            conversation._tool_call_start = None
+            # Note: We don't show "Command cancelled." for the else case
+            # because on_tool_result handles this for V2, and the approval modal shows cancellation.
+            if call_display is not None and tool_renderer is not None:
+                tool_renderer._tool_display = None
+            if call_start is not None and tool_renderer is not None:
+                tool_renderer._tool_call_start = None
 
         self._future.set_result(result)
 
@@ -165,6 +189,7 @@ class ApprovalPromptController:
         self._active = False
         self._options = []
         self._selected_index = 0
+        self._header_rendered = False  # Reset for next approval
         controller = getattr(self.app, "_autocomplete_controller", None)
         if controller is not None:
             controller.reset()
@@ -174,6 +199,18 @@ class ApprovalPromptController:
     def _render(self) -> None:
         if not self._active:
             return
+
+        conversation = self.app.conversation
+
+        # Build tool header (only on first render - it persists after approval)
+        tool_header = None
+        if not self._header_rendered:
+            from swecli.ui_textual.utils.tool_display import format_tool_call
+            header_text = format_tool_call("run_command", {"command": self._command or ""})
+            tool_header = Text()
+            tool_header.append("⏺ ", style="green")
+            tool_header.append(header_text)
+            self._header_rendered = True
 
         cmd_display = self._command or "(empty command)"
 
@@ -216,6 +253,6 @@ class ApprovalPromptController:
             padding=(1, 2),
         )
 
-        conversation = self.app.conversation
-        conversation.render_approval_prompt([panel])
+        # Render tool header (persistent) + approval panel (will be cleared after approval)
+        conversation.render_approval_prompt([panel], persistent_header=tool_header)
         conversation.scroll_end(animate=False)

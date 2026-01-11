@@ -395,11 +395,20 @@ class ConversationLog(RichLog):
         self.stop_spinner()  # Retain state change logic here
         self._message_renderer.add_error(message)
 
-    def render_approval_prompt(self, renderables: list[Any]) -> None:
-        """Render the approval prompt panel."""
+    def render_approval_prompt(self, renderables: list[Any], persistent_header: Any = None) -> None:
+        """Render the approval prompt panel.
+
+        Args:
+            renderables: List of Rich renderables to display (will be cleared on re-render)
+            persistent_header: Optional header that persists after approval (e.g., tool call header)
+        """
         # Clear existing if any
         if self._approval_start is not None:
             self.clear_approval_prompt()
+
+        # Write persistent header FIRST (before tracking approval_start, so it survives clear)
+        if persistent_header is not None:
+            self.write(persistent_header)
 
         self._approval_start = len(self.lines)
 

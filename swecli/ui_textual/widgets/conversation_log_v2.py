@@ -383,6 +383,10 @@ class ConversationLogV2(VerticalScroll):
             tool_name = str(display)
 
         widget = ToolCallMessage(tool_name)
+        self._mount_tool_widget(widget)
+
+    def _mount_tool_widget(self, widget: "ToolCallMessage") -> None:
+        """Mount tool widget on UI thread."""
         self.mount(widget)
         self._current_tool_widget = widget
         if self._auto_scroll:
@@ -693,8 +697,22 @@ class ConversationLogV2(VerticalScroll):
 
     # --- Approval Prompts ---
 
-    def render_approval_prompt(self, renderables: list[Any]) -> None:
-        """Render approval prompt with Rich renderables (Panel, Text, etc)."""
+    def render_approval_prompt(self, renderables: list[Any], persistent_header: Any = None) -> None:
+        """Render approval prompt with Rich renderables (Panel, Text, etc).
+
+        Args:
+            renderables: List of Rich renderables to display (will be cleared on re-render)
+            persistent_header: Optional header that persists after approval (e.g., tool call header)
+        """
+        # Clear existing approval widgets first (prevents duplicates on re-render)
+        self.clear_approval_prompt()
+
+        # Mount persistent header FIRST (no .approval-prompt class - survives clear)
+        if persistent_header is not None:
+            header_widget = Static(persistent_header)
+            header_widget.add_class("tool-header")
+            self.mount(header_widget)
+
         for renderable in renderables:
             # Use Static which accepts Rich renderables directly
             widget = Static(renderable)

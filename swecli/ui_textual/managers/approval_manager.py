@@ -179,7 +179,6 @@ class ChatApprovalManager:
         Returns:
             Tuple of (approved, choice, edited_command)
         """
-
         if not self.chat_app:
             return self._fallback_prompt(command, working_dir, RuntimeError("Chat app unavailable"))
 
@@ -194,19 +193,19 @@ class ChatApprovalManager:
         def invoke_modal() -> None:
             async def run_modal() -> None:
                 try:
+                    # Tool header is now added in ApprovalPromptController._render()
                     result = await self.chat_app.show_approval_modal(command or "", working_dir or "")
                 except Exception as exc:  # pragma: no cover - defensive
                     origin_loop.call_soon_threadsafe(ui_loop_future.set_exception, exc)
                 else:
                     origin_loop.call_soon_threadsafe(ui_loop_future.set_result, result)
 
-            worker = self.chat_app.run_worker(
+            self.chat_app.run_worker(
                 run_modal(),
                 name="approval-modal",
                 exclusive=True,
                 exit_on_error=False,
             )
-            worker.wait()
 
         try:
             self.chat_app.call_from_thread(invoke_modal)
@@ -214,7 +213,8 @@ class ChatApprovalManager:
             return self._fallback_prompt(command, working_dir, exc)
 
         try:
-            return await ui_loop_future
+            result = await ui_loop_future
+            return result
         except Exception as exc:
             return self._fallback_prompt(command, working_dir, exc)
 
