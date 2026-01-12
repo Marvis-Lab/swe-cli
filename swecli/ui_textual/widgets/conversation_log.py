@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from collections import deque
-from dataclasses import dataclass
 from typing import Any, List, TYPE_CHECKING
 
 from rich.console import Group, RenderableType
@@ -16,20 +14,6 @@ from swecli.ui_textual.style_tokens import SUBTLE, CYAN
 
 if TYPE_CHECKING:
     from typing_extensions import Self
-
-# Resize reflow constants
-MAX_RENDERABLE_ENTRIES = 500
-RERENDER_BATCH_SIZE = 50
-RESIZE_DEBOUNCE_MS = 200
-WIDTH_CHANGE_THRESHOLD = 5
-
-
-@dataclass
-class RenderableEntry:
-    """Stores original renderable for re-rendering on resize."""
-    renderable: RenderableType
-    line_start: int
-    line_count: int
 
 from swecli.ui_textual.widgets.conversation.spinner_manager import DefaultSpinnerManager
 from swecli.ui_textual.widgets.conversation.message_renderer import DefaultMessageRenderer
@@ -63,13 +47,6 @@ class ConversationLog(RichLog):
         self._debug_enabled = False  # Enable debug messages by default
         self._protected_lines: set[int] = set()  # Lines that should not be truncated
         self.MAX_PROTECTED_LINES = 200
-
-        # Resize reflow state
-        self._renderable_entries: deque[RenderableEntry] = deque(maxlen=MAX_RENDERABLE_ENTRIES)
-        self._last_render_width: int = 0
-        self._is_rerendering: bool = False
-        self._resize_timer: Any | None = None
-        self._skip_renderable_storage: bool = False  # Flag for temporary content (spinner)
         
     def refresh_line(self, y: int) -> None:
         """Refresh a specific line by invalidating cache and repainting."""
@@ -78,39 +55,7 @@ class ConversationLog(RichLog):
             self._line_cache.clear()
         self.refresh()
 
-    def write(
-        self,
-        content: RenderableType | object,
-        width: int | None = None,
-        expand: bool = False,
-        shrink: bool = True,
-        scroll_end: bool | None = None,
-        animate: bool = False,
-    ) -> "Self":
-        """Extended write that stores original renderables for resize reflow."""
-        # Skip storage during re-render OR for temporary content (spinner)
-        if self._is_rerendering or self._skip_renderable_storage:
-            return super().write(content, width, expand, shrink, scroll_end, animate)
-
-        lines_before = len(self.lines)
-
-        # Only copy Text objects (mutable), other renderables are typically immutable
-        stored_content = content.copy() if isinstance(content, Text) else content
-
-        result = super().write(content, width, expand, shrink, scroll_end, animate)
-
-        # Store entry for re-rendering
-        self._renderable_entries.append(RenderableEntry(
-            renderable=stored_content,
-            line_start=lines_before,
-            line_count=len(self.lines) - lines_before
-        ))
-
-        # Track initial render width
-        if not self._last_render_width and self.scrollable_content_region.width:
-            self._last_render_width = self.scrollable_content_region.width
-
-        return result
+    # write() inherited from RichLog - no custom override needed
 
     def on_mount(self) -> None:
         if self.app:
@@ -124,140 +69,25 @@ class ConversationLog(RichLog):
         self._scroll_controller.cleanup()
         self._tool_renderer.cleanup()
         self._spinner_manager.cleanup()
-        # Clean up resize timer
-        if self._resize_timer is not None:
-            self._resize_timer.stop()
-            self._resize_timer = None
 
     def on_resize(self, event: Resize) -> None:
-        """Handle terminal resize with debounced re-rendering."""
+        """Handle terminal resize by refreshing the display.
+
+        Textual's RichLog handles line wrapping internally. We just need to:
+        1. Clear internal caches
+        2. Refresh the widget to re-render at new width
+        """
         super().on_resize(event)
 
-        # Get new width from scrollable region
-        new_width = self.scrollable_content_region.width
-        if not new_width:
-            return
-
-        # Skip if width change is trivial
-        if abs(new_width - self._last_render_width) < WIDTH_CHANGE_THRESHOLD:
-            return
-
-        # Cancel any pending resize timer
-        if self._resize_timer is not None:
-            self._resize_timer.stop()
-            self._resize_timer = None
-
-        # Debounce: schedule re-render after delay
-        self._resize_timer = self.set_timer(
-            RESIZE_DEBOUNCE_MS / 1000,
-            lambda: self._start_rerender(new_width)
-        )
-
-    def _start_rerender(self, new_width: int) -> None:
-        """Start the incremental re-rendering process."""
-        self._resize_timer = None
-
-        if not self._renderable_entries:
-            self._last_render_width = new_width
-            return
-
-        # Find first visible entry for scroll restoration
-        first_visible_idx = self._find_first_visible_entry()
-
-        # Capture spinner state before stopping
-        spinner_state = self._capture_spinner_state()
-        if spinner_state["active"]:
-            self._spinner_manager._do_stop_spinner()
-
-        # Clear lines and prepare for re-render
-        self.lines.clear()
+        # Clear caches to force re-render
         if hasattr(self, "_line_cache"):
             self._line_cache.clear()
-        self._widest_line_width = 0
-        self._is_rerendering = True
 
-        # Start batch re-rendering
-        self._rerender_batch(0, new_width, first_visible_idx, spinner_state)
-
-    def _rerender_batch(
-        self,
-        start_idx: int,
-        new_width: int,
-        first_visible_idx: int,
-        spinner_state: dict,
-    ) -> None:
-        """Re-render a batch of entries, then schedule next batch."""
-        entries = list(self._renderable_entries)
-        end_idx = min(start_idx + RERENDER_BATCH_SIZE, len(entries))
-
-        for i in range(start_idx, end_idx):
-            entry = entries[i]
-            lines_before = len(self.lines)
-            # Re-render with shrink=True to fit new width
-            super().write(entry.renderable, shrink=True, scroll_end=False)
-            # Update entry's line tracking
-            entry.line_start = lines_before
-            entry.line_count = len(self.lines) - lines_before
-
-        if end_idx < len(entries):
-            # Schedule next batch to keep UI responsive
-            self.call_later(
-                lambda: self._rerender_batch(end_idx, new_width, first_visible_idx, spinner_state)
-            )
-        else:
-            # All batches done, finalize
-            self._finalize_rerender(new_width, first_visible_idx, spinner_state)
-
-    def _finalize_rerender(
-        self,
-        new_width: int,
-        first_visible_idx: int,
-        spinner_state: dict,
-    ) -> None:
-        """Complete the re-render process and restore state."""
-        self._is_rerendering = False
-        self._last_render_width = new_width
-
-        # Update virtual size
-        self.virtual_size = Size(self._widest_line_width, len(self.lines))
-
-        # Restore scroll position to first visible entry
-        entries = list(self._renderable_entries)
-        if 0 <= first_visible_idx < len(entries):
-            entry = entries[first_visible_idx]
-            self.scroll_to(y=entry.line_start, animate=False)
-        elif self.auto_scroll:
-            self.scroll_end(animate=False)
-
-        # Restore spinner if it was active
-        if spinner_state["active"]:
-            msg = spinner_state["message"]
-            if spinner_state["tip"]:
-                msg = Text(f"{msg}\nTip: {spinner_state['tip']}")
-            self._spinner_manager.start_spinner(msg)
-
+        # Refresh to re-render at new width
         self.refresh()
 
-    def _find_first_visible_entry(self) -> int:
-        """Find index of first visible entry based on scroll position."""
-        scroll_y = self.scroll_offset.y
-        for i, entry in enumerate(self._renderable_entries):
-            if entry.line_start + entry.line_count > scroll_y:
-                return i
-        # Default to last entry if at bottom
-        return max(0, len(self._renderable_entries) - 1)
-
-    def _capture_spinner_state(self) -> dict:
-        """Capture current spinner state for restoration after re-render."""
-        return {
-            "active": self._spinner_manager._spinner_active,
-            "message": self._spinner_manager._thinking_message,
-            "tip": self._spinner_manager._thinking_tip,
-        }
-
     def clear(self) -> "Self":
-        """Clear all content including stored renderables."""
-        self._renderable_entries.clear()
+        """Clear all content."""
         self._protected_lines.clear()
         return super().clear()
 
@@ -364,11 +194,8 @@ class ConversationLog(RichLog):
 
         self._approval_start = len(self.lines)
 
-        # Don't store approval content - it's temporary and will be cleared
-        self._skip_renderable_storage = True
         for renderable in renderables:
             self.write(renderable)
-        self._skip_renderable_storage = False
 
     def clear_approval_prompt(self) -> None:
         """Remove the approval prompt from the log."""
