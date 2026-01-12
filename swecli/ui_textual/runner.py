@@ -204,8 +204,13 @@ class TextualRunner:
     def _setup_app(self) -> None:
         """Initialize the Textual application instance."""
         # Get model display name and slot summaries from config
-        model_display = f"{self.config.model_provider}/{self.config.model}"
-        model_slots = self.model_config_manager._build_model_slots()
+        # Use snapshot for consistent provider name formatting (e.g., "OpenAI" not "openai")
+        snapshot = self.model_config_manager.get_model_config_snapshot()
+        normal_info = snapshot.get("normal", {})
+        provider_display = normal_info.get("provider_display", self.config.model_provider)
+        model_name = normal_info.get("model_display", self.config.model)
+        model_display = f"{provider_display}/{model_name}" if provider_display else model_name
+        model_slots = self.model_config_manager._build_model_slots(snapshot)
 
         create_kwargs = {
             "on_message": self.enqueue_message,

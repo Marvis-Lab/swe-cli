@@ -283,35 +283,6 @@ class StatusBar(Static):
         return model[: max_len - 3] + "..."
 
 
-def _format_provider_name(provider: str) -> str:
-    """Format provider name with proper capitalization.
-
-    Args:
-        provider: Raw provider name (e.g., "openai", "anthropic")
-
-    Returns:
-        Properly capitalized provider name (e.g., "OpenAI", "Anthropic")
-    """
-    # Known provider name mappings
-    provider_names = {
-        "openai": "OpenAI",
-        "anthropic": "Anthropic",
-        "fireworks": "Fireworks",
-        "google": "Google",
-        "mistral": "Mistral",
-        "cohere": "Cohere",
-        "together": "Together",
-        "groq": "Groq",
-        "deepseek": "DeepSeek",
-        "azure": "Azure",
-        "bedrock": "Bedrock",
-        "vertex": "Vertex",
-        "ollama": "Ollama",
-        "local": "Local",
-    }
-    return provider_names.get(provider.lower(), provider.title())
-
-
 class ModelFooter(Footer):
     """Footer variant that shows configured model slots alongside key hints."""
 
