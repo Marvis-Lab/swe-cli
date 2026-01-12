@@ -11,7 +11,7 @@ from textual.binding import Binding
 from textual.containers import Container, Vertical
 from textual.widgets import Header, Rule, Static
 
-from swecli.ui_textual.widgets import ConversationLog
+from swecli.ui_textual.widgets import ConversationLog, ProgressBar
 from swecli.ui_textual.widgets.chat_text_area import ChatTextArea
 from swecli.ui_textual.widgets.status_bar import ModelFooter, StatusBar
 from swecli.ui_textual.widgets.todo_panel import TodoPanel
@@ -112,6 +112,7 @@ class SWECLIChatApp(App):
         self._approval_controller = ApprovalPromptController(self)
         self._spinner = SpinnerController(self, self._tips_manager, todo_handler=self.todo_handler)
         self.spinner_service = SpinnerService(self)
+        self.spinner_service.set_tips_manager(self._tips_manager)
         self._console_buffer = ConsoleBufferManager(self)
         self._queued_console_renderables = self._console_buffer._queue
         self._tool_summary = ToolSummaryManager(self)
@@ -121,7 +122,8 @@ class SWECLIChatApp(App):
         self._exit_confirmation_mode = False
         self._selection_tip_timer: Any | None = None
         self._default_label = "› Type your message (Enter to send, Shift+Enter for new line):"
-        self._thinking_visible = False  # Thinking mode visibility state (default OFF)
+        self._thinking_visible = True  # Thinking mode visibility state (default ON)
+        self._progress_bar: ProgressBar | None = None
 
     def compose(self) -> ComposeResult:
         """Create child widgets."""
@@ -150,6 +152,9 @@ class SWECLIChatApp(App):
                     completer=self.completer,
                 )
 
+            # Progress bar (above status bar, hidden by default)
+            yield ProgressBar(id="progress-bar")
+
             # Status bar
             yield StatusBar(model=self.model, working_dir=self.working_dir, id="status-bar")
 
@@ -167,6 +172,10 @@ class SWECLIChatApp(App):
         input_container = self.query_one("#input-container")
         self.status_bar = self.query_one("#status-bar", StatusBar)
         self.footer = self.query_one("#model-footer", ModelFooter)
+        self._progress_bar = self.query_one("#progress-bar", ProgressBar)
+
+        # Inject app reference into progress bar (for polling _is_processing)
+        self._progress_bar.set_app(self)
 
         # Inject SpinnerService into TodoPanel (uses callback API for arrow spinner)
         try:
@@ -240,10 +249,16 @@ class SWECLIChatApp(App):
             self._console_buffer.clear()
         self._spinner.start(message)
 
+        # Note: Progress bar is shown by SpinnerService when tool spinners start
+
     def _stop_local_spinner(self) -> None:
         """Stop spinner animation and clear indicators."""
 
         self._spinner.stop()
+
+        # Note: Progress bar is hidden by SpinnerService when all tool spinners complete
+        # Don't hide here as tool execution may still be in progress
+
         if hasattr(self, "_console_buffer"):
             self._console_buffer.clear_assistant_history()
             self._console_buffer.flush()
