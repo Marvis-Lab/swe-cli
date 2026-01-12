@@ -29,6 +29,7 @@ class ModelInfo:
     tunable: bool = False
     recommended: bool = False
     max_tokens: Optional[int] = None
+    supports_temperature: bool = True  # False for reasoning models (o1, o3, o4)
 
     def __str__(self) -> str:
         """String representation of model."""
@@ -122,6 +123,7 @@ class ModelRegistry:
                     tunable=model_data.get("tunable", False),
                     recommended=model_data.get("recommended", False),
                     max_tokens=model_data.get("max_tokens"),
+                    supports_temperature=model_data.get("supports_temperature", True),
                 )
 
             self.providers[provider_id] = ProviderInfo(
@@ -297,6 +299,7 @@ class ModelRegistry:
                     tunable=model_data.get("tunable", False),
                     recommended=model_data.get("recommended", False),
                     max_tokens=model_data.get("max_tokens"),
+                    supports_temperature=model_data.get("supports_temperature", True),
                 )
 
             self.providers[provider_id] = ProviderInfo(

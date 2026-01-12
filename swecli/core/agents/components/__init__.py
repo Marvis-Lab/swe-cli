@@ -1,6 +1,6 @@
 """Supporting components used by agent implementations."""
 
-from .api_configuration import resolve_api_config, create_http_client, create_http_client_for_provider, build_max_tokens_param
+from .api_configuration import resolve_api_config, create_http_client, create_http_client_for_provider, build_max_tokens_param, build_temperature_param
 from .http_client import AgentHttpClient, HttpResult
 from .plan_parser import ParsedPlan, parse_plan, extract_plan_from_response
 from .response_processing import ResponseCleaner
@@ -18,6 +18,7 @@ __all__ = [
     "ThinkingPromptBuilder",
     "ToolSchemaBuilder",
     "build_max_tokens_param",
+    "build_temperature_param",
     "create_http_client",
     "create_http_client_for_provider",
     "extract_plan_from_response",

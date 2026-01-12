@@ -41,6 +41,30 @@ def build_max_tokens_param(model: str, max_tokens: int) -> dict[str, int]:
     return {"max_tokens": max_tokens}
 
 
+def build_temperature_param(model_id: str, temperature: float) -> dict[str, float]:
+    """Build temperature parameter if the model supports it.
+
+    Checks model registry for supports_temperature field.
+    Falls back to including temperature if model not found in registry.
+
+    Args:
+        model_id: The model ID string
+        temperature: The temperature value
+
+    Returns:
+        Dict with {"temperature": value} or empty dict for models that don't support it
+    """
+    from swecli.config.models import get_model_registry
+
+    registry = get_model_registry()
+    result = registry.find_model_by_id(model_id)
+    if result:
+        _, _, model_info = result
+        if not model_info.supports_temperature:
+            return {}
+    return {"temperature": temperature}
+
+
 def resolve_api_config(config: AppConfig) -> Tuple[str, dict[str, str]]:
     """Return the API URL and headers according to the configured provider.
 

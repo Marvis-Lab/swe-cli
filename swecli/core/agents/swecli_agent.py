@@ -12,6 +12,7 @@ from swecli.core.agents.components import (
     ThinkingPromptBuilder,
     ToolSchemaBuilder,
     build_max_tokens_param,
+    build_temperature_param,
     create_http_client,
     create_http_client_for_provider,
 )
@@ -124,7 +125,7 @@ class SwecliAgent(BaseAgent):
             "messages": messages,
             "tools": tool_schemas,
             "tool_choice": tool_choice,
-            "temperature": self.config.temperature,
+            **build_temperature_param(model_id, self.config.temperature),
             **build_max_tokens_param(model_id, self.config.max_tokens),
         }
 
@@ -224,7 +225,7 @@ class SwecliAgent(BaseAgent):
                 "messages": messages,
                 "tools": self.tool_schemas,
                 "tool_choice": "auto",
-                "temperature": self.config.temperature,
+                **build_temperature_param(self.config.model, self.config.temperature),
                 **build_max_tokens_param(self.config.model, self.config.max_tokens),
             }
 
