@@ -45,6 +45,7 @@ class IterationContext:
     iteration_count: int = 0
     consecutive_reads: int = 0
     consecutive_no_tool_calls: int = 0
+    had_non_think_tools: bool = False  # Track if last iteration had real (non-think) tool calls
 
 
 class ReactExecutor:
@@ -128,11 +129,18 @@ class ReactExecutor:
         if ctx.tool_registry and hasattr(ctx.tool_registry, 'thinking_handler'):
             thinking_visible = ctx.tool_registry.thinking_handler.is_visible
 
+        # Determine if we should force think tool
+        # Force on iteration 1 OR after non-think tool calls completed
+        force_think = (ctx.iteration_count == 1) or ctx.had_non_think_tools
+
+        # Reset the flag - it's been consumed
+        ctx.had_non_think_tools = False
+
         # Call LLM
         task_monitor = TaskMonitor()
         response, latency_ms = self._llm_caller.call_llm_with_progress(
             ctx.agent, ctx.messages, task_monitor, thinking_visible=thinking_visible,
-            iteration_count=ctx.iteration_count
+            force_think=force_think
         )
         self._last_latency_ms = latency_ms
 
@@ -323,6 +331,11 @@ class ReactExecutor:
         # Check nudge for reads
         if self._should_nudge_agent(ctx.consecutive_reads, ctx.messages):
             ctx.consecutive_reads = 0
+
+        # Track if any non-think tools were called (for post-tool thinking)
+        non_think_tools = [tc for tc in tool_calls if tc["function"]["name"] != "think"]
+        if non_think_tools:
+            ctx.had_non_think_tools = True
 
         return LoopAction.CONTINUE
 

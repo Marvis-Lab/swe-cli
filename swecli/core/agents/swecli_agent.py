@@ -95,7 +95,7 @@ class SwecliAgent(BaseAgent):
         messages: list[dict],
         task_monitor: Optional[Any] = None,
         thinking_visible: bool = True,
-        iteration_count: int = 1,
+        force_think: bool = False,
     ) -> dict:
         # Select model based on thinking mode
         # When thinking is visible and Thinking model is configured, use it
@@ -111,10 +111,9 @@ class SwecliAgent(BaseAgent):
         # This ensures think tool is filtered when thinking mode is OFF
         tool_schemas = self._schema_builder.build(thinking_visible=thinking_visible)
 
-        # Force think tool on first iteration when thinking mode is ON
-        # This ensures thinking trace is displayed for ALL queries
-        # After first iteration, let model decide which tools to use
-        if thinking_visible and iteration_count == 1:
+        # Force think tool when requested (first iteration or after tool execution)
+        # This ensures thinking trace is displayed before actions and after results
+        if thinking_visible and force_think:
             # Force specifically the think tool (not just any tool)
             tool_choice = {"type": "function", "function": {"name": "think"}}
         else:

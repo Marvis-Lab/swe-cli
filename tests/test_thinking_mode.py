@@ -1001,11 +1001,11 @@ class TestToolChoiceBehavior:
             mock_client.post_json.return_value = mock_result
             agent._SwecliAgent__thinking_http_client = None
 
-            # Call with thinking_visible=True and iteration_count=1
+            # Call with thinking_visible=True and force_think=True
             agent.call_llm(
                 [{"role": "user", "content": "hello"}],
                 thinking_visible=True,
-                iteration_count=1
+                force_think=True
             )
 
             # Verify tool_choice forces specifically the 'think' tool
@@ -1049,15 +1049,15 @@ class TestToolChoiceBehavior:
             agent.call_llm(
                 [{"role": "user", "content": "hello"}],
                 thinking_visible=False,
-                iteration_count=1
+                force_think=True  # Even with force_think, if thinking_visible=False, should be auto
             )
 
             call_args = mock_client.post_json.call_args
             payload = call_args[0][0]
             assert payload["tool_choice"] == "auto"
 
-    def test_tool_choice_auto_on_subsequent_iterations(self):
-        """tool_choice should be 'auto' on subsequent iterations (after first)."""
+    def test_tool_choice_auto_when_force_think_false(self):
+        """tool_choice should be 'auto' when force_think is False."""
         from swecli.core.agents.swecli_agent import SwecliAgent
 
         config = MagicMock()
@@ -1089,15 +1089,14 @@ class TestToolChoiceBehavior:
             mock_client.post_json.return_value = mock_result
             agent._SwecliAgent__thinking_http_client = None
 
-            # Test subsequent iterations (2, 3, 5, 10) - should all be 'auto'
-            for iteration_count in [2, 3, 5, 10]:
-                agent.call_llm(
-                    [{"role": "user", "content": "test"}],
-                    thinking_visible=True,
-                    iteration_count=iteration_count
-                )
+            # Test with force_think=False - should be 'auto'
+            agent.call_llm(
+                [{"role": "user", "content": "test"}],
+                thinking_visible=True,
+                force_think=False
+            )
 
-                call_args = mock_client.post_json.call_args
-                payload = call_args[0][0]
-                assert payload["tool_choice"] == "auto", \
-                    f"Expected 'auto' on iteration {iteration_count}, got '{payload['tool_choice']}'"
+            call_args = mock_client.post_json.call_args
+            payload = call_args[0][0]
+            assert payload["tool_choice"] == "auto", \
+                f"Expected 'auto' when force_think=False, got '{payload['tool_choice']}'"
