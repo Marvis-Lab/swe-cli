@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING, Any, Callable, Dict, Optional
 
 from rich.text import Text
 
-from swecli.ui_textual.style_tokens import GREY, PRIMARY, GREEN_BRIGHT, BLUE_BRIGHT, WARNING
+from swecli.ui_textual.style_tokens import GREY, PRIMARY, GREEN_BRIGHT, BLUE_BRIGHT, ERROR, WARNING
 
 if TYPE_CHECKING:
     from textual.app import App
@@ -372,15 +372,17 @@ class SpinnerService:
         display_text = self._spinner_displays.pop(spinner_id, None)
         result_line_num = self._result_lines.pop(spinner_id, None)
         spacing_line_num = self._spacing_lines.pop(spinner_id, None)
-        # Clean up tip line tracking
+        # Get tip line number BEFORE popping (needed for deletion in _stop_on_ui)
+        tip_line_num = self._spinner_tip_lines.pop(spinner_id, None)
         self._spinner_tips.pop(spinner_id, None)
-        self._spinner_tip_lines.pop(spinner_id, None)
 
         conversation = self._conversation
         if conversation is None:
             return
 
         def _stop_on_ui():
+            nonlocal result_line_num, spacing_line_num
+
             # Call stop_tool_execution for animation timer cleanup
             if hasattr(conversation, "stop_tool_execution"):
                 conversation.stop_tool_execution(success)
@@ -400,7 +402,7 @@ class SpinnerService:
                     # Build the final line with success/failure bullet
                     # No leading spaces - matches tool_renderer.py format
                     # Green only for bullet, text preserves its own style (PRIMARY)
-                    bullet_style = GREEN_BRIGHT if success else WARNING
+                    bullet_style = GREEN_BRIGHT if success else ERROR
                     final_line = Text()
                     final_line.append("⏺ ", style=bullet_style)
                     final_line.append_text(display_text)  # Preserves display_text's PRIMARY style
@@ -408,11 +410,20 @@ class SpinnerService:
                     # Directly update the line at stored position
                     conversation.lines[line_num] = text_to_strip(final_line)
 
+            # Delete tip line if it exists (inserted after spinner, before placeholders)
+            if tip_line_num is not None and tip_line_num < len(conversation.lines):
+                del conversation.lines[tip_line_num]
+                # Adjust indices for lines that came after the deleted tip line
+                if result_line_num is not None:
+                    result_line_num -= 1
+                if spacing_line_num is not None:
+                    spacing_line_num -= 1
+
             # Update result placeholder if it exists (non-bash tools only)
             # Bash commands don't have placeholders - they render output separately
             if result_line_num is not None and result_line_num < len(conversation.lines):
                 if result_message:
-                    result_line = Text("    ⎿  ", style=GREY)
+                    result_line = Text("  ⎿  ", style=GREY)
                     result_line.append(result_message, style=GREY)
                     conversation.lines[result_line_num] = text_to_strip(result_line)
 
