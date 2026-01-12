@@ -31,8 +31,8 @@ class Diff:
         self.file_path = file_path
         self.original = original
         self.modified = modified
-        self.original_lines = original_lines or original.splitlines(keepends=True)
-        self.modified_lines = modified_lines or modified.splitlines(keepends=True)
+        self.original_lines = original_lines or original.splitlines()
+        self.modified_lines = modified_lines or modified.splitlines()
 
     def generate_unified_diff(self, context_lines: int = 3) -> str:
         """Generate unified diff format.

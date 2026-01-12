@@ -552,7 +552,7 @@ class DefaultToolRenderer:
         header = ""
         diff_lines = []
         
-        if "Editing file" in lines[0] or "Applied edit" in lines[0]:
+        if "Editing file" in lines[0] or "Applied edit" in lines[0] or "Updated " in lines[0]:
             header = lines[0]
             diff_lines = lines[1:]
             return header, diff_lines
@@ -560,17 +560,27 @@ class DefaultToolRenderer:
         return "", []
 
     def _write_edit_result(self, header: str, diff_lines: list[str]) -> None:
-        self.log.write(Text(f"  {header}", style=SUBTLE))
-        
-        # Render fake diff box
-        # Simplified: just write lines
+        # Write header with ⎿ prefix to match other tool results
+        self.log.write(Text(f"    ⎿  {header}", style=SUBTLE))
+
+        # Write diff lines with proper formatting
+        # Lines come from _format_edit_file_result after ANSI stripping:
+        #   Addition: "NNN + content"  (line number right-aligned in 3 chars)
+        #   Deletion: "NNN - content"
+        #   Context:  "NNN   content"
+        # The + or - is at position 4 (0-indexed) after the 3-char line number
         for line in diff_lines:
-             if line.startswith("+"):
-                 self.log.write(Text(f"  {line}", style=GREEN_BRIGHT))
-             elif line.startswith("-"):
-                 self.log.write(Text(f"  {line}", style=ERROR))
-             else:
-                 self.log.write(Text(f"  {line}", style=SUBTLE))
+            formatted = Text("       ")  # 7 spaces to align with ⎿ content
+            # Check position 4 for + or - (after "NNN " prefix)
+            is_addition = len(line) > 4 and line[4] == "+"
+            is_deletion = len(line) > 4 and line[4] == "-"
+            if is_addition:
+                formatted.append(line, style=GREEN_BRIGHT)
+            elif is_deletion:
+                formatted.append(line, style=ERROR)
+            else:
+                formatted.append(line, style=SUBTLE)
+            self.log.write(formatted)
 
     def _write_generic_tool_result(self, text: str) -> None:
         lines = text.rstrip("\n").splitlines() or [text]
