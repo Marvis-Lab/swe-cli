@@ -202,30 +202,48 @@ class ProcessToolHandler:
         preview = f"Execute{' (background)' if background else ''}: {command}"
         working_dir = str(self._bash_tool.working_dir) if getattr(self._bash_tool, "working_dir", None) else "."
 
-        try:
-            asyncio.get_running_loop()
-        except RuntimeError:
-            # Check if request_approval already returned a result (WebApprovalManager) or needs to be awaited
-            approval_result = approval_manager.request_approval(
-                operation=operation,
-                preview=preview,
-                command=command,
-                working_dir=working_dir,
-                force_prompt=True,
-            )
+        # Request approval - use new event loop to avoid conflicts with Textual
+        def dbg(msg):
+            with open("/tmp/approval_debug.log", "a") as f:
+                f.write(f"[handler] {msg}\n")
 
-            # If it's already a result object, use it directly
-            if hasattr(approval_result, 'approved'):
-                result = approval_result
-            else:
-                # If it's a coroutine, run it
-                result = asyncio.run(approval_result)
+        dbg(f"_ensure_command_approval: command={command}")
+        dbg(f"approval_manager type: {type(approval_manager).__name__}")
 
-            if not result.approved:
-                return False
-            operation.approved = True
-            return True
+        approval_coro = approval_manager.request_approval(
+            operation=operation,
+            preview=preview,
+            command=command,
+            working_dir=working_dir,
+            force_prompt=True,
+        )
 
+        dbg(f"approval_coro type: {type(approval_coro)}")
+
+        # If it's already a result object (sync manager), use it directly
+        if hasattr(approval_coro, 'approved'):
+            dbg("sync result")
+            result = approval_coro
+        else:
+            # Create a new event loop and run the coroutine
+            # Using new_event_loop + run_until_complete instead of asyncio.run()
+            # to avoid issues with nested loop handling
+            dbg("running coroutine...")
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                result = loop.run_until_complete(approval_coro)
+                dbg(f"coroutine completed: {result}")
+            except Exception as e:
+                dbg(f"coroutine FAILED: {e}")
+                raise
+            finally:
+                loop.close()
+                asyncio.set_event_loop(None)
+
+        dbg(f"result.approved = {result.approved}")
+        if not result.approved:
+            return False
         operation.approved = True
         return True
 

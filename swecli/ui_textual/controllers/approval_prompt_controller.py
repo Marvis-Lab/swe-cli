@@ -25,6 +25,7 @@ class ApprovalPromptController:
         self._command: str = ""
         self._working_dir: str = "."
         self._header_rendered = False  # Track if tool header was rendered
+        self._tool_widget = None  # ToolCallMessage widget for tracking
 
     # ------------------------------------------------------------------
     # Public API
@@ -190,6 +191,7 @@ class ApprovalPromptController:
         self._options = []
         self._selected_index = 0
         self._header_rendered = False  # Reset for next approval
+        self._tool_widget = None  # Reset tool widget reference
         controller = getattr(self.app, "_autocomplete_controller", None)
         if controller is not None:
             controller.reset()
@@ -202,14 +204,14 @@ class ApprovalPromptController:
 
         conversation = self.app.conversation
 
-        # Build tool header (only on first render - it persists after approval)
-        tool_header = None
+        # Build tool widget (only on first render - it persists and updates after approval)
+        tool_widget = None
         if not self._header_rendered:
+            from swecli.ui_textual.widgets.messages import ToolCallMessage
             from swecli.ui_textual.utils.tool_display import format_tool_call
-            header_text = format_tool_call("run_command", {"command": self._command or ""})
-            tool_header = Text()
-            tool_header.append("⏺ ", style="green")
-            tool_header.append(header_text)
+            tool_name = format_tool_call("run_command", {"command": self._command or ""})
+            self._tool_widget = ToolCallMessage(tool_name)
+            tool_widget = self._tool_widget
             self._header_rendered = True
 
         cmd_display = self._command or "(empty command)"
@@ -253,6 +255,6 @@ class ApprovalPromptController:
             padding=(1, 2),
         )
 
-        # Render tool header (persistent) + approval panel (will be cleared after approval)
-        conversation.render_approval_prompt([panel], persistent_header=tool_header)
+        # Render tool widget (persistent, tracked) + approval panel (will be cleared after approval)
+        conversation.render_approval_prompt([panel], tool_widget=tool_widget)
         conversation.scroll_end(animate=False)

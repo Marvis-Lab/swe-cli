@@ -97,6 +97,11 @@ MCP servers extend the tool registry dynamically:
 - Tools prefixed with `mcp__<servername>__<toolname>`
 - Async lifecycle management in `mcp/manager.py`
 
+## Coding Conventions
+
+### Colors
+All UI colors MUST use tokens from `swecli/ui_textual/style_tokens.py`. Never hardcode color values.
+
 ## Configuration
 
 Configuration loads from (in order of precedence):
@@ -119,20 +124,3 @@ Run specific test patterns:
 uv run pytest -k "session"    # Run tests matching "session"
 uv run pytest -x              # Stop on first failure
 ```
-
-## Recent Changes
-
-### Approval Modal Tool Header Fix (2026-01-12)
-**Status:** Completed and pushed to `feat/conversation-log-v2-text-selection`
-
-**Problem:** Tool header (`⏺ Run (python app.py)`) wasn't appearing above the approval panel for bash commands.
-
-**Root Cause:** `add_tool_call()` failed silently in Textual workers because `call_from_thread()` throws `RuntimeError` when already on main thread (Textual workers use async scheduling on same thread).
-
-**Solution:** Mount tool header directly in `render_approval_prompt()` with `.tool-header` CSS class (instead of `.approval-prompt`) so it persists after approval panel is cleared.
-
-**Files Modified:**
-- `swecli/ui_textual/widgets/conversation_log_v2.py` - Added `persistent_header` param
-- `swecli/ui_textual/widgets/conversation_log.py` - V1 compatibility
-- `swecli/ui_textual/controllers/approval_prompt_controller.py` - Build and pass tool header
-- `swecli/ui_textual/managers/approval_manager.py` - Cleaned up debug logging

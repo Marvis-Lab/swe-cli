@@ -395,19 +395,31 @@ class ConversationLog(RichLog):
         self.stop_spinner()  # Retain state change logic here
         self._message_renderer.add_error(message)
 
-    def render_approval_prompt(self, renderables: list[Any], persistent_header: Any = None) -> None:
+    def render_approval_prompt(
+        self,
+        renderables: list[Any],
+        persistent_header: Any = None,
+        tool_widget: Any = None,
+    ) -> None:
         """Render the approval prompt panel.
 
         Args:
             renderables: List of Rich renderables to display (will be cleared on re-render)
-            persistent_header: Optional header that persists after approval (e.g., tool call header)
+            persistent_header: DEPRECATED - use tool_widget instead
+            tool_widget: Optional ToolCallMessage widget (V2) or tool name string (V1)
         """
         # Clear existing if any
         if self._approval_start is not None:
             self.clear_approval_prompt()
 
-        # Write persistent header FIRST (before tracking approval_start, so it survives clear)
-        if persistent_header is not None:
+        # Write tool header FIRST (before tracking approval_start, so it survives clear)
+        # For V1, we use add_tool_call which delegates to _tool_renderer
+        if tool_widget is not None:
+            # tool_widget is a ToolCallMessage - extract the tool name for V1
+            tool_name = getattr(tool_widget, "_tool_name", str(tool_widget))
+            self.add_tool_call(tool_name)
+        elif persistent_header is not None:
+            # Fallback for backwards compatibility
             self.write(persistent_header)
 
         self._approval_start = len(self.lines)

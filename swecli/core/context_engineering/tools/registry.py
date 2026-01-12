@@ -12,6 +12,7 @@ from swecli.core.context_engineering.tools.handlers.process_handlers import Proc
 from swecli.core.context_engineering.tools.handlers.web_handlers import WebToolHandler
 from swecli.core.context_engineering.tools.handlers.screenshot_handler import ScreenshotToolHandler
 from swecli.core.context_engineering.tools.handlers.todo_handler import TodoHandler
+from swecli.core.context_engineering.tools.handlers.thinking_handler import ThinkingHandler
 from swecli.core.context_engineering.tools.handlers.mcp_config_handler import MCPConfigHandler
 from swecli.core.context_engineering.tools.implementations.pdf_tool import PDFTool
 from swecli.core.context_engineering.tools.implementations.task_complete_tool import TaskCompleteTool
@@ -75,6 +76,7 @@ class ToolRegistry:
         self._mcp_config_handler = MCPConfigHandler(mcp_manager)
         self._screenshot_handler = ScreenshotToolHandler()
         self.todo_handler = TodoHandler()
+        self.thinking_handler = ThinkingHandler()
         self._pdf_tool = PDFTool()
         self._task_complete_tool = TaskCompleteTool()
         self._subagent_manager: Union[Any, None] = None
@@ -119,6 +121,8 @@ class ToolRegistry:
             "list_mcp_presets": self._mcp_config_handler.list_mcp_presets,
             # Task completion tool
             "task_complete": self._execute_task_complete,
+            # Thinking tool
+            "think": self._handle_think,
         }
 
     def set_subagent_manager(self, manager: Any) -> None:
@@ -508,3 +512,15 @@ class ToolRegistry:
         status = arguments.get("status", "success")
 
         return self._task_complete_tool.execute(summary=summary, status=status)
+
+    def _handle_think(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        """Handle think tool - extract thought content and delegate.
+
+        Args:
+            arguments: Dict with 'content' key containing reasoning content
+
+        Returns:
+            Result dict with success status and _thinking_content for UI
+        """
+        thought = arguments.get("content", "")
+        return self.thinking_handler.add_thinking(thought)

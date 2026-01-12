@@ -697,18 +697,29 @@ class ConversationLogV2(VerticalScroll):
 
     # --- Approval Prompts ---
 
-    def render_approval_prompt(self, renderables: list[Any], persistent_header: Any = None) -> None:
+    def render_approval_prompt(
+        self,
+        renderables: list[Any],
+        persistent_header: Any = None,
+        tool_widget: "ToolCallMessage | None" = None,
+    ) -> None:
         """Render approval prompt with Rich renderables (Panel, Text, etc).
 
         Args:
             renderables: List of Rich renderables to display (will be cleared on re-render)
-            persistent_header: Optional header that persists after approval (e.g., tool call header)
+            persistent_header: DEPRECATED - use tool_widget instead
+            tool_widget: Optional ToolCallMessage widget that persists and can be updated
         """
         # Clear existing approval widgets first (prevents duplicates on re-render)
         self.clear_approval_prompt()
 
-        # Mount persistent header FIRST (no .approval-prompt class - survives clear)
-        if persistent_header is not None:
+        # Mount tool widget FIRST (no .approval-prompt class - survives clear)
+        # Track it as _current_tool_widget so on_tool_result() can update it
+        if tool_widget is not None:
+            self.mount(tool_widget)
+            self._current_tool_widget = tool_widget
+        elif persistent_header is not None:
+            # Fallback for backwards compatibility
             header_widget = Static(persistent_header)
             header_widget.add_class("tool-header")
             self.mount(header_widget)
