@@ -102,6 +102,39 @@ class SystemPromptBuilder:
         return "".join(lines)
 
 
+class ThinkingPromptBuilder:
+    """Constructs the THINKING mode system prompt for reasoning tasks.
+
+    Used when thinking mode is enabled (Ctrl+Shift+T) to provide a specialized
+    prompt that encourages step-by-step reasoning and explicit thought processes.
+    """
+
+    def __init__(self, tool_registry: Union[Any, None], working_dir: Union[Any, None] = None) -> None:
+        self._tool_registry = tool_registry
+        self._working_dir = working_dir
+
+    def build(self) -> str:
+        """Return the thinking-specialized system prompt."""
+        prompt = load_prompt("thinking_system_prompt")
+
+        # Add working directory context
+        if self._working_dir:
+            prompt += f"\n\n# Working Directory\nCurrent directory: `{self._working_dir}`\n"
+
+        # Add MCP section if available (same as SystemPromptBuilder)
+        if self._tool_registry and getattr(self._tool_registry, "mcp_manager", None):
+            mcp_tools: Sequence[dict[str, Any]] = self._tool_registry.mcp_manager.get_all_tools()  # type: ignore[attr-defined]
+            if mcp_tools:
+                lines = ["\n## Available MCP Tools\n"]
+                for tool in mcp_tools:
+                    tool_name = tool.get("name", "")
+                    description = tool.get("description", "")
+                    lines.append(f"- `{tool_name}` - {description}\n")
+                prompt += "".join(lines)
+
+        return prompt
+
+
 class PlanningPromptBuilder:
     """Constructs the PLAN mode strategic planning prompt."""
 

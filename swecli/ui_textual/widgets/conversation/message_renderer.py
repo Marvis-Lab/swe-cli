@@ -87,9 +87,10 @@ class DefaultMessageRenderer:
         self.log.write(Text(""))
 
     def add_thinking_block(self, content: str) -> None:
-        """Render thinking content as inline dimmed text.
+        """Render thinking content with dimmed blur effect (60% opacity).
 
-        Displays model reasoning from the think tool with dark gray styling.
+        Displays model reasoning/thinking traces with subtle dark gray styling.
+        The dim effect simulates a "blur" appearance by reducing opacity.
         Format: "⟡ First line\n  Subsequent lines indented (2 spaces)"
 
         Args:
@@ -101,13 +102,17 @@ class DefaultMessageRenderer:
         lines = content.strip().split('\n')
         text = Text()
 
+        # Simulate 60% opacity with dim + darker color for blur effect
+        blur_style = f"dim italic {THINKING}"  # THINKING = "#5a5e66"
+        icon_style = f"dim {THINKING}"
+
         # First line with thinking icon (⟡ concave diamond)
-        text.append(f"{THINKING_ICON} ", style=f"dim {THINKING}")
-        text.append(lines[0], style=f"italic {THINKING}")
+        text.append(f"{THINKING_ICON} ", style=icon_style)
+        text.append(lines[0], style=blur_style)
 
         # Subsequent lines indented with 2 spaces to align with text after icon
         for line in lines[1:]:
-            text.append(f"\n  {line}", style=f"italic {THINKING}")
+            text.append(f"\n  {line}", style=blur_style)
 
         self.log.write(text)
         self.log.write(Text(""))  # Blank line after thinking

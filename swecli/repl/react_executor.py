@@ -145,9 +145,15 @@ class ReactExecutor:
         if not response["success"]:
             return self._handle_llm_error(response, ctx)
 
-        # Parse response
-        content, tool_calls = self._parse_llm_response(response)
-        
+        # Parse response - now includes reasoning_content
+        content, tool_calls, reasoning_content = self._parse_llm_response(response)
+
+        # Display reasoning content via UI callback if thinking mode is ON
+        # The visibility check is done inside on_thinking() which checks chat_app._thinking_visible
+        if reasoning_content and ctx.ui_callback:
+            if hasattr(ctx.ui_callback, 'on_thinking'):
+                ctx.ui_callback.on_thinking(reasoning_content)
+
         # Notify thinking complete
         if ctx.ui_callback and hasattr(ctx.ui_callback, 'on_thinking_complete'):
             ctx.ui_callback.on_thinking_complete()
@@ -182,17 +188,27 @@ class ReactExecutor:
                 
         return LoopAction.BREAK
 
-    def _parse_llm_response(self, response: dict) -> tuple[str, list]:
-        """Parse LLM response into content and tool calls."""
+    def _parse_llm_response(self, response: dict) -> tuple[str, list, Optional[str]]:
+        """Parse LLM response into content, tool calls, and reasoning.
+
+        Returns:
+            Tuple of (content, tool_calls, reasoning_content):
+            - content: The assistant's text response
+            - tool_calls: List of tool calls to execute
+            - reasoning_content: Native thinking/reasoning from models like o1 (may be None)
+        """
         message_payload = response.get("message", {}) or {}
         raw_llm_content = message_payload.get("content")
         llm_description = response.get("content", raw_llm_content or "")
-        
+
         tool_calls = response.get("tool_calls")
         if tool_calls is None:
             tool_calls = message_payload.get("tool_calls")
-            
-        return (llm_description or "").strip(), tool_calls
+
+        # Extract reasoning_content for OpenAI reasoning models (o1, o3, etc.)
+        reasoning_content = response.get("reasoning_content")
+
+        return (llm_description or "").strip(), tool_calls, reasoning_content
 
     def _record_agent_response(self, content: str, tool_calls: Optional[list]):
         """Record agent response for ACE learning."""

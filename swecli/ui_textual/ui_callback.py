@@ -41,8 +41,8 @@ class TextualUICallback:
         self._working_dir = working_dir
         # Collector for nested tool calls (for session storage)
         self._pending_nested_calls: list[ToolCall] = []
-        # Thinking mode visibility toggle
-        self._thinking_visible = True
+        # Thinking mode visibility toggle (default OFF)
+        self._thinking_visible = False
 
     def on_thinking_start(self) -> None:
         """Called when the agent starts thinking."""

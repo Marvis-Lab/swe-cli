@@ -121,7 +121,7 @@ class SWECLIChatApp(App):
         self._exit_confirmation_mode = False
         self._selection_tip_timer: Any | None = None
         self._default_label = "› Type your message (Enter to send, Shift+Enter for new line):"
-        self._thinking_visible = True  # Thinking mode visibility state
+        self._thinking_visible = False  # Thinking mode visibility state (default OFF)
 
     def compose(self) -> ComposeResult:
         """Create child widgets."""

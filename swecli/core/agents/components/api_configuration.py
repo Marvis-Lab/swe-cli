@@ -81,3 +81,51 @@ def create_http_client(config: AppConfig) -> Any:
         from .http_client import AgentHttpClient
         api_url, headers = resolve_api_config(config)
         return AgentHttpClient(api_url, headers)
+
+
+def create_http_client_for_provider(provider_id: str, config: AppConfig) -> Any:
+    """Create HTTP client for a specific provider (for Thinking model slot).
+
+    This allows using a different provider for the Thinking model than the Normal model.
+    For example, Normal could use Fireworks while Thinking uses OpenAI o1.
+
+    Args:
+        provider_id: Provider ID ("openai", "anthropic", "fireworks")
+        config: AppConfig for getting API keys
+
+    Returns:
+        AgentHttpClient for OpenAI-compatible APIs
+        AnthropicAdapter for Anthropic
+
+    Raises:
+        ValueError: If provider is unknown or API key is missing
+    """
+    import os
+
+    # Get API key based on provider
+    if provider_id == "openai":
+        api_key = os.getenv("OPENAI_API_KEY")
+        api_url = "https://api.openai.com/v1/chat/completions"
+    elif provider_id == "anthropic":
+        api_key = os.getenv("ANTHROPIC_API_KEY")
+        # Return Anthropic adapter directly
+        if not api_key:
+            raise ValueError("ANTHROPIC_API_KEY environment variable not set")
+        from .anthropic_adapter import AnthropicAdapter
+        return AnthropicAdapter(api_key)
+    elif provider_id == "fireworks":
+        api_key = os.getenv("FIREWORKS_API_KEY")
+        api_url = "https://api.fireworks.ai/inference/v1/chat/completions"
+    else:
+        raise ValueError(f"Unknown provider: {provider_id}")
+
+    if not api_key:
+        raise ValueError(f"{provider_id.upper()}_API_KEY environment variable not set")
+
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {api_key}",
+    }
+
+    from .http_client import AgentHttpClient
+    return AgentHttpClient(api_url, headers)

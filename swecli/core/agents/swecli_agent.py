@@ -9,9 +9,11 @@ from swecli.core.base.abstract import BaseAgent
 from swecli.core.agents.components import (
     ResponseCleaner,
     SystemPromptBuilder,
+    ThinkingPromptBuilder,
     ToolSchemaBuilder,
     build_max_tokens_param,
     create_http_client,
+    create_http_client_for_provider,
 )
 from swecli.models.config import AppConfig
 
@@ -38,6 +40,7 @@ class SwecliAgent(BaseAgent):
         working_dir: Any = None,
     ) -> None:
         self.__http_client = None  # Lazy initialization - defer API key validation
+        self.__thinking_http_client = None  # Lazy initialization for Thinking model
         self._response_cleaner = ResponseCleaner()
         self._working_dir = working_dir
         self._schema_builder = ToolSchemaBuilder(tool_registry)
@@ -50,7 +53,37 @@ class SwecliAgent(BaseAgent):
             self.__http_client = create_http_client(self.config)
         return self.__http_client
 
-    def build_system_prompt(self) -> str:
+    @property
+    def _thinking_http_client(self) -> Any:
+        """Lazily create HTTP client for Thinking model provider.
+
+        Only created if Thinking model is configured with a different provider.
+        Returns None if Thinking model uses same provider as Normal model.
+        """
+        if self.__thinking_http_client is None:
+            # Only create if thinking provider is different from normal provider
+            thinking_provider = self.config.model_thinking_provider
+            if thinking_provider and thinking_provider != self.config.model_provider:
+                try:
+                    self.__thinking_http_client = create_http_client_for_provider(
+                        thinking_provider, self.config
+                    )
+                except ValueError:
+                    # API key not set - fall back to normal client
+                    return self._http_client
+        return self.__thinking_http_client
+
+    def build_system_prompt(self, thinking_visible: bool = False) -> str:
+        """Build the system prompt for the agent.
+
+        Args:
+            thinking_visible: If True, use thinking-specialized prompt
+
+        Returns:
+            The formatted system prompt string
+        """
+        if thinking_visible:
+            return ThinkingPromptBuilder(self.tool_registry, self._working_dir).build()
         return SystemPromptBuilder(self.tool_registry, self._working_dir).build()
 
     def build_tool_schemas(self, thinking_visible: bool = True) -> list[dict[str, Any]]:
@@ -63,25 +96,39 @@ class SwecliAgent(BaseAgent):
         thinking_visible: bool = True,
         iteration_count: int = 1,
     ) -> dict:
+        # Select model based on thinking mode
+        # When thinking is visible and Thinking model is configured, use it
+        if thinking_visible and self.config.model_thinking:
+            model_id = self.config.model_thinking
+            # Use thinking provider's HTTP client if different from normal
+            http_client = self._thinking_http_client or self._http_client
+        else:
+            model_id = self.config.model
+            http_client = self._http_client
+
         # Rebuild schemas with current thinking visibility
         # This ensures think tool is filtered when thinking mode is OFF
         tool_schemas = self._schema_builder.build(thinking_visible=thinking_visible)
 
-        # Only require tool use on FIRST iteration when thinking is visible
-        # This ensures think tool is called first, but allows normal flow after
-        # Without this, model would be stuck in infinite thinking loop
-        tool_choice = "required" if (thinking_visible and iteration_count == 1) else "auto"
+        # Force think tool on first iteration when thinking mode is ON
+        # This ensures thinking trace is displayed for ALL queries
+        # After first iteration, let model decide which tools to use
+        if thinking_visible and iteration_count == 1:
+            # Force specifically the think tool (not just any tool)
+            tool_choice = {"type": "function", "function": {"name": "think"}}
+        else:
+            tool_choice = "auto"
 
         payload = {
-            "model": self.config.model,
+            "model": model_id,  # Use selected model (Normal or Thinking)
             "messages": messages,
             "tools": tool_schemas,
             "tool_choice": tool_choice,
             "temperature": self.config.temperature,
-            **build_max_tokens_param(self.config.model, self.config.max_tokens),
+            **build_max_tokens_param(model_id, self.config.max_tokens),
         }
 
-        result = self._http_client.post_json(payload, task_monitor=task_monitor)
+        result = http_client.post_json(payload, task_monitor=task_monitor)
         if not result.success or result.response is None:
             return {
                 "success": False,
@@ -103,6 +150,10 @@ class SwecliAgent(BaseAgent):
         raw_content = message_data.get("content")
         cleaned_content = self._response_cleaner.clean(raw_content) if raw_content else None
 
+        # Extract reasoning_content for OpenAI reasoning models (o1, o3, etc.)
+        # This is the native thinking/reasoning trace from models like o1-preview
+        reasoning_content = message_data.get("reasoning_content")
+
         if task_monitor and "usage" in response_data:
             usage = response_data["usage"]
             total_tokens = usage.get("total_tokens", 0)
@@ -114,6 +165,7 @@ class SwecliAgent(BaseAgent):
             "message": message_data,
             "content": cleaned_content,
             "tool_calls": message_data.get("tool_calls"),
+            "reasoning_content": reasoning_content,  # Native thinking trace from model
             "usage": response_data.get("usage"),
         }
 

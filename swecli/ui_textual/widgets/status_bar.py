@@ -108,7 +108,7 @@ class StatusBar(Static):
         self.mode = "normal"
         self.model = model
         self.autonomy = "Manual"  # Autonomy level: Manual, Semi-Auto, Auto
-        self.thinking_enabled = True  # Thinking mode visibility
+        self.thinking_enabled = False  # Thinking mode visibility (default OFF, synced with chat_app)
         self.spinner_text: str | None = None
         self.spinner_tip: str | None = None
         self.working_dir = working_dir or ""
@@ -281,6 +281,35 @@ class StatusBar(Static):
                     return f"{provider}/{model_name[: available - 3]}..."
 
         return model[: max_len - 3] + "..."
+
+
+def _format_provider_name(provider: str) -> str:
+    """Format provider name with proper capitalization.
+
+    Args:
+        provider: Raw provider name (e.g., "openai", "anthropic")
+
+    Returns:
+        Properly capitalized provider name (e.g., "OpenAI", "Anthropic")
+    """
+    # Known provider name mappings
+    provider_names = {
+        "openai": "OpenAI",
+        "anthropic": "Anthropic",
+        "fireworks": "Fireworks",
+        "google": "Google",
+        "mistral": "Mistral",
+        "cohere": "Cohere",
+        "together": "Together",
+        "groq": "Groq",
+        "deepseek": "DeepSeek",
+        "azure": "Azure",
+        "bedrock": "Bedrock",
+        "vertex": "Vertex",
+        "ollama": "Ollama",
+        "local": "Local",
+    }
+    return provider_names.get(provider.lower(), provider.title())
 
 
 class ModelFooter(Footer):
