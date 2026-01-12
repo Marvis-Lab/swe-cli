@@ -76,6 +76,11 @@ def summarize_tool_result(tool_name: str, result: Any, error: str | None = None)
     if tool_name in ("git_commit", "Commit"):
         return f"✓ Changes committed"
 
+    # Thinking tool - preserve full content (it's the model's reasoning)
+    # This ensures thinking traces are included in conversation context
+    if tool_name == "think":
+        return result_str  # Return full thinking content, no summarization
+
     # Generic fallback
     if len(result_str) < 100:
         return f"✓ {result_str}"
