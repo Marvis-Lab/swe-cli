@@ -205,9 +205,20 @@ class CodebaseIndexer:
     def _compress_content(self, content: str, max_tokens: int) -> str:
         paragraphs = content.split("\n\n")
         compressed: List[str] = []
-        for paragraph in paragraphs:
-            compressed.append(paragraph)
-            tokens = self.token_monitor.count_tokens("\n\n".join(compressed))
-            if tokens >= max_tokens:
+        current_tokens = 0
+        # Conservative estimate: assumes no BPE merges across newlines, which yields
+        # an upper bound on token count (safe for limits).
+        newline_tokens = self.token_monitor.count_tokens("\n\n")
+
+        for i, paragraph in enumerate(paragraphs):
+            # Calculate cost of adding this paragraph
+            para_tokens = self.token_monitor.count_tokens(paragraph)
+            cost = para_tokens + (newline_tokens if i > 0 else 0)
+
+            if current_tokens + cost > max_tokens:
                 break
+
+            compressed.append(paragraph)
+            current_tokens += cost
+
         return "\n\n".join(compressed)
