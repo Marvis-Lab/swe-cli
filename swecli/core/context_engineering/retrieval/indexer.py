@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Set
 
 from .token_monitor import ContextTokenMonitor
 
@@ -13,12 +14,62 @@ from .token_monitor import ContextTokenMonitor
 class CodebaseIndexer:
     """Generate concise codebase summaries for context."""
 
+    IGNORED_DIRS = {
+        "node_modules",
+        "__pycache__",
+        ".git",
+        "venv",
+        "build",
+        "dist",
+        ".venv",
+        ".idea",
+        ".vscode",
+        ".mypy_cache",
+        ".pytest_cache",
+        "site-packages",
+    }
+
     def __init__(self, working_dir: Optional[Path] = None) -> None:
         self.working_dir = Path(working_dir or Path.cwd())
         self.token_monitor = ContextTokenMonitor()
         self.target_tokens = 3000
+        self._file_cache: List[Path] = []
+        self._dir_cache: List[Path] = []
+        self._children_map: Dict[Path, List[Path]] = {}
+        self._cache_populated = False
+
+    def _populate_cache(self) -> None:
+        if self._cache_populated:
+            return
+
+        self._file_cache = []
+        self._dir_cache = []
+        self._children_map = {}
+
+        for root, dirs, files in os.walk(self.working_dir):
+            # Modify dirs in-place to skip ignored directories
+            dirs[:] = [d for d in dirs if d not in self.IGNORED_DIRS]
+
+            rel_root = Path(root).relative_to(self.working_dir)
+
+            if rel_root not in self._children_map:
+                self._children_map[rel_root] = []
+
+            for d in dirs:
+                rel_dir = rel_root / d
+                self._dir_cache.append(rel_dir)
+                self._children_map[rel_root].append(rel_dir)
+
+            for f in files:
+                rel_file = rel_root / f
+                self._file_cache.append(rel_file)
+                self._children_map[rel_root].append(rel_file)
+
+        self._cache_populated = True
 
     def generate_index(self, max_tokens: int = 3000) -> str:
+        self._populate_cache()
+
         sections = []
         sections.append(f"# {self.working_dir.name}\n")
         sections.append(self._generate_overview())
@@ -37,19 +88,10 @@ class CodebaseIndexer:
 
     def _generate_overview(self) -> str:
         lines = ["## Overview\n"]
-        try:
-            result = subprocess.run(
-                ["find", ".", "-type", "f"],
-                capture_output=True,
-                text=True,
-                cwd=self.working_dir,
-                timeout=5,
-            )
-            if result.returncode == 0:
-                file_count = len(result.stdout.strip().split("\n"))
-                lines.append(f"**Total Files:** {file_count}")
-        except Exception:
-            pass
+
+        # Use cached file count
+        file_count = len(self._file_cache)
+        lines.append(f"**Total Files:** {file_count}")
 
         readme_path = self._find_readme()
         if readme_path:
@@ -66,42 +108,48 @@ class CodebaseIndexer:
 
     def _generate_structure(self) -> str:
         lines = ["## Structure\n", "```"]
-        try:
-            result = subprocess.run(
-                [
-                    "tree",
-                    "-L",
-                    "2",
-                    "-I",
-                    "node_modules|__pycache__|.git|venv|build|dist",
-                ],
-                capture_output=True,
-                text=True,
-                cwd=self.working_dir,
-                timeout=5,
-            )
-            if result.returncode == 0:
-                tree_output = result.stdout.strip()
-                if len(tree_output) > 1500:
-                    tree_output = "\n".join(tree_output.split("\n")[:30]) + "\n... (truncated)"
-                lines.append(tree_output)
-            else:
-                lines.append(self._basic_structure())
-        except FileNotFoundError:
-            lines.append(self._basic_structure())
-        except Exception:
-            lines.append("(Unable to generate structure)")
 
+        tree_lines = ["."]
+        root_children = self._get_sorted_children(Path("."))
+
+        for i, child in enumerate(root_children):
+            is_last = (i == len(root_children) - 1)
+            prefix = "└── " if is_last else "├── "
+            tree_lines.append(f"{prefix}{child.name}")
+
+            if self._is_dir(child):
+                sub_children = self._get_sorted_children(child)
+                for j, sub_child in enumerate(sub_children):
+                    is_last_sub = (j == len(sub_children) - 1)
+                    sub_prefix = "    " if is_last else "│   "
+                    connector = "└── " if is_last_sub else "├── "
+                    tree_lines.append(f"{sub_prefix}{connector}{sub_child.name}")
+
+        tree_output = "\n".join(tree_lines)
+        if len(tree_output) > 1500:
+             tree_output = "\n".join(tree_output.split("\n")[:30]) + "\n... (truncated)"
+
+        lines.append(tree_output)
         lines.append("```")
         return "\n".join(lines)
+
+    def _is_dir(self, path: Path) -> bool:
+        if path == Path("."):
+            return True
+        return path in self._dir_cache
+
+    def _get_sorted_children(self, parent: Path) -> List[Path]:
+        children = self._children_map.get(parent, [])
+        # Sort directories first, then files, then alphabetically
+        return sorted(children, key=lambda p: (not self._is_dir(p), p.name.lower()))
 
     def _generate_key_files(self) -> str:
         lines = ["## Key Files\n"]
         key_patterns = {
             "Main": ["main.py", "index.js", "app.py", "server.py", "__init__.py"],
             "Config": ["setup.py", "package.json", "pyproject.toml", "requirements.txt", "Dockerfile"],
-            "Tests": ["test_*.py", "*_test.py", "tests/", "spec/"],
-            "Docs": ["README.md", "CHANGELOG.md", "docs/"],
+            "Tests": ["test_*.py", "*_test.py", "tests", "spec"],
+            "Docs": ["README.md", "CHANGELOG.md", "docs"],
         }
 
         for category, patterns in key_patterns.items():
@@ -109,8 +157,7 @@ class CodebaseIndexer:
             if found:
                 lines.append(f"\n### {category}")
                 for f in found[:5]:
-                    rel_path = f.relative_to(self.working_dir)
-                    lines.append(f"- `{rel_path}`")
+                    lines.append(f"- `{f}`")
 
         return "\n".join(lines)
 
@@ -151,9 +198,9 @@ class CodebaseIndexer:
 
     def _find_readme(self) -> Optional[Path]:
         for pattern in ["README.md", "README.rst", "README.txt", "README"]:
-            readme = self.working_dir / pattern
-            if readme.exists():
-                return readme
+            p = Path(pattern)
+            if p in self._file_cache:
+                return self.working_dir / p
         return None
 
     def _extract_description(self, content: str, max_length: int = 300) -> Optional[str]:
@@ -174,33 +221,23 @@ class CodebaseIndexer:
             "Java": ["pom.xml", "build.gradle"],
         }
         for project_type, files in indicators.items():
-            if any((self.working_dir / f).exists() for f in files):
+            if any(Path(f) in self._file_cache for f in files):
                 return project_type
         return None
 
     def _find_files(self, patterns: List[str]) -> List[Path]:
-        matches: List[Path] = []
+        matches: Set[Path] = set()
         for pattern in patterns:
-            matches.extend(self.working_dir.glob(f"**/{pattern}"))
-        return matches
-
-    def _basic_structure(self) -> str:
-        try:
-            result = subprocess.run(
-                ["ls", "-R"],
-                capture_output=True,
-                text=True,
-                cwd=self.working_dir,
-                timeout=5,
-            )
-            if result.returncode == 0:
-                output = result.stdout.strip()
-                if len(output) > 1200:
-                    output = "\n".join(output.split("\n")[:40]) + "\n... (truncated)"
-                return output
-        except Exception:
-            pass
-        return "(Unable to generate structure)"
+            # Check files
+            for f in self._file_cache:
+                # Use standard match AND match with ** prefix to simulate glob-like behavior for filename matching
+                if f.match(pattern) or f.match(f"**/{pattern}"):
+                    matches.add(f)
+            # Check dirs
+            for d in self._dir_cache:
+                if d.match(pattern) or d.match(f"**/{pattern}"):
+                    matches.add(d)
+        return sorted(list(matches))
 
     def _compress_content(self, content: str, max_tokens: int) -> str:
         paragraphs = content.split("\n\n")
