@@ -238,8 +238,29 @@ def build_tool_call_text(tool_name: str, tool_args: Mapping[str, Any]) -> Text:
 
 
 def format_tool_call(tool_name: str, tool_args: Mapping[str, Any]) -> str:
+    # Enhanced formatting for search_tools (MCP tool discovery)
+    if tool_name == "search_tools":
+        if not tool_args:
+            return "Search_Tools"
+
+        query = tool_args.get("query", "")
+        detail_level = tool_args.get("detail_level", "brief")
+        server = tool_args.get("server", "")
+
+        params = []
+        if query:
+            params.append(f'"{query}"')
+        if detail_level and detail_level != "brief":
+            params.append(f'detail: "{detail_level}"')
+        if server:
+            params.append(f'server: "{server}"')
+
+        if params:
+            return f"Search_Tools({', '.join(params)})"
+        return "Search_Tools"
+
     # Enhanced formatting for Search tool
-    if tool_name == "search" and tool_args:
+    elif tool_name == "search" and tool_args:
         params = []
         if "pattern" in tool_args and tool_args["pattern"]:
             params.append(f'pattern: "{tool_args["pattern"]}"')

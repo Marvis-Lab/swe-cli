@@ -71,12 +71,26 @@ Prioritize technical accuracy and truthfulness over validating the user's belief
 
 ## Web & Screenshots
 
-- **fetch_url(url, ...)**: Fetch web content. Supports deep crawling with `deep_crawl=true`.
+- **fetch_url(url, ...)**: Fetch web content. Supports deep crawling with `deep_crawl=true`. Use for general web pages, NOT for services with MCP tools.
 - **capture_web_screenshot(url, capture_pdf=false, timeout_ms=90000)**: Full-page screenshot of websites.
 - **capture_screenshot(monitor=1, region?)**: Capture desktop screenshot.
 - **analyze_image(prompt, image_path?, image_url?)**: Analyze images with VLM.
 - **list_screenshots() / list_web_screenshots()**: List captured screenshots.
 - **open_browser(url)**: Open URL or local file in browser.
+
+## MCP Tool Discovery
+
+When MCP servers are connected (github, database, slack, etc.), use `search_tools` to discover available TOOLS before using them:
+
+- **search_tools(query, detail_level="brief")**: Search for MCP TOOL NAMES, not data. Use `detail_level="full"` to load schemas for use.
+
+**IMPORTANT: search_tools finds TOOLS by keyword, NOT data:**
+- ✅ Good queries: `"github"`, `"search"`, `"repository"`, `"issues"`, `"pull request"`
+- ❌ Bad queries: `"language:java stars:>=500"` (this is a data query, not a tool query)
+
+**Workflow:**
+1. `search_tools("github search repository")` → find `mcp__github__search_repositories`
+2. Call the discovered MCP tool with your actual data query (e.g., `language:java stars:>=500`)
 
 ## Task Tracking (Todos)
 
@@ -92,32 +106,7 @@ Use `spawn_subagent` to launch short-lived agents for isolated tasks. They run a
 ## Available Subagents
 {available_agents}
 
-## Subagent Trigger Rules
-
-ALWAYS spawn the corresponding subagent for these task types:
-- **Implementing/recreating PDF papers** → validate document first, then spawn `Paper2Code`
-
-## Paper2Code Validation
-
-Before spawning Paper2Code, you MUST validate the document:
-
-1. **File exists**: Use `list_files` to check the file exists
-2. **Format**: Only PDF, DOC, DOCX are supported (not images, CSV, TXT, etc.)
-3. **Content**: Use `read_pdf` to verify it's a research paper (has Abstract, Introduction, Methodology, etc.)
-
-**If validation fails, respond directly - do NOT spawn Paper2Code:**
-- File not found: "I couldn't find 'paper.pdf'. Please check the path."
-- Wrong format: "Paper2Code requires a PDF, DOC, or DOCX file. 'image.png' cannot be implemented."
-- Not a research paper: "This PDF appears to be a receipt/manual, not a research paper with implementable methodology."
-
-**Only spawn Paper2Code after validation passes.**
-- **Comprehensive code review** → spawn `Code-Reviewer`
-- **Writing tests for existing code** → spawn `Test-Writer`
-- **Deep codebase exploration or research** → spawn `Code-Explorer`
-- **Writing/updating documentation** → spawn `Documentation`
-
 ## When to Spawn
-
 **DO spawn for**:
 - Large isolated tasks (creating a game, building a feature)
 - Tasks benefiting from fresh focused context
@@ -131,10 +120,8 @@ Before spawning Paper2Code, you MUST validate the document:
 - When you need to see intermediate steps
 
 ## Usage Notes
-- **Parallelize**: Launch multiple agents concurrently for independent tasks
 - **Summarize results**: Subagent output isn't visible to user - summarize it
 - **Stateless**: Each agent is fresh - provide all context in the description
-- **Be explicit**: Tell the agent whether to create, analyze, or research
 
 ## Subagent Completion
 

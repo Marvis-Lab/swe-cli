@@ -20,6 +20,8 @@ PLANNING_TOOLS = {
     # Symbol tools (read-only)
     "find_symbol",
     "find_referencing_symbols",
+    # MCP tool discovery (read-only)
+    "search_tools",
     # Subagent spawning (subagents handle their own restrictions)
     "spawn_subagent",
     # Task completion (always allowed - agents must signal completion)
@@ -73,12 +75,18 @@ class ToolSchemaBuilder:
         return create_task_tool_schema(subagent_manager)
 
     def _build_mcp_schemas(self) -> Sequence[dict[str, Any]]:
+        """Build MCP tool schemas - only returns discovered tools for token efficiency.
+
+        MCP tools are NOT loaded by default. The agent must use search_tools() to
+        discover them first, which adds them to the discovered set.
+        """
         if not self._tool_registry or not getattr(self._tool_registry, "mcp_manager", None):
             return []
 
-        mcp_tools = self._tool_registry.mcp_manager.get_all_tools()  # type: ignore[attr-defined]
+        # Only return schemas for tools that have been "discovered" via search_tools
+        discovered_tools = self._tool_registry.get_discovered_mcp_tools()
         schemas: list[dict[str, Any]] = []
-        for tool in mcp_tools:
+        for tool in discovered_tools:
             schemas.append(
                 {
                     "type": "function",
@@ -871,6 +879,34 @@ _BUILTIN_TOOL_SCHEMAS: list[dict[str, Any]] = [
                     },
                 },
                 "required": ["summary", "status"],
+            },
+        },
+    },
+    # MCP Tool Discovery (Token-Efficient)
+    {
+        "type": "function",
+        "function": {
+            "name": "search_tools",
+            "description": "Search for available MCP tools from connected servers. Use this to discover tools before using them. MCP tool schemas are NOT loaded by default to save context tokens - you must search for them first.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Search query - matches tool names and descriptions. Use '*' or empty string to list all tools.",
+                    },
+                    "detail_level": {
+                        "type": "string",
+                        "enum": ["names", "brief", "full"],
+                        "description": "Level of detail: 'names' (tool names only), 'brief' (names + one-line descriptions), 'full' (complete schemas including parameters)",
+                        "default": "brief",
+                    },
+                    "server": {
+                        "type": "string",
+                        "description": "Optional: filter to specific MCP server name",
+                    },
+                },
+                "required": ["query"],
             },
         },
     },

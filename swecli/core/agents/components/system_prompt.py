@@ -63,28 +63,33 @@ class SystemPromptBuilder:
         return prompt.replace("{available_agents}", available_agents_str)
 
     def _build_mcp_section(self) -> str:
-        """Render the MCP tool section when servers are connected."""
+        """Render MCP section - shows connected servers, not individual tools.
+
+        Individual tool schemas are NOT loaded by default for token efficiency.
+        The agent must use search_tools() to discover and enable tools.
+        """
         if not self._tool_registry or not getattr(self._tool_registry, "mcp_manager", None):
             return ""
 
-        mcp_tools: Sequence[dict[str, Any]] = self._tool_registry.mcp_manager.get_all_tools()  # type: ignore[attr-defined]
-        if not mcp_tools:
+        mcp_manager = self._tool_registry.mcp_manager
+        all_servers = mcp_manager.list_servers()
+        connected_servers = [name for name in all_servers if mcp_manager.is_connected(name)]
+
+        if not connected_servers:
             return ""
 
-        lines = ["\n## MCP Tools (Extended Capabilities)\n", "The following external tools are available through MCP servers:\n"]
-        for tool in mcp_tools:
-            tool_name = tool.get("name", "")
-            description = tool.get("description", "")
-            lines.append(f"- `{tool_name}` - {description}\n")
+        lines = ["\n## MCP Servers Connected\n\n"]
 
-        lines.append("\nUse these MCP tools when they're relevant to the user's task.\n")
+        for server_name in connected_servers:
+            tools = mcp_manager.get_server_tools(server_name)
+            lines.append(f"- **{server_name}**: {len(tools)} tools available\n")
+
+        lines.append("\nUse `search_tools` to discover and enable MCP tools.\n")
 
         # Add configuration guidance
         lines.append("\n### MCP Server Configuration\n")
-        lines.append("You can help users set up new MCP servers using:\n")
-        lines.append("- `configure_mcp_server` - Configure a server from preset (github, postgres, slack, etc.)\n")
-        lines.append("- `list_mcp_presets` - Show available server presets\n")
-        lines.append("\nWhen users ask about setting up GitHub, database, or other integrations, use these tools.\n")
+        lines.append("- `configure_mcp_server` - Add new server from preset\n")
+        lines.append("- `list_mcp_presets` - Show available presets\n")
 
         return "".join(lines)
 
@@ -121,15 +126,16 @@ class ThinkingPromptBuilder:
         if self._working_dir:
             prompt += f"\n\n# Working Directory\nCurrent directory: `{self._working_dir}`\n"
 
-        # Add MCP section if available (same as SystemPromptBuilder)
+        # Add MCP section if available - show servers only, not individual tools
         if self._tool_registry and getattr(self._tool_registry, "mcp_manager", None):
-            mcp_tools: Sequence[dict[str, Any]] = self._tool_registry.mcp_manager.get_all_tools()  # type: ignore[attr-defined]
-            if mcp_tools:
-                lines = ["\n## Available MCP Tools\n"]
-                for tool in mcp_tools:
-                    tool_name = tool.get("name", "")
-                    description = tool.get("description", "")
-                    lines.append(f"- `{tool_name}` - {description}\n")
+            mcp_manager = self._tool_registry.mcp_manager
+            all_servers = mcp_manager.list_servers()
+            connected = [n for n in all_servers if mcp_manager.is_connected(n)]
+            if connected:
+                lines = ["\n## MCP Servers Connected\n"]
+                for name in connected:
+                    tools = mcp_manager.get_server_tools(name)
+                    lines.append(f"- {name}: {len(tools)} tools (use search_tools to discover)\n")
                 prompt += "".join(lines)
 
         return prompt

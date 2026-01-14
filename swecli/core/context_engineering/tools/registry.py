@@ -6,6 +6,8 @@ from typing import Any, Union
 
 from swecli.core.runtime import OperationMode
 from swecli.core.context_engineering.tools.context import ToolExecutionContext
+import logging
+
 from swecli.core.context_engineering.tools.handlers.file_handlers import FileToolHandler
 from swecli.core.context_engineering.mcp.handler import McpToolHandler
 from swecli.core.context_engineering.tools.handlers.process_handlers import ProcessToolHandler
@@ -14,6 +16,9 @@ from swecli.core.context_engineering.tools.handlers.screenshot_handler import Sc
 from swecli.core.context_engineering.tools.handlers.todo_handler import TodoHandler
 from swecli.core.context_engineering.tools.handlers.mcp_config_handler import MCPConfigHandler
 from swecli.core.context_engineering.tools.handlers.thinking_handler import ThinkingHandler
+from swecli.core.context_engineering.tools.handlers.search_tools_handler import SearchToolsHandler
+
+logger = logging.getLogger(__name__)
 from swecli.core.context_engineering.tools.implementations.pdf_tool import PDFTool
 from swecli.core.context_engineering.tools.implementations.task_complete_tool import TaskCompleteTool
 from swecli.core.context_engineering.tools.symbol_tools import (
@@ -38,6 +43,8 @@ _PLAN_READ_ONLY_TOOLS = {
     # Symbol tools (read-only)
     "find_symbol",
     "find_referencing_symbols",
+    # MCP tool discovery (read-only)
+    "search_tools",
     # Subagent spawning allowed in plan mode (subagents handle their own restrictions)
     "spawn_subagent",
     # Task completion (always allowed - agents must signal completion)
@@ -80,6 +87,15 @@ class ToolRegistry:
         self._pdf_tool = PDFTool()
         self._task_complete_tool = TaskCompleteTool()
         self._subagent_manager: Union[Any, None] = None
+
+        # Token-efficient MCP tool discovery
+        # Only tools in this set will have their schemas included in LLM context
+        self._discovered_mcp_tools: set[str] = set()
+        self._search_tools_handler = SearchToolsHandler(
+            mcp_manager=mcp_manager,
+            on_discover=self.discover_mcp_tool,
+        )
+
         self.set_mcp_manager(mcp_manager)
 
         self._handlers: dict[str, Any] = {
@@ -119,6 +135,8 @@ class ToolRegistry:
             # MCP configuration tools
             "configure_mcp_server": self._mcp_config_handler.configure_mcp_server,
             "list_mcp_presets": self._mcp_config_handler.list_mcp_presets,
+            # MCP tool discovery (token-efficient)
+            "search_tools": self._search_tools_handler.search_tools,
             # Task completion tool
             "task_complete": self._execute_task_complete,
             # Thinking/reasoning tool
@@ -140,6 +158,42 @@ class ToolRegistry:
             SubAgentManager instance or None
         """
         return self._subagent_manager
+
+    # ===== Token-Efficient MCP Tool Discovery =====
+
+    def discover_mcp_tool(self, tool_name: str) -> None:
+        """Mark an MCP tool as discovered.
+
+        Discovered tools will have their schemas included in subsequent LLM calls.
+        This enables token-efficient tool loading - only tools the agent has
+        explicitly searched for (or attempted to use) will consume context tokens.
+
+        Args:
+            tool_name: Full MCP tool name (e.g., 'mcp__github__create_issue')
+        """
+        if tool_name and tool_name.startswith("mcp__"):
+            self._discovered_mcp_tools.add(tool_name)
+            logger.debug(f"Discovered MCP tool: {tool_name}")
+
+    def get_discovered_mcp_tools(self) -> list[dict[str, Any]]:
+        """Get schemas only for discovered MCP tools.
+
+        Returns:
+            List of tool schema dicts for discovered tools only
+        """
+        if not self.mcp_manager:
+            return []
+
+        all_tools = self.mcp_manager.get_all_tools()
+        return [t for t in all_tools if t.get("name") in self._discovered_mcp_tools]
+
+    def clear_discovered_tools(self) -> None:
+        """Clear all discovered MCP tools.
+
+        Useful when starting a new conversation or resetting state.
+        """
+        self._discovered_mcp_tools.clear()
+        logger.debug("Cleared all discovered MCP tools")
 
     def _execute_spawn_subagent(self, arguments: dict[str, Any], context: Any = None) -> dict[str, Any]:
         """Execute the spawn_subagent tool to spawn a subagent.
@@ -237,6 +291,14 @@ class ToolRegistry:
     ) -> dict[str, Any]:
         """Execute a tool by delegating to registered handlers."""
         if tool_name.startswith("mcp__"):
+            # Auto-discover MCP tools when they're called directly
+            # This ensures the tool schema will be available in future LLM calls
+            if tool_name not in self._discovered_mcp_tools:
+                self.discover_mcp_tool(tool_name)
+                logger.info(
+                    f"Auto-discovered MCP tool: {tool_name}. "
+                    "Tip: Use search_tools() to discover tools before using them."
+                )
             return self._mcp_handler.execute(tool_name, arguments)
 
         if tool_name not in self._handlers:
@@ -302,6 +364,7 @@ class ToolRegistry:
         self.mcp_manager = mcp_manager
         self._mcp_handler = McpToolHandler(mcp_manager)
         self._mcp_config_handler.set_mcp_manager(mcp_manager)
+        self._search_tools_handler.set_mcp_manager(mcp_manager)
 
     def _open_browser(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """Execute the open_browser tool."""
