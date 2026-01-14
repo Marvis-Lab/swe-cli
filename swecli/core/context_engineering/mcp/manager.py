@@ -65,6 +65,9 @@ class MCPManager:
         self._event_loop = None  # Shared event loop for all MCP operations
         self._loop_thread = None  # Background thread running the event loop
         self._loop_started = threading.Event()  # Signal when loop is ready
+        self._loop_lock = threading.Lock()  # Lock for event loop initialization
+        self._server_locks: Dict[str, threading.Lock] = {}  # Per-server locks
+        self._server_locks_lock = threading.Lock()  # Lock for creating server locks
 
     def _create_transport_from_config(self, server_config: MCPServerConfig):
         """Create appropriate transport based on server configuration.
@@ -179,11 +182,14 @@ class MCPManager:
             self._event_loop.close()
 
     def _ensure_event_loop(self):
-        """Ensure background event loop is running."""
-        if self._event_loop is None or not self._event_loop.is_running():
-            self._loop_thread = threading.Thread(target=self._run_event_loop, daemon=True)
-            self._loop_thread.start()
-            self._loop_started.wait()  # Wait for loop to be ready
+        """Ensure background event loop is running (thread-safe)."""
+        with self._loop_lock:
+            if self._event_loop is None or not self._event_loop.is_running():
+                # Reset the event before creating new loop
+                self._loop_started = threading.Event()
+                self._loop_thread = threading.Thread(target=self._run_event_loop, daemon=True)
+                self._loop_thread.start()
+                self._loop_started.wait()  # Wait for loop to be ready
 
     def _run_coroutine_threadsafe(self, coro, timeout=30):
         """Run a coroutine in the shared event loop and wait for result.
@@ -198,6 +204,20 @@ class MCPManager:
         self._ensure_event_loop()
         future = asyncio.run_coroutine_threadsafe(coro, self._event_loop)
         return future.result(timeout=timeout)
+
+    def _get_server_lock(self, server_name: str) -> threading.Lock:
+        """Get or create a lock for a specific server (thread-safe).
+
+        Args:
+            server_name: Name of the server
+
+        Returns:
+            Lock for the server
+        """
+        with self._server_locks_lock:
+            if server_name not in self._server_locks:
+                self._server_locks[server_name] = threading.Lock()
+            return self._server_locks[server_name]
 
     def load_configuration(self) -> MCPConfig:
         """Load MCP configuration from global and project files.
@@ -240,8 +260,18 @@ class MCPManager:
             print(f"Warning: Server '{server_name}' is disabled")
             return False
 
+        # Clean up any stale client before reconnecting
+        if server_name in self.clients:
+            try:
+                await self._disconnect_internal(server_name)
+            except Exception:
+                # Force remove stale client
+                self.clients.pop(server_name, None)
+                self.server_tools.pop(server_name, None)
+
         # Prepare config (expand env vars)
         prepared_config = prepare_server_config(server_config)
+        client = None
 
         try:
             # Suppress stderr during connection to hide MCP server logs
@@ -261,7 +291,18 @@ class MCPManager:
 
             return True
 
-        except Exception:
+        except Exception as e:
+            # Log the error for debugging intermittent connection failures
+            import logging
+            logging.getLogger(__name__).debug(f"MCP connection failed for '{server_name}': {type(e).__name__}: {e}")
+            # Clean up partial connection
+            if client is not None:
+                try:
+                    await client.__aexit__(None, None, None)
+                except Exception:
+                    pass
+            self.clients.pop(server_name, None)
+            self.server_tools.pop(server_name, None)
             return False
 
     async def _disconnect_internal(self, server_name: str) -> None:
@@ -332,16 +373,21 @@ class MCPManager:
 
     # Synchronous wrappers that use the shared event loop
 
-    def connect_sync(self, server_name: str) -> bool:
+    def connect_sync(self, server_name: str, timeout: int = 60) -> bool:
         """Connect to an MCP server (synchronous wrapper).
 
         Args:
             server_name: Name of the server to connect to
+            timeout: Connection timeout in seconds (default 60)
 
         Returns:
             True if connection successful, False otherwise
         """
-        return self._run_coroutine_threadsafe(self._connect_internal(server_name))
+        # Use per-server lock to prevent concurrent connection attempts
+        with self._get_server_lock(server_name):
+            return self._run_coroutine_threadsafe(
+                self._connect_internal(server_name), timeout=timeout
+            )
 
     def disconnect_sync(self, server_name: str) -> None:
         """Disconnect from an MCP server (synchronous wrapper).
@@ -349,7 +395,9 @@ class MCPManager:
         Args:
             server_name: Name of the server to disconnect from
         """
-        self._run_coroutine_threadsafe(self._disconnect_internal(server_name))
+        # Use per-server lock to prevent concurrent disconnect attempts
+        with self._get_server_lock(server_name):
+            self._run_coroutine_threadsafe(self._disconnect_internal(server_name))
 
     def disconnect_all_sync(self) -> None:
         """Disconnect from all MCP servers (synchronous wrapper)."""

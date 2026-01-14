@@ -1,4 +1,4 @@
-"""Animated progress bar widget with pulsing blue gradient."""
+"""Animated progress bar widget with sequential blue highlight sweep."""
 
 from __future__ import annotations
 
@@ -10,42 +10,40 @@ from textual.widgets import Static
 if TYPE_CHECKING:
     from textual.timer import Timer
 
-# Block characters from lightest to darkest shade
-BLOCK_LIGHT = "░"
-BLOCK_MEDIUM = "▒"
-BLOCK_DARK = "▓"
-BLOCK_FULL = "█"
+# Segment character - small dot that reads as bar when repeated
+SEGMENT = "•"
 
-# Blue gradient colors (dark to luminous)
-BLUE_DARK = "#1a3a5c"
-BLUE_MEDIUM = "#2563eb"
-BLUE_BRIGHT = "#3b82f6"
-BLUE_LIGHT = "#60a5fa"
-BLUE_LUMINOUS = "#93c5fd"
+# Blue color palette (dark base to bright highlight)
+BLUE_BASE = "#2a4a6a"      # Resting state - muted dark blue
+BLUE_DIM = "#3a5a7a"       # Slightly brightened
+BLUE_MID = "#4a7090"       # Transitioning
+BLUE_GLOW = "#6090b8"      # Approaching highlight
+BLUE_BRIGHT = "#80b0d8"    # Near peak
+BLUE_HIGHLIGHT = "#a8d0f0" # Peak brightness
 
 # Bar configuration
 BAR_WIDTH = 40
-PULSE_WIDTH = 8  # How wide the bright pulse is
-FRAME_INTERVAL_MS = 50  # 20fps for smooth animation
+HIGHLIGHT_WIDTH = 6  # How many segments are affected by the highlight
+FRAME_INTERVAL_MS = 50  # Smooth, steady timing
 
 
 class ProgressBar(Static):
-    """Animated horizontal progress bar with pulsing blue gradient.
+    """Animated progress bar with sequential highlight sweep.
 
-    Displays a 40-character wide progress bar using block characters.
-    A "pulse" of brightness sweeps continuously from left to right.
-    Shows during task processing, hides when idle.
+    A short horizontal line of evenly spaced segments. A soft blue
+    highlight travels from left to right, with each segment briefly
+    brightening as it passes, then fading back to darker blue.
+    Creates a clear, sequential rhythm emphasizing direction and continuity.
 
     The progress bar polls app._is_processing to determine when to show/hide,
     avoiding threading issues from direct show/hide calls.
     """
 
     def __init__(self, **kwargs) -> None:
-        # Initialize with empty content to avoid None render issues
         super().__init__("", **kwargs)
         self._animation_timer: Optional["Timer"] = None
         self._poll_timer: Optional["Timer"] = None
-        self._pulse_position: int = 0
+        self._highlight_pos: int = 0
         self._visible: bool = False
         self._app: Any = None
 
@@ -56,7 +54,6 @@ class ProgressBar(Static):
     def on_mount(self) -> None:
         """Start polling for processing state."""
         self.display = False
-        # Poll every 100ms to check if processing is active
         self._poll_timer = self.set_interval(0.1, self._poll_processing_state)
 
     def _poll_processing_state(self) -> None:
@@ -77,17 +74,15 @@ class ProgressBar(Static):
             return
 
         self._visible = True
-        self._pulse_position = 0
+        self._highlight_pos = 0
         self.display = True
 
-        # Start animation timer
         self._animation_timer = self.set_interval(
             FRAME_INTERVAL_MS / 1000,
             self._on_frame,
             pause=False,
         )
 
-        # Render initial frame
         self._render_bar()
 
     def _hide(self) -> None:
@@ -101,56 +96,54 @@ class ProgressBar(Static):
             self._animation_timer.stop()
             self._animation_timer = None
 
-        self._pulse_position = 0
-        self.update(" ")  # Keep non-empty to avoid render issues
+        self._highlight_pos = 0
+        self.update(" ")
         self.display = False
 
     def _on_frame(self) -> None:
-        """Handle animation frame - advance pulse and render."""
+        """Advance highlight position and render."""
         if not self._visible:
             return
 
-        # Advance pulse position (wraps around)
-        self._pulse_position = (self._pulse_position + 1) % BAR_WIDTH
+        self._highlight_pos = (self._highlight_pos + 1) % BAR_WIDTH
         self._render_bar()
 
     def _render_bar(self) -> None:
-        """Render the progress bar with pulse at current position."""
+        """Render the bar with highlight at current position."""
         result = Text()
 
         for i in range(BAR_WIDTH):
-            # Calculate distance from pulse center (with wrapping)
+            # Calculate distance from highlight center (with wrapping for seamless loop)
             dist = min(
-                abs(i - self._pulse_position),
-                abs(i - self._pulse_position + BAR_WIDTH),
-                abs(i - self._pulse_position - BAR_WIDTH),
+                abs(i - self._highlight_pos),
+                abs(i - self._highlight_pos + BAR_WIDTH),
+                abs(i - self._highlight_pos - BAR_WIDTH),
             )
 
-            # Map distance to color and character
-            if dist == 0:
-                # Peak of pulse - brightest
-                char = BLOCK_FULL
-                color = BLUE_LUMINOUS
-            elif dist <= 2:
-                # Near peak
-                char = BLOCK_FULL
-                color = BLUE_LIGHT
-            elif dist <= 4:
-                # Trailing edge
-                char = BLOCK_DARK
-                color = BLUE_BRIGHT
-            elif dist <= 6:
-                # Far trailing edge
-                char = BLOCK_MEDIUM
-                color = BLUE_MEDIUM
-            else:
-                # Background
-                char = BLOCK_LIGHT
-                color = BLUE_DARK
-
-            result.append(char, style=color)
+            # Map distance to color - closer = brighter
+            color = self._get_color(dist)
+            result.append(SEGMENT, style=color)
 
         self.update(result)
+
+    def _get_color(self, distance: int) -> str:
+        """Map distance from highlight to color.
+
+        Creates smooth gradient: peak brightness at center,
+        fading to base color further away.
+        """
+        if distance == 0:
+            return BLUE_HIGHLIGHT
+        elif distance == 1:
+            return BLUE_BRIGHT
+        elif distance == 2:
+            return BLUE_GLOW
+        elif distance == 3:
+            return BLUE_MID
+        elif distance <= 5:
+            return BLUE_DIM
+        else:
+            return BLUE_BASE
 
     def on_unmount(self) -> None:
         """Clean up when widget is removed."""

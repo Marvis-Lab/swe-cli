@@ -60,6 +60,9 @@ class MessageController:
             handled = await app.handle_command(stripped_message)
             if not handled and app.on_message:
                 app.on_message(message)
+            else:
+                # Reset processing state for handled slash commands
+                app._is_processing = False
             return
 
         await self._process_message(message, needs_display=already_processing)

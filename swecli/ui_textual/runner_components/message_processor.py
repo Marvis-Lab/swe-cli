@@ -149,8 +149,8 @@ class MessageProcessor:
                 finally:
                     self._pending.task_done()
                     
-                    # Notify completion if queue empty
-                    if not is_command and self._pending.empty():
+                    # Notify completion if queue empty (for both commands and messages)
+                    if self._pending.empty():
                         if hasattr(self._app, "notify_processing_complete"):
                             self._app.call_from_thread(self._app.notify_processing_complete)
                             
