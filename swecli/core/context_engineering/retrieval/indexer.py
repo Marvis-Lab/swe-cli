@@ -205,9 +205,19 @@ class CodebaseIndexer:
     def _compress_content(self, content: str, max_tokens: int) -> str:
         paragraphs = content.split("\n\n")
         compressed: List[str] = []
+        current_tokens = 0
+        separator_tokens = self.token_monitor.count_tokens("\n\n")
+
         for paragraph in paragraphs:
-            compressed.append(paragraph)
-            tokens = self.token_monitor.count_tokens("\n\n".join(compressed))
-            if tokens >= max_tokens:
+            # We assume simple additivity for performance; this is an approximation
+            # but sufficient for context window management
+            p_tokens = self.token_monitor.count_tokens(paragraph)
+            cost_to_add = p_tokens + (separator_tokens if compressed else 0)
+
+            if current_tokens + cost_to_add > max_tokens:
                 break
+
+            compressed.append(paragraph)
+            current_tokens += cost_to_add
+
         return "\n\n".join(compressed)
