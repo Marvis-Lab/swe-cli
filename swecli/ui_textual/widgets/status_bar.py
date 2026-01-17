@@ -21,7 +21,6 @@ from swecli.ui_textual.style_tokens import (
     ORANGE_CAUTION,
     CYAN_VISION,
     GOLD,
-    THINKING,
 )
 
 

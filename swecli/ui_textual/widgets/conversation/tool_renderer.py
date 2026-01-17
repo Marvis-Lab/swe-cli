@@ -5,19 +5,14 @@ import threading
 import time
 from typing import Any, List, Tuple
 
-from rich.console import Group
-from rich.panel import Panel
-from rich.syntax import Syntax
 from rich.text import Text
 from textual.strip import Strip
 from textual.timer import Timer
 
 from swecli.ui_textual.constants import TOOL_ERROR_SENTINEL
 from swecli.ui_textual.style_tokens import (
-    BLUE_PATH,
     ERROR,
     GREEN_BRIGHT,
-    GREEN_PROMPT,
     GREY,
     PRIMARY,
     SUBTLE,

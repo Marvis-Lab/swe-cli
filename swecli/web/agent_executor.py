@@ -224,7 +224,7 @@ class AgentExecutor:
                 except Exception as e:
                     logger.error(f"Failed to broadcast message_chunk: {e}")
             else:
-                logger.warning(f"Agent returned success=False, not broadcasting message_chunk")
+                logger.warning("Agent returned success=False, not broadcasting message_chunk")
 
             return result
 

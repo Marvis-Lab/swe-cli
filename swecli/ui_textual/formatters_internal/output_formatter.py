@@ -5,7 +5,7 @@ from rich.console import Console
 from rich.panel import Panel
 
 from swecli.ui_textual.formatters.style_formatter import StyleFormatter
-from .formatter_base import TOOL_ICONS
+from swecli.ui_textual.style_tokens import TOOL_ICONS
 from .file_formatters import FileFormatter
 from .directory_formatter import DirectoryFormatter
 from .bash_formatter import BashFormatter

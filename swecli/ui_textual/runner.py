@@ -6,12 +6,9 @@ import asyncio
 import atexit
 import contextlib
 import os
-import queue
-import signal
 import sys
-import threading
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Callable, Optional
 
 
 def _reset_terminal_mouse_mode() -> None:
@@ -37,15 +34,12 @@ atexit.register(_reset_terminal_mouse_mode)
 
 
 from swecli.core.agents.components import extract_plan_from_response
-from swecli.ui_textual.style_tokens import ERROR
 from swecli.core.runtime import ConfigManager, OperationMode
 from swecli.core.context_engineering.history import SessionManager
 from swecli.models.message import ChatMessage, Role
 from swecli.repl.repl import REPL
 from swecli.ui_textual.managers.approval_manager import ChatApprovalManager
 from swecli.ui_textual.chat_app import create_chat_app
-from swecli.ui_textual.constants import TOOL_ERROR_SENTINEL
-from swecli.ui_textual.utils import build_tool_call_text
 from swecli.ui_textual.runner_components import HistoryHydrator, ToolRenderer, ModelConfigManager, CommandRouter, MessageProcessor, ConsoleBridge, MCPController
 
 # Approval phrases for plan execution
@@ -566,7 +560,6 @@ Work through each implementation step in order. Mark each todo item as 'in_progr
                     
                     self.console_bridge.set_last_assistant_message(content)
                     self.console_bridge.set_suppress_duplicate(True)
-                    assistant_text_rendered = True
 
                 # Skip rendering messages with tool calls - already shown in real-time
             elif msg.role == Role.SYSTEM:
