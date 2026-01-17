@@ -9,7 +9,7 @@ from __future__ import annotations
 import shlex
 from io import StringIO
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any
 
 from rich import box
 from rich.console import Console as RichConsole
@@ -18,7 +18,7 @@ from rich.table import Table
 from rich.text import Text
 
 from swecli.repl.repl import REPL
-from swecli.ui_textual.style_tokens import ERROR, PRIMARY, ACCENT, SUBTLE, CYAN, GREEN_BRIGHT, BLUE_BRIGHT
+from swecli.ui_textual.style_tokens import ERROR, PRIMARY, SUBTLE, CYAN, GREEN_BRIGHT, BLUE_BRIGHT
 
 
 class CommandRouter:

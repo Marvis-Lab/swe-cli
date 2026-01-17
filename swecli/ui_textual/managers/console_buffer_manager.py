@@ -3,18 +3,18 @@
 from __future__ import annotations
 
 import re
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from rich.text import Text
+
+if TYPE_CHECKING:
+    from swecli.ui_textual.chat_app import SWECLIChatApp
 
 
 class ConsoleBufferManager:
     """Handles buffering and suppression of console output duplicates."""
 
-    def __init__(self, app: "SWECLIChatApp") -> None:
-        from typing import TYPE_CHECKING
-        if TYPE_CHECKING:  # pragma: no cover
-            pass
+    def __init__(self, app: SWECLIChatApp) -> None:
         self.app = app
         self._buffering = False
         self._queue: list = []

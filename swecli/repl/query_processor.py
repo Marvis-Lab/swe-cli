@@ -1,11 +1,11 @@
 """Query processing for REPL."""
 
-import json
-from typing import TYPE_CHECKING, Iterable
+from typing import TYPE_CHECKING, Any, Iterable, Optional
 
 from swecli.core.context_engineering.memory import (
-    Reflector,
+    AgentResponse,
     Curator,
+    Reflector,
 )
 from swecli.repl.react_executor import ReactExecutor
 

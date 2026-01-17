@@ -25,6 +25,7 @@ from swecli.ui_textual.style_tokens import GREY, PRIMARY, GREEN_BRIGHT, BLUE_BRI
 
 if TYPE_CHECKING:
     from textual.app import App
+    from textual.strip import Strip
     from textual.timer import Timer
     from swecli.ui_textual.widgets.conversation_log import ConversationLog
     from swecli.ui_textual.components import TipsManager

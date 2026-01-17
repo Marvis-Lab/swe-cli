@@ -226,7 +226,6 @@ class TextualUICallback:
         # After stopping spinner, this blank line is the last line
         # We need to remove it using _truncate_from to properly update widget state
         def write_interrupt_replacing_blank_line():
-            from rich.text import Text
 
             # Check if we have lines and last line is blank
             if hasattr(self.conversation, 'lines') and len(self.conversation.lines) > 0:
@@ -580,7 +579,6 @@ class TextualUICallback:
                 stdout = ""
             stderr = result.get("stderr") or ""
             is_error = not result.get("success", True)
-            exit_code = result.get("exit_code", 1 if is_error else 0)
             command = normalized_args.get("command", "")
 
             # Get working_dir from tool args (Docker subagents inject this with prefix)
