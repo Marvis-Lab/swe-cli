@@ -22,6 +22,8 @@ PLANNING_TOOLS = {
     "find_referencing_symbols",
     # MCP tool discovery (read-only)
     "search_tools",
+    # Skills (read-only - just loads knowledge into context)
+    "invoke_skill",
     # Subagent spawning (subagents handle their own restrictions)
     "spawn_subagent",
     # Task completion (always allowed - agents must signal completion)
@@ -907,6 +909,24 @@ _BUILTIN_TOOL_SCHEMAS: list[dict[str, Any]] = [
                     },
                 },
                 "required": ["query"],
+            },
+        },
+    },
+    # Skills System Tool
+    {
+        "type": "function",
+        "function": {
+            "name": "invoke_skill",
+            "description": "Load a skill's knowledge and instructions into the current conversation context. Skills provide specialized expertise without spawning a separate agent. Use this when you need domain knowledge (coding conventions, best practices, specific tool guidance). Call without skill_name to list available skills.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "skill_name": {
+                        "type": "string",
+                        "description": "Name of the skill to invoke. Can include namespace prefix (e.g., 'git:commit'). Leave empty to list available skills.",
+                    },
+                },
+                "required": [],
             },
         },
     },

@@ -274,10 +274,32 @@ class WebFetchTool:
                 "error": f"Request timeout after {self.timeout / 1000} seconds",
                 "content": None,
             }
-        except Exception as e:
+        except asyncio.CancelledError:
+            # User interrupted (Ctrl+C) - return gracefully
             return {
                 "success": False,
-                "error": f"Failed to fetch URL: {str(e)}",
+                "error": "Request cancelled by user",
+                "content": None,
+            }
+        except KeyboardInterrupt:
+            # Direct keyboard interrupt
+            return {
+                "success": False,
+                "error": "Request cancelled by user",
+                "content": None,
+            }
+        except Exception as e:
+            error_msg = str(e)
+            # Suppress noisy Playwright errors during shutdown
+            if "Target page, context or browser has been closed" in error_msg:
+                return {
+                    "success": False,
+                    "error": "Request cancelled (browser closed)",
+                    "content": None,
+                }
+            return {
+                "success": False,
+                "error": f"Failed to fetch URL: {error_msg}",
                 "content": None,
             }
 

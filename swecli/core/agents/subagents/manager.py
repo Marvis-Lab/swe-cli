@@ -6,7 +6,8 @@ import asyncio
 import logging
 import re
 import shutil
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from enum import Enum
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +16,46 @@ from swecli.models.config import AppConfig
 from .specs import CompiledSubAgent, SubAgentSpec
 
 logger = logging.getLogger(__name__)
+
+
+class AgentSource(str, Enum):
+    """Source of an agent definition."""
+    BUILTIN = "builtin"
+    USER_GLOBAL = "user-global"
+    PROJECT = "project"
+
+
+@dataclass
+class AgentConfig:
+    """Configuration for an agent (builtin or custom).
+
+    Used for building Task tool descriptions and on-demand prompt assembly.
+    """
+    name: str
+    description: str
+    tools: list[str] | str | dict[str, list[str]] = field(default_factory=list)
+    system_prompt: str | None = None
+    skill_path: str | None = None  # For custom agents
+    source: AgentSource = AgentSource.BUILTIN
+    model: str | None = None
+
+    def get_tool_list(self, all_tools: list[str]) -> list[str]:
+        """Resolve tool specification to concrete list.
+
+        Args:
+            all_tools: List of all available tool names
+
+        Returns:
+            Resolved list of tool names for this agent
+        """
+        if self.tools == "*":
+            return all_tools
+        if isinstance(self.tools, list):
+            return self.tools if self.tools else all_tools
+        if isinstance(self.tools, dict) and "exclude" in self.tools:
+            excluded = set(self.tools["exclude"])
+            return [t for t in all_tools if t not in excluded]
+        return all_tools
 
 
 @dataclass
@@ -129,6 +170,60 @@ class SubAgentManager:
         for spec in ALL_SUBAGENTS:
             self.register_subagent(spec)
 
+    def get_agent_configs(self) -> list[AgentConfig]:
+        """Get all agent configurations for Task tool description.
+
+        Returns:
+            List of AgentConfig for all registered agents (builtin and custom)
+        """
+        from .agents import ALL_SUBAGENTS
+
+        configs = []
+        for spec in ALL_SUBAGENTS:
+            config = AgentConfig(
+                name=spec["name"],
+                description=spec["description"],
+                tools=spec.get("tools", []),
+                system_prompt=spec.get("system_prompt"),
+                source=AgentSource.BUILTIN,
+                model=spec.get("model"),
+            )
+            configs.append(config)
+
+        # Include custom agents (added via register_custom_agents)
+        for name, compiled in self._agents.items():
+            # Skip if already in configs (builtin)
+            if any(c.name == name for c in configs):
+                continue
+            # This is a custom agent
+            config = AgentConfig(
+                name=name,
+                description=compiled["description"],
+                tools=compiled.get("tool_names", []),
+                source=AgentSource.USER_GLOBAL,  # Will be updated by register_custom_agents
+            )
+            configs.append(config)
+
+        return configs
+
+    def build_task_tool_description(self) -> str:
+        """Build spawn_subagent tool description from registered agents.
+
+        Returns:
+            Formatted description string for the spawn_subagent tool
+        """
+        lines = [
+            "Spawn a specialized subagent to handle a specific task.",
+            "",
+            "Available agent types:",
+        ]
+        for config in self.get_agent_configs():
+            lines.append(f"- **{config.name}**: {config.description}")
+        lines.append("")
+        lines.append("Use this tool when you need specialized capabilities or ")
+        lines.append("want to delegate complex tasks to a focused agent.")
+        return "\n".join(lines)
+
     def get_subagent(self, name: str) -> CompiledSubAgent | None:
         """Get a registered subagent by name.
 
@@ -155,6 +250,91 @@ class SubAgentManager:
             Dict mapping subagent name to description
         """
         return {name: agent["description"] for name, agent in self._agents.items()}
+
+    def register_custom_agents(self, custom_agents: list[dict]) -> None:
+        """Register custom agents from config files.
+
+        Custom agents can be defined in ~/.swecli/agents.json or <project>/.swecli/agents.json.
+        Each agent definition can specify:
+        - name: Unique agent name (required)
+        - description: Human-readable description (optional)
+        - tools: List of tool names, "*" for all, or {"exclude": [...]} (optional)
+        - skillPath: Path to skill file to use as system prompt (optional)
+        - model: Model override for this agent (optional)
+
+        Args:
+            custom_agents: List of agent definitions from config files
+        """
+        for agent_def in custom_agents:
+            name = agent_def.get("name")
+            if not name:
+                logger.warning("Skipping custom agent without name")
+                continue
+
+            # Skip if already registered (builtin takes priority)
+            if name in self._agents:
+                logger.debug(f"Custom agent '{name}' shadows builtin agent, skipping")
+                continue
+
+            # Build AgentConfig from definition
+            config = AgentConfig(
+                name=name,
+                description=agent_def.get("description", f"Custom agent: {name}"),
+                tools=agent_def.get("tools", "*"),
+                skill_path=agent_def.get("skillPath"),
+                source=AgentSource.USER_GLOBAL if agent_def.get("_source") == "user-global" else AgentSource.PROJECT,
+                model=agent_def.get("model"),
+            )
+
+            # Build system prompt from skill file or use default
+            system_prompt = self._build_custom_agent_prompt(config)
+
+            # Create SubAgentSpec for registration
+            spec: SubAgentSpec = {
+                "name": name,
+                "description": config.description,
+                "system_prompt": system_prompt,
+                "tools": config.get_tool_list(self._all_tool_names),
+            }
+
+            if config.model:
+                spec["model"] = config.model
+
+            # Register the agent
+            self.register_subagent(spec)
+            logger.info(f"Registered custom agent: {name} (source: {config.source.value})")
+
+    def _build_custom_agent_prompt(self, config: AgentConfig) -> str:
+        """Build system prompt for a custom agent.
+
+        Args:
+            config: AgentConfig with skill_path or other config
+
+        Returns:
+            System prompt string
+        """
+        if config.skill_path:
+            # Load skill content from file
+            from pathlib import Path
+            skill_path = Path(config.skill_path).expanduser()
+            if skill_path.exists():
+                try:
+                    content = skill_path.read_text(encoding="utf-8")
+                    # Strip YAML frontmatter if present
+                    if content.startswith("---"):
+                        import re
+                        content = re.sub(r"^---\n.*?\n---\n*", "", content, flags=re.DOTALL)
+                    return content
+                except Exception as e:
+                    logger.warning(f"Failed to load skill file {skill_path}: {e}")
+
+        # Default prompt for custom agents
+        return f"""You are a custom agent named "{config.name}".
+
+{config.description}
+
+Complete the task given to you, using available tools as needed.
+Be thorough and provide a clear summary when done."""
 
     def _is_docker_available(self) -> bool:
         """Check if Docker is available on the system."""

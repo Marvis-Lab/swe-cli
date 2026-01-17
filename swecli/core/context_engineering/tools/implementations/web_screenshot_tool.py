@@ -147,10 +147,28 @@ class WebScreenshotTool:
                 "screenshot_path": None,
                 "pdf_path": None,
             }
-        except Exception as e:
+        except KeyboardInterrupt:
             return {
                 "success": False,
-                "error": f"Failed to capture screenshot: {str(e)}",
+                "error": "Screenshot capture cancelled by user",
+                "url": url,
+                "screenshot_path": None,
+                "pdf_path": None,
+            }
+        except Exception as e:
+            error_msg = str(e)
+            # Suppress noisy Playwright errors during shutdown
+            if "Target page, context or browser has been closed" in error_msg:
+                return {
+                    "success": False,
+                    "error": "Screenshot capture cancelled (browser closed)",
+                    "url": url,
+                    "screenshot_path": None,
+                    "pdf_path": None,
+                }
+            return {
+                "success": False,
+                "error": f"Failed to capture screenshot: {error_msg}",
                 "url": url,  # Include normalized URL even on error
                 "screenshot_path": None,
                 "pdf_path": None,
@@ -241,10 +259,28 @@ class WebScreenshotTool:
 
                 return response_data
 
-        except Exception as e:
+        except asyncio.CancelledError:
             return {
                 "success": False,
-                "error": f"Crawl4AI error: {str(e)}",
+                "error": "Screenshot capture cancelled by user",
+                "url": url,
+                "screenshot_path": None,
+                "pdf_path": None,
+            }
+        except Exception as e:
+            error_msg = str(e)
+            # Suppress noisy Playwright errors during shutdown
+            if "Target page, context or browser has been closed" in error_msg:
+                return {
+                    "success": False,
+                    "error": "Screenshot capture cancelled (browser closed)",
+                    "url": url,
+                    "screenshot_path": None,
+                    "pdf_path": None,
+                }
+            return {
+                "success": False,
+                "error": f"Crawl4AI error: {error_msg}",
                 "url": url,  # Include normalized URL even on error
                 "screenshot_path": None,
                 "pdf_path": None,

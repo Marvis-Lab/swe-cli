@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Union
+from typing import Any, Union, TYPE_CHECKING
 
 from swecli.core.runtime import OperationMode
 from swecli.core.context_engineering.tools.context import ToolExecutionContext
@@ -17,6 +17,9 @@ from swecli.core.context_engineering.tools.handlers.todo_handler import TodoHand
 from swecli.core.context_engineering.tools.handlers.mcp_config_handler import MCPConfigHandler
 from swecli.core.context_engineering.tools.handlers.thinking_handler import ThinkingHandler
 from swecli.core.context_engineering.tools.handlers.search_tools_handler import SearchToolsHandler
+
+if TYPE_CHECKING:
+    from swecli.core.skills import SkillLoader
 
 logger = logging.getLogger(__name__)
 from swecli.core.context_engineering.tools.implementations.pdf_tool import PDFTool
@@ -45,6 +48,8 @@ _PLAN_READ_ONLY_TOOLS = {
     "find_referencing_symbols",
     # MCP tool discovery (read-only)
     "search_tools",
+    # Skills (read-only - just loads knowledge into context)
+    "invoke_skill",
     # Subagent spawning allowed in plan mode (subagents handle their own restrictions)
     "spawn_subagent",
     # Task completion (always allowed - agents must signal completion)
@@ -87,6 +92,7 @@ class ToolRegistry:
         self._pdf_tool = PDFTool()
         self._task_complete_tool = TaskCompleteTool()
         self._subagent_manager: Union[Any, None] = None
+        self._skill_loader: Union["SkillLoader", None] = None
 
         # Token-efficient MCP tool discovery
         # Only tools in this set will have their schemas included in LLM context
@@ -141,6 +147,8 @@ class ToolRegistry:
             "task_complete": self._execute_task_complete,
             # Thinking/reasoning tool
             "think": lambda args, ctx=None: self.thinking_handler.add_thinking(args.get("content", "")),
+            # Skills system tool
+            "invoke_skill": self._handle_invoke_skill,
         }
 
     def set_subagent_manager(self, manager: Any) -> None:
@@ -158,6 +166,22 @@ class ToolRegistry:
             SubAgentManager instance or None
         """
         return self._subagent_manager
+
+    def set_skill_loader(self, loader: "SkillLoader") -> None:
+        """Set the skill loader for invoke_skill tool.
+
+        Args:
+            loader: SkillLoader instance
+        """
+        self._skill_loader = loader
+
+    def get_skill_loader(self) -> Union["SkillLoader", None]:
+        """Get the skill loader.
+
+        Returns:
+            SkillLoader instance or None
+        """
+        return self._skill_loader
 
     # ===== Token-Efficient MCP Tool Discovery =====
 
@@ -575,3 +599,45 @@ class ToolRegistry:
         status = arguments.get("status", "success")
 
         return self._task_complete_tool.execute(summary=summary, status=status)
+
+    def _handle_invoke_skill(self, arguments: dict[str, Any], context: Any = None) -> dict[str, Any]:
+        """Execute the invoke_skill tool to load skill content into context.
+
+        Args:
+            arguments: Dict with 'skill_name' key
+            context: Tool execution context (unused)
+
+        Returns:
+            Result with skill content or error
+        """
+        if not self._skill_loader:
+            return {
+                "success": False,
+                "error": "Skills system not configured. invoke_skill tool unavailable.",
+                "output": None,
+            }
+
+        skill_name = arguments.get("skill_name", "")
+        if not skill_name:
+            # List available skills if no name provided
+            available = self._skill_loader.get_skill_names()
+            return {
+                "success": True,
+                "output": f"Available skills: {', '.join(available) if available else 'None'}",
+            }
+
+        skill = self._skill_loader.load_skill(skill_name)
+        if not skill:
+            available = self._skill_loader.get_skill_names()
+            return {
+                "success": False,
+                "error": f"Skill not found: '{skill_name}'. Available: {', '.join(available) if available else 'None'}",
+                "output": None,
+            }
+
+        return {
+            "success": True,
+            "output": f"Loaded skill: {skill.metadata.name}\n\n{skill.content}",
+            "skill_name": skill.metadata.name,
+            "skill_namespace": skill.metadata.namespace,
+        }
