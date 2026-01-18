@@ -4,10 +4,23 @@ from __future__ import annotations
 
 import json
 import subprocess
+import os
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Set
 
 from .token_monitor import ContextTokenMonitor
+
+IGNORED_DIRS = {
+    "node_modules",
+    "__pycache__",
+    ".git",
+    "venv",
+    "build",
+    "dist",
+    ".venv",
+    ".idea",
+    ".vscode",
+}
 
 
 class CodebaseIndexer:
@@ -17,8 +30,10 @@ class CodebaseIndexer:
         self.working_dir = Path(working_dir or Path.cwd())
         self.token_monitor = ContextTokenMonitor()
         self.target_tokens = 3000
+        self._file_cache: Optional[List[Path]] = None
 
     def generate_index(self, max_tokens: int = 3000) -> str:
+        self._ensure_cache()
         sections = []
         sections.append(f"# {self.working_dir.name}\n")
         sections.append(self._generate_overview())
@@ -35,21 +50,26 @@ class CodebaseIndexer:
             content = self._compress_content(content, max_tokens)
         return content
 
+    def _ensure_cache(self) -> None:
+        """Populate the file cache if it's empty."""
+        if self._file_cache is not None:
+            return
+
+        self._file_cache = []
+        for root, dirs, files in os.walk(self.working_dir):
+            # Modify dirs in-place to skip ignored directories
+            dirs[:] = [d for d in dirs if d not in IGNORED_DIRS]
+
+            for file in files:
+                self._file_cache.append(Path(root) / file)
+
     def _generate_overview(self) -> str:
+        self._ensure_cache()
         lines = ["## Overview\n"]
-        try:
-            result = subprocess.run(
-                ["find", ".", "-type", "f"],
-                capture_output=True,
-                text=True,
-                cwd=self.working_dir,
-                timeout=5,
-            )
-            if result.returncode == 0:
-                file_count = len(result.stdout.strip().split("\n"))
-                lines.append(f"**Total Files:** {file_count}")
-        except Exception:
-            pass
+
+        # Use cached file count
+        if self._file_cache is not None:
+            lines.append(f"**Total Files:** {len(self._file_cache)}")
 
         readme_path = self._find_readme()
         if readme_path:
@@ -67,13 +87,16 @@ class CodebaseIndexer:
     def _generate_structure(self) -> str:
         lines = ["## Structure\n", "```"]
         try:
+            # We keep the subprocess call for tree as it handles visual structure well,
+            # but ensure we use the same ignore list.
+            ignore_pattern = "|".join(IGNORED_DIRS)
             result = subprocess.run(
                 [
                     "tree",
                     "-L",
                     "2",
                     "-I",
-                    "node_modules|__pycache__|.git|venv|build|dist",
+                    ignore_pattern,
                 ],
                 capture_output=True,
                 text=True,
@@ -96,6 +119,7 @@ class CodebaseIndexer:
         return "\n".join(lines)
 
     def _generate_key_files(self) -> str:
+        self._ensure_cache()
         lines = ["## Key Files\n"]
         key_patterns = {
             "Main": ["main.py", "index.js", "app.py", "server.py", "__init__.py"],
@@ -179,28 +203,76 @@ class CodebaseIndexer:
         return None
 
     def _find_files(self, patterns: List[str]) -> List[Path]:
+        self._ensure_cache()
         matches: List[Path] = []
+        if self._file_cache is None:
+            return matches
+
         for pattern in patterns:
-            matches.extend(self.working_dir.glob(f"**/{pattern}"))
-        return matches
+            # If pattern ends with /, it matches directories.
+            # But _file_cache only contains files.
+            # Logic in original code:
+            # matches.extend(self.working_dir.glob(f"**/{pattern}"))
+
+            # If pattern is like "docs/", glob would match directories.
+            # But my cache is only files.
+            # The usage in _generate_key_files: "tests/", "docs/"
+
+            # We need to filter files that are UNDER these directories.
+
+            is_dir_pattern = pattern.endswith("/")
+            clean_pattern = pattern.rstrip("/")
+
+            for file_path in self._file_cache:
+                rel_path = file_path.relative_to(self.working_dir)
+
+                if is_dir_pattern:
+                    # Check if file is inside the directory
+                    # e.g. pattern "tests/", file "tests/foo.py" -> rel_path "tests/foo.py"
+                    # We check if any part of the path matches clean_pattern
+                    if clean_pattern in rel_path.parts:
+                         matches.append(file_path)
+                else:
+                    # File pattern match
+                    # glob matches recursively with **
+                    # Here we can use match() on the path
+                    if file_path.match(pattern) or file_path.match(f"**/{pattern}"):
+                         matches.append(file_path)
+
+        # Deduplicate matches while preserving order
+        unique_matches = []
+        seen = set()
+        for m in matches:
+            if m not in seen:
+                unique_matches.append(m)
+                seen.add(m)
+
+        return unique_matches
 
     def _basic_structure(self) -> str:
-        try:
-            result = subprocess.run(
-                ["ls", "-R"],
-                capture_output=True,
-                text=True,
-                cwd=self.working_dir,
-                timeout=5,
-            )
-            if result.returncode == 0:
-                output = result.stdout.strip()
-                if len(output) > 1200:
-                    output = "\n".join(output.split("\n")[:40]) + "\n... (truncated)"
-                return output
-        except Exception:
-            pass
-        return "(Unable to generate structure)"
+        # Replaced ls -R with internal walk to be consistent (and we already have it in cache usually,
+        # but _basic_structure is fallback for structure visualization)
+        # But _basic_structure formats output differently than cache list.
+        # Let's keep it simple and use cache if available to simulate tree?
+        # Constructing a tree string from list of files is complex.
+        # Let's stick to a simplified listing if tree fails.
+
+        self._ensure_cache()
+        if self._file_cache is None:
+             return "(Unable to generate structure)"
+
+        # Just list top level dirs and files and maybe one level deep
+        # Or just list the first N files from cache
+        lines = []
+        count = 0
+        for f in self._file_cache:
+            rel = f.relative_to(self.working_dir)
+            lines.append(str(rel))
+            count += 1
+            if count > 40:
+                lines.append("... (truncated)")
+                break
+        return "\n".join(lines)
 
     def _compress_content(self, content: str, max_tokens: int) -> str:
         paragraphs = content.split("\n\n")
