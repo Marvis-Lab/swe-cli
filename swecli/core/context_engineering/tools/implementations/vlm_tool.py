@@ -53,7 +53,7 @@ class VLMTool:
                 return base64.b64encode(image_file.read()).decode("utf-8")
         except FileNotFoundError:
             return None
-        except Exception as e:
+        except Exception:
             return None
 
     def analyze_image(
@@ -355,8 +355,6 @@ class VLMTool:
         Returns:
             Result dictionary
         """
-        url = "https://api.anthropic.com/v1/messages"
-
         # Anthropic requires downloading the image and base64 encoding
         # For now, we'll just return an error suggesting a URL-based approach
         # This would need enhancement to support Anthropic's format properly

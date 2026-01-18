@@ -198,9 +198,6 @@ class PDFTool(BaseTool):
             r"^(?:(\d+\.?\s*)?)(Appendix|Appendices)\s*$",
         ]
 
-        # Combined pattern
-        combined_pattern = "|".join(f"({p})" for p in section_patterns)
-
         sections = []
         lines = content.split("\n")
         current_section = None

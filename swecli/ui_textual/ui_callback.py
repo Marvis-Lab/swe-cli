@@ -226,7 +226,6 @@ class TextualUICallback:
         # After stopping spinner, this blank line is the last line
         # We need to remove it using _truncate_from to properly update widget state
         def write_interrupt_replacing_blank_line():
-            from rich.text import Text
 
             # Check if we have lines and last line is blank
             if hasattr(self.conversation, 'lines') and len(self.conversation.lines) > 0:

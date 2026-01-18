@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path, PurePath
+from pathlib import PurePath
 from typing import Any, Mapping, Tuple
 
 from rich.text import Text

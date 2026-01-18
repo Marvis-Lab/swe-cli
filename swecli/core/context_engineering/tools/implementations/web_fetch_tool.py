@@ -9,7 +9,7 @@ from typing import Any, Optional, Sequence, TYPE_CHECKING
 # Lazy import crawl4ai to avoid Pydantic deprecation warnings at startup
 # These imports are done inside methods that use them
 if TYPE_CHECKING:
-    from crawl4ai import AsyncWebCrawler, BrowserConfig, CacheMode, CrawlerRunConfig
+    pass
 
 from swecli.models.config import AppConfig
 

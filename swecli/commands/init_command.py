@@ -14,7 +14,6 @@ class InitCommandArgs(BaseModel):
     """Arguments for /init command."""
 
     path: Path = Path.cwd()
-    skip_patterns: list[str] = [".git", "node_modules", "__pycache__", "venv", ".venv", "build", "dist"]
 
 
 class InitCommandHandler:
