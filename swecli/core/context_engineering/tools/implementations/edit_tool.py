@@ -327,22 +327,9 @@ class EditTool(BaseTool):
                     operation_id=operation.id if operation else None,
                 )
 
-            # Build old and new content
-            original = "".join(lines)
+            # Build old content from lines
             old_lines = lines[line_start - 1 : line_end]
             old_content = "".join(old_lines)
-
-            # Replace lines
-            new_lines = (
-                lines[: line_start - 1]
-                + [new_content if not new_content.endswith("\n") else new_content]
-                + lines[line_end:]
-            )
-
-            if not new_content.endswith("\n") and line_end < len(lines):
-                new_lines[line_start - 1] += "\n"
-
-            modified = "".join(new_lines)
 
             # Use the main edit_file method
             return self.edit_file(

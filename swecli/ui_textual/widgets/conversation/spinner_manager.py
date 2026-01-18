@@ -5,9 +5,7 @@ import threading
 import time
 from typing import Any
 
-from rich.console import Console
 from rich.text import Text
-from textual.geometry import Size
 from textual.strip import Strip
 
 from swecli.ui_textual.style_tokens import GREY

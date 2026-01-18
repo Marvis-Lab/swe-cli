@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import sys
-from datetime import date
 from typing import Any, TYPE_CHECKING
 
 from swecli.core.agents.prompts import load_prompt

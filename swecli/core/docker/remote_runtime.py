@@ -161,7 +161,7 @@ class RemoteRuntime:
             return response.json()
         except httpx.ConnectError as e:
             raise ConnectionError(self.host, self.port, str(e))
-        except httpx.TimeoutException as e:
+        except httpx.TimeoutException:
             raise CommandTimeoutError(self.timeout, endpoint)
 
     async def _get(self, endpoint: str) -> dict[str, Any]:

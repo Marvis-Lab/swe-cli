@@ -10,7 +10,7 @@ from rich.table import Table
 from rich import box
 
 from swecli.repl.commands.base import CommandHandler, CommandResult
-from swecli.ui_textual.style_tokens import CYAN, SUBTLE, ACCENT, PRIMARY, GREEN_BRIGHT, ERROR
+from swecli.ui_textual.style_tokens import CYAN, SUBTLE, GREEN_BRIGHT, ERROR
 
 if TYPE_CHECKING:
     from swecli.core.runtime import ConfigManager
