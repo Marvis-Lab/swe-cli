@@ -62,11 +62,6 @@ class AgentsCommands(CommandHandler):
         Returns:
             CommandResult with execution status
         """
-        if args:
-            self.console.print(f"[cyan]⏺[/cyan] agents {args}")
-        else:
-            self.console.print("[cyan]⏺[/cyan] agents")
-
         if not args:
             return self._show_menu()
 
@@ -87,8 +82,8 @@ class AgentsCommands(CommandHandler):
 
     def _show_menu(self) -> CommandResult:
         """Show available agent commands."""
-        self.console.print("  ⎿  [cyan]/agents create[/cyan]  Create a new custom agent")
-        self.console.print("     [cyan]/agents list[/cyan]    List all available agents")
+        self.console.print("  [cyan]/agents create[/cyan]  Create a new custom agent")
+        self.console.print("  [cyan]/agents list[/cyan]    List all available agents")
 
         return CommandResult(success=True)
 
