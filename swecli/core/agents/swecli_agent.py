@@ -389,6 +389,12 @@ class SwecliAgent(BaseAgent):
                 # Append LLM-only suffix (e.g., retry prompts) - hidden from UI
                 if result.get("_llm_suffix"):
                     tool_result += result["_llm_suffix"]
+
+                # For think tool, replace output with instruction to proceed naturally
+                # This prevents the model from treating its thinking as feedback
+                if tool_name == "think":
+                    tool_result = "[Thinking captured. Now respond directly to the user.]"
+
                 messages.append(
                     {
                         "role": "tool",
