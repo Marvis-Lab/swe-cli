@@ -63,9 +63,9 @@ class AgentsCommands(CommandHandler):
             CommandResult with execution status
         """
         if args:
-            self.console.print(f"[cyan]⏺[/cyan] /agents {args}")
+            self.console.print(f"[cyan]⏺[/cyan] agents {args}")
         else:
-            self.console.print("[cyan]⏺[/cyan] /agents")
+            self.console.print("[cyan]⏺[/cyan] agents")
 
         if not args:
             return self._show_menu()
