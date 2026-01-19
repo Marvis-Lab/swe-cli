@@ -14,8 +14,6 @@ class OperationType(str, Enum):
     FILE_EDIT = "file_edit"
     FILE_DELETE = "file_delete"
     BASH_EXECUTE = "bash_execute"
-    GIT_COMMIT = "git_commit"
-    GIT_BRANCH = "git_branch"
 
 
 class OperationStatus(str, Enum):

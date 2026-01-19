@@ -15,8 +15,6 @@ PLANNING_TOOLS = {
     "web_search",  # Web search is read-only
     "list_processes",
     "get_process_output",
-    "list_screenshots",
-    "list_web_screenshots",
     "read_pdf",  # PDF extraction is read-only
     # Symbol tools (read-only)
     "find_symbol",
@@ -679,36 +677,6 @@ _BUILTIN_TOOL_SCHEMAS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
-            "name": "list_screenshots",
-            "description": "List all captured screenshots in the temporary directory. Shows the 10 most recent screenshots with their paths, sizes, and timestamps.",
-            "parameters": {
-                "type": "object",
-                "properties": {},
-                "required": [],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "clear_screenshots",
-            "description": "Clear old screenshots from the temporary directory to free up disk space. By default, keeps the 5 most recent screenshots.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "keep_recent": {
-                        "type": "integer",
-                        "description": "Number of recent screenshots to keep (default: 5)",
-                        "default": 5,
-                    },
-                },
-                "required": [],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
             "name": "analyze_image",
             "description": "Analyze an image using the configured Vision Language Model (VLM). Supports both local image files and online URLs. Only available if user has configured a VLM model via /models command. Use this when user asks to analyze, describe, or extract information from images.",
             "parameters": {
@@ -773,36 +741,6 @@ _BUILTIN_TOOL_SCHEMAS: list[dict[str, Any]] = [
                     },
                 },
                 "required": ["url"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "list_web_screenshots",
-            "description": "List all captured web screenshots in the temporary directory. Shows the 10 most recent web screenshots with their paths, sizes, and timestamps.",
-            "parameters": {
-                "type": "object",
-                "properties": {},
-                "required": [],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "clear_web_screenshots",
-            "description": "Clear old web screenshots from the temporary directory to free up disk space. By default, keeps the 5 most recent web screenshots.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "keep_recent": {
-                        "type": "integer",
-                        "description": "Number of recent web screenshots to keep (default: 5)",
-                        "default": 5,
-                    },
-                },
-                "required": [],
             },
         },
     },

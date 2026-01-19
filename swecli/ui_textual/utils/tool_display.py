@@ -18,28 +18,20 @@ _TOOL_DISPLAY_PARTS: dict[str, tuple[str, str]] = {
     "delete_file": ("Delete", "file"),
     "list_files": ("List", "files"),
     "list_directory": ("List", "directory"),
-    "search_code": ("Search", "code"),
     "search": ("Search", "project"),
-    "run_command": ("Run", "command"),
-    "bash_execute": ("Run", "command"),
-    "get_process_output": ("Output", "process"),
-    "list_processes": ("List", "processes"),
-    "kill_process": ("Stop", "process"),
+    "run_command": ("Bash", "command"),
+    "get_process_output": ("Get Process Output", "process"),
+    "list_processes": ("List Processes", "processes"),
+    "kill_process": ("Kill Process", "process"),
     "fetch_url": ("Fetch", "url"),
     "open_browser": ("Open", "browser"),
     "capture_screenshot": ("Capture", "screenshot"),
-    "list_screenshots": ("List", "screenshots"),
-    "clear_screenshots": ("Clear", "screenshots"),
     "capture_web_screenshot": ("Capture", "page"),
-    "list_web_screenshots": ("List", "pages"),
-    "clear_web_screenshots": ("Clear", "pages"),
     "analyze_image": ("Analyze", "image"),
-    "git_commit": ("Commit", "changes"),
-    "git_branch": ("Branch", "git"),
     "write_todos": ("Create", "todos"),
-    "update_todo": ("Update", "todo"),
-    "complete_todo": ("Complete", "todo"),
-    "list_todos": ("List", "todos"),
+    "update_todo": ("Update Todos", "todo"),
+    "complete_todo": ("Complete Todos", "todo"),
+    "list_todos": ("List Todos", "todos"),
     "spawn_subagent": ("Spawn", "subagent"),
     "docker_start": ("Starting", "Docker container"),
     "docker_stop": ("Stopping", "Docker container"),
@@ -58,10 +50,8 @@ _PRIMARY_ARG_MAP: dict[str, tuple[str, ...]] = {
     "delete_file": ("file_path", "path"),
     "list_files": ("path", "directory"),
     "list_directory": ("path", "directory"),
-    "search_code": ("pattern", "query"),
     "search": ("query",),
     "run_command": ("command",),
-    "bash_execute": ("command",),
     "get_process_output": ("pid", "command"),
     "kill_process": ("pid",),
     "fetch_url": ("url",),
@@ -69,7 +59,6 @@ _PRIMARY_ARG_MAP: dict[str, tuple[str, ...]] = {
     "capture_screenshot": ("target", "path"),
     "capture_web_screenshot": ("url",),
     "analyze_image": ("image_path", "file_path"),
-    "git_commit": ("message",),
 }
 
 _MAX_SUMMARY_LEN = 150
@@ -363,7 +352,7 @@ def format_tool_call(tool_name: str, tool_args: Mapping[str, Any]) -> str:
         return f"Complete ({todo_id})"
 
     # Enhanced formatting for bash/run commands - show working_dir for Docker
-    elif tool_name in ("run_command", "bash_execute") and tool_args:
+    elif tool_name == "run_command" and tool_args:
         command = tool_args.get("command", "")
         working_dir = tool_args.get("working_dir", "")
 

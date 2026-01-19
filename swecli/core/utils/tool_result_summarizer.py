@@ -42,7 +42,7 @@ def summarize_tool_result(tool_name: str, result: Any, error: str | None = None)
         return f"✓ File deleted"
 
     # Search operations
-    if tool_name in ("search", "Grep", "search_code"):
+    if tool_name in ("search", "Grep"):
         if "No matches found" in result_str or not result_str.strip():
             return "✓ Search completed (0 matches)"
         # Try to count matches
@@ -55,7 +55,7 @@ def summarize_tool_result(tool_name: str, result: Any, error: str | None = None)
         return f"✓ Listed directory ({file_count} items)"
 
     # Bash/command execution
-    if tool_name in ("bash_execute", "run_command", "Run"):
+    if tool_name in ("run_command", "Run"):
         lines = result_str.count("\n") + 1 if result_str else 0
         if lines > 10:
             return f"✓ Command executed ({lines} lines of output)"
@@ -71,10 +71,6 @@ def summarize_tool_result(tool_name: str, result: Any, error: str | None = None)
     # Image operations
     if tool_name in ("analyze_image", "Analyze", "capture_screenshot"):
         return f"✓ Image processed successfully"
-
-    # Git operations
-    if tool_name in ("git_commit", "Commit"):
-        return f"✓ Changes committed"
 
     # Thinking tool - preserve full content (it's the model's reasoning)
     # This ensures thinking traces are included in conversation context

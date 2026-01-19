@@ -55,9 +55,7 @@ TOOL_ICONS = {
     "read_file": "📖",
     "list_directory": "📁",
     "delete_file": "🗑️",
-    "bash_execute": "⚡",
-    "git_commit": "💾",
-    "git_branch": "🌿",
+    "run_command": "⚡",
 }
 
 # Status icons

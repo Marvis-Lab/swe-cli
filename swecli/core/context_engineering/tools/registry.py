@@ -44,7 +44,6 @@ _PLAN_READ_ONLY_TOOLS = {
     "web_search",  # Web search is read-only
     "list_processes",
     "get_process_output",
-    "list_screenshots",
     "analyze_image",  # VLM is read-only, safe for planning mode
     "read_pdf",  # PDF extraction is read-only
     # Symbol tools (read-only)
@@ -133,12 +132,8 @@ class ToolRegistry:
             "ask_user": self._ask_user_handler.ask_questions,
             "open_browser": self._open_browser,
             "capture_screenshot": self._screenshot_handler.capture_screenshot,
-            "list_screenshots": lambda args: self._screenshot_handler.list_screenshots(),
-            "clear_screenshots": self._screenshot_handler.clear_screenshots,
             "analyze_image": self._analyze_image,
             "capture_web_screenshot": self._capture_web_screenshot,
-            "list_web_screenshots": lambda args: self._list_web_screenshots(),
-            "clear_web_screenshots": self._clear_web_screenshots,
             "write_todos": self._write_todos,
             "update_todo": self._update_todo,
             "complete_todo": self._complete_todo,
@@ -514,59 +509,6 @@ class ToolRegistry:
             if result.get("pdf_path"):
                 response["pdf_path"] = result.get("pdf_path")
             return response
-        else:
-            return {
-                "success": False,
-                "error": result.get("error", "Unknown error"),
-                "output": None,
-            }
-
-    def _list_web_screenshots(self) -> dict[str, Any]:
-        """Execute the list_web_screenshots tool."""
-        if not self.web_screenshot_tool:
-            return {
-                "success": False,
-                "error": "Web screenshot tool not available",
-                "output": None,
-            }
-        result = self.web_screenshot_tool.list_web_screenshots()
-        if result.get("success"):
-            screenshots = result.get("screenshots", [])
-            if screenshots:
-                output_lines = [f"Found {len(screenshots)} web screenshot(s):"]
-                for ss in screenshots:
-                    output_lines.append(f"  - {ss['name']} ({ss['size_kb']} KB)")
-                output_lines.append(f"\nDirectory: {result.get('directory')}")
-            else:
-                output_lines = ["No web screenshots found"]
-            return {
-                "success": True,
-                "output": "\n".join(output_lines),
-            }
-        else:
-            return {
-                "success": False,
-                "error": result.get("error", "Unknown error"),
-                "output": None,
-            }
-
-    def _clear_web_screenshots(self, arguments: dict[str, Any]) -> dict[str, Any]:
-        """Execute the clear_web_screenshots tool."""
-        if not self.web_screenshot_tool:
-            return {
-                "success": False,
-                "error": "Web screenshot tool not available",
-                "output": None,
-            }
-        result = self.web_screenshot_tool.clear_web_screenshots(**arguments)
-        if result.get("success"):
-            deleted = result.get("deleted_count", 0)
-            kept = result.get("kept_count", 0)
-            output = f"Deleted {deleted} old screenshot(s), kept {kept} recent"
-            return {
-                "success": True,
-                "output": output,
-            }
         else:
             return {
                 "success": False,

@@ -51,7 +51,7 @@ class IterationContext:
 class ReactExecutor:
     """Executes ReAct loop (Reasoning → Acting → Observing)."""
     
-    READ_OPERATIONS = {"read_file", "list_files", "search_code"}
+    READ_OPERATIONS = {"read_file", "list_files", "search"}
     MAX_NUDGE_ATTEMPTS = 3
 
     def __init__(
