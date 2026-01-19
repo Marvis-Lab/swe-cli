@@ -1,4 +1,9 @@
-"""Animated progress bar widget with sequential blue highlight sweep."""
+"""Minimal animated progress bar with subtle luminance wave.
+
+A restrained, precise loading indicator: small dots with a soft
+brightness wave traveling left to right. No white, no glow, no
+decorative effects—just calm, controlled color interpolation.
+"""
 
 from __future__ import annotations
 
@@ -10,40 +15,34 @@ from textual.widgets import Static
 if TYPE_CHECKING:
     from textual.timer import Timer
 
-# Segment character - small dot that reads as bar when repeated
-SEGMENT = "•"
 
-# Blue color palette (dark base to bright highlight)
-BLUE_BASE = "#2a4a6a"      # Resting state - muted dark blue
-BLUE_DIM = "#3a5a7a"       # Slightly brightened
-BLUE_MID = "#4a7090"       # Transitioning
-BLUE_GLOW = "#6090b8"      # Approaching highlight
-BLUE_BRIGHT = "#80b0d8"    # Near peak
-BLUE_HIGHLIGHT = "#a8d0f0" # Peak brightness
+# Dot character - middle dot for pixel-like appearance
+SEGMENT = "·"  # U+00B7 - smaller than bullet, terminal-appropriate
 
-# Bar configuration
-BAR_WIDTH = 40
-HIGHLIGHT_WIDTH = 6  # How many segments are affected by the highlight
-FRAME_INTERVAL_MS = 50  # Smooth, steady timing
+# Muted, low-contrast blue palette
+# Never white, never neon, never glowing
+BLUE_BASE = "#3a4a5a"      # Subdued blue-gray (visible on dark backgrounds)
+BLUE_PEAK = "#5a7a90"      # Slightly brighter (subtle highlight, not glowing)
+
+# Configuration
+BAR_WIDTH = 32             # Compact width
+FRAME_INTERVAL_MS = 60     # Smooth timing
+WAVE_WIDTH = 2             # Tight, focused highlight (1-2 dots)
 
 
 class ProgressBar(Static):
-    """Animated progress bar with sequential highlight sweep.
+    """Minimal progress bar with subtle luminance wave.
 
-    A short horizontal line of evenly spaced segments. A soft blue
-    highlight travels from left to right, with each segment briefly
-    brightening as it passes, then fading back to darker blue.
-    Creates a clear, sequential rhythm emphasizing direction and continuity.
-
-    The progress bar polls app._is_processing to determine when to show/hide,
-    avoiding threading issues from direct show/hide calls.
+    Small dots in a cohesive row. A soft wave travels left to right,
+    each dot subtly brightening then fading back. Constant velocity,
+    no acceleration, no easing—calm and controlled.
     """
 
     def __init__(self, **kwargs) -> None:
         super().__init__("", **kwargs)
         self._animation_timer: Optional["Timer"] = None
         self._poll_timer: Optional["Timer"] = None
-        self._highlight_pos: int = 0
+        self._wave_pos: float = 0.0
         self._visible: bool = False
         self._app: Any = None
 
@@ -74,7 +73,7 @@ class ProgressBar(Static):
             return
 
         self._visible = True
-        self._highlight_pos = 0
+        self._wave_pos = 0.0
         self.display = True
 
         self._animation_timer = self.set_interval(
@@ -96,54 +95,67 @@ class ProgressBar(Static):
             self._animation_timer.stop()
             self._animation_timer = None
 
-        self._highlight_pos = 0
+        self._wave_pos = 0.0
         self.update(" ")
         self.display = False
 
     def _on_frame(self) -> None:
-        """Advance highlight position and render."""
+        """Advance wave position at constant velocity."""
         if not self._visible:
             return
 
-        self._highlight_pos = (self._highlight_pos + 1) % BAR_WIDTH
+        # Constant velocity - no acceleration, no easing
+        self._wave_pos = (self._wave_pos + 0.5) % BAR_WIDTH
         self._render_bar()
 
     def _render_bar(self) -> None:
-        """Render the bar with highlight at current position."""
+        """Render bar with luminance wave."""
         result = Text()
 
         for i in range(BAR_WIDTH):
-            # Calculate distance from highlight center (with wrapping for seamless loop)
-            dist = min(
-                abs(i - self._highlight_pos),
-                abs(i - self._highlight_pos + BAR_WIDTH),
-                abs(i - self._highlight_pos - BAR_WIDTH),
-            )
-
-            # Map distance to color - closer = brighter
-            color = self._get_color(dist)
+            color = self._get_color(i)
             result.append(SEGMENT, style=color)
 
         self.update(result)
 
-    def _get_color(self, distance: int) -> str:
-        """Map distance from highlight to color.
+    def _get_color(self, idx: int) -> str:
+        """Get color for dot based on distance from wave center.
 
-        Creates smooth gradient: peak brightness at center,
-        fading to base color further away.
+        Uses smooth interpolation - dots closer to wave are brighter,
+        those further away fade to base. Narrow highlight, no white.
         """
-        if distance == 0:
-            return BLUE_HIGHLIGHT
-        elif distance == 1:
-            return BLUE_BRIGHT
-        elif distance == 2:
-            return BLUE_GLOW
-        elif distance == 3:
-            return BLUE_MID
-        elif distance <= 5:
-            return BLUE_DIM
-        else:
+        # Distance from wave (with wrapping for seamless loop)
+        dist = min(
+            abs(idx - self._wave_pos),
+            abs(idx - self._wave_pos + BAR_WIDTH),
+            abs(idx - self._wave_pos - BAR_WIDTH),
+        )
+
+        if dist >= WAVE_WIDTH:
             return BLUE_BASE
+
+        # Smooth falloff: 1.0 at center, 0.0 at edge
+        # Using simple linear falloff for constant, controlled feel
+        t = 1.0 - (dist / WAVE_WIDTH)
+
+        # Interpolate from base to peak
+        return self._lerp_hex(BLUE_BASE, BLUE_PEAK, t)
+
+    def _lerp_hex(self, color1: str, color2: str, t: float) -> str:
+        """Linear interpolation between two hex colors."""
+        r1, g1, b1 = self._hex_to_rgb(color1)
+        r2, g2, b2 = self._hex_to_rgb(color2)
+
+        r = int(r1 + (r2 - r1) * t)
+        g = int(g1 + (g2 - g1) * t)
+        b = int(b1 + (b2 - b1) * t)
+
+        return f"#{r:02x}{g:02x}{b:02x}"
+
+    def _hex_to_rgb(self, hex_color: str) -> tuple[int, int, int]:
+        """Convert hex to RGB tuple."""
+        h = hex_color.lstrip("#")
+        return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
 
     def on_unmount(self) -> None:
         """Clean up when widget is removed."""

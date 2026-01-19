@@ -61,28 +61,33 @@ class MCPCommandController:
             spinner_service.stop(spinner_id, success=True, result_message=f"Already connected ({len(tools)} tools)")
             return
 
-        # Start spinner
+        # Start spinner IMMEDIATELY on UI thread for instant feedback
         spinner_id = spinner_service.start(f"MCP ({server_name})")
 
-        # Run connection (we're already in a background thread from runner's processor)
-        try:
-            success = mcp_manager.connect_sync(server_name)
-            error_msg = None
-        except Exception as e:
-            success = False
-            error_msg = f"{type(e).__name__}: {e}"
+        # Run connection in background thread to avoid blocking UI
+        def _do_connect():
+            try:
+                success = mcp_manager.connect_sync(server_name)
+                error_msg = None
+            except Exception as e:
+                success = False
+                error_msg = f"{type(e).__name__}: {e}"
 
-        # Complete progress with result
-        if error_msg:
-            spinner_service.stop(spinner_id, success=False, result_message=error_msg)
-        elif success:
-            tools = mcp_manager.get_server_tools(server_name)
-            spinner_service.stop(spinner_id, success=True, result_message=f"Connected ({len(tools)} tools)")
-        else:
-            spinner_service.stop(spinner_id, success=False, result_message="Connection failed")
+            # Stop spinner when done (spinner_service handles thread dispatch)
+            if error_msg:
+                spinner_service.stop(spinner_id, success=False, result_message=error_msg)
+            elif success:
+                tools = mcp_manager.get_server_tools(server_name)
+                spinner_service.stop(spinner_id, success=True, result_message=f"Connected ({len(tools)} tools)")
+            else:
+                spinner_service.stop(spinner_id, success=False, result_message="Connection failed")
 
-        if success and hasattr(self.repl, '_refresh_runtime_tooling'):
-            self.repl._refresh_runtime_tooling()
+            # Refresh tools after connection
+            if success and hasattr(self.repl, '_refresh_runtime_tooling'):
+                self.repl._refresh_runtime_tooling()
+
+        thread = threading.Thread(target=_do_connect, daemon=True)
+        thread.start()
 
     def handle_view(self, command: str) -> None:
         """Handle /mcp view command to show MCP server modal.

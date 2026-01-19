@@ -37,9 +37,10 @@ class MessageProcessor:
         
         # Queue holds tuples of (message, needs_display)
         self._pending: queue.Queue[tuple[str, bool]] = queue.Queue()
-        
+
         self._processor_thread: threading.Thread | None = None
         self._processor_stop = threading.Event()
+        self._message_ready = threading.Event()  # Signal when message is enqueued
         
         # Callback to update UI queue indicator
         self._queue_update_callback: Callable[[int], None] | None = None
@@ -66,6 +67,7 @@ class MessageProcessor:
         """
         item = (text, needs_display)
         self._pending.put_nowait(item)
+        self._message_ready.set()  # Wake up processor immediately
         self._notify_queue_update(from_ui_thread=True)
 
     def start(self) -> None:
@@ -85,6 +87,7 @@ class MessageProcessor:
         """Stop the background processor thread."""
         if self._processor_thread is not None:
             self._processor_stop.set()
+            self._message_ready.set()  # Wake up thread so it can exit
             self._processor_thread.join(timeout=2.0)
             self._processor_thread = None
 
@@ -103,8 +106,12 @@ class MessageProcessor:
         """Main processing loop running in background thread."""
         while not self._processor_stop.is_set():
             try:
+                # Wait for message signal or periodic check for stop
+                self._message_ready.wait(timeout=0.5)
+                self._message_ready.clear()
+
                 try:
-                    message, needs_display = self._pending.get(timeout=0.5)
+                    message, needs_display = self._pending.get_nowait()
                 except queue.Empty:
                     continue
 
