@@ -161,3 +161,7 @@ deepagents/
 WARP.md
 paper2code/
 Paper2Code/
+.claude/
+claude-code-docs/
+SWE-agent/
+SWE-ReX/
