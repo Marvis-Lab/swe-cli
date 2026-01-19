@@ -12,6 +12,7 @@ PLANNING_TOOLS = {
     "list_files",
     "search",  # Unified: type="text" (ripgrep) or "ast" (ast-grep)
     "fetch_url",
+    "web_search",  # Web search is read-only
     "list_processes",
     "get_process_output",
     "list_screenshots",
@@ -389,6 +390,140 @@ _BUILTIN_TOOL_SCHEMAS: list[dict[str, Any]] = [
                     },
                 },
                 "required": ["url"],
+            },
+        },
+    },
+    # ===== Web Search Tool =====
+    {
+        "type": "function",
+        "function": {
+            "name": "web_search",
+            "description": "Search the web for current information using DuckDuckGo. Returns results with titles, URLs, and snippets. Use this for finding up-to-date information, documentation, tutorials, and answers to questions. Results are formatted as markdown links for easy reference. You MUST include a 'Sources:' section at the end of your response listing the URLs used.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "The search query to use. Be specific and include relevant keywords.",
+                    },
+                    "max_results": {
+                        "type": "integer",
+                        "description": "Maximum number of results to return (default: 10)",
+                        "default": 10,
+                    },
+                    "allowed_domains": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Only include search results from these domains (e.g., ['docs.python.org', 'stackoverflow.com'])",
+                    },
+                    "blocked_domains": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Never include search results from these domains",
+                    },
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    # ===== Notebook Edit Tool =====
+    {
+        "type": "function",
+        "function": {
+            "name": "notebook_edit",
+            "description": "Edit cells in a Jupyter notebook (.ipynb file). Supports replacing cell content, inserting new cells, and deleting cells. Cells can be identified by cell_id or cell_number (0-indexed). For insert mode, the new cell is inserted after the specified cell or at the given position.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "notebook_path": {
+                        "type": "string",
+                        "description": "Absolute path to the Jupyter notebook file (.ipynb)",
+                    },
+                    "new_source": {
+                        "type": "string",
+                        "description": "New source content for the cell. Required for replace and insert modes.",
+                    },
+                    "cell_id": {
+                        "type": "string",
+                        "description": "ID of the cell to edit. For insert mode, new cell is inserted after this cell.",
+                    },
+                    "cell_number": {
+                        "type": "integer",
+                        "description": "0-indexed cell position. Alternative to cell_id. For insert mode, new cell is inserted at this position.",
+                    },
+                    "cell_type": {
+                        "type": "string",
+                        "enum": ["code", "markdown"],
+                        "description": "Cell type. Required for insert mode, optional for replace mode.",
+                    },
+                    "edit_mode": {
+                        "type": "string",
+                        "enum": ["replace", "insert", "delete"],
+                        "default": "replace",
+                        "description": "Operation type: replace (update existing cell), insert (add new cell), or delete (remove cell).",
+                    },
+                },
+                "required": ["notebook_path", "new_source"],
+            },
+        },
+    },
+    # ===== Ask User Question Tool =====
+    {
+        "type": "function",
+        "function": {
+            "name": "ask_user",
+            "description": "Ask the user structured questions with multiple-choice options. Use this when you need to gather user preferences, clarify requirements, get decisions on implementation choices, or offer choices about direction. Users can select from predefined options or provide custom 'Other' input. Supports 1-4 questions with 2-4 options each.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "questions": {
+                        "type": "array",
+                        "description": "List of questions to ask (1-4 questions)",
+                        "minItems": 1,
+                        "maxItems": 4,
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "question": {
+                                    "type": "string",
+                                    "description": "The complete question to ask. Should be clear and end with a question mark.",
+                                },
+                                "header": {
+                                    "type": "string",
+                                    "description": "Short label displayed as a chip/tag (max 12 chars). E.g., 'Auth method', 'Library'.",
+                                    "maxLength": 12,
+                                },
+                                "options": {
+                                    "type": "array",
+                                    "description": "Available choices (2-4 options). An 'Other' option is added automatically.",
+                                    "minItems": 2,
+                                    "maxItems": 4,
+                                    "items": {
+                                        "type": "object",
+                                        "properties": {
+                                            "label": {
+                                                "type": "string",
+                                                "description": "Display text for the option (1-5 words).",
+                                            },
+                                            "description": {
+                                                "type": "string",
+                                                "description": "Explanation of what this option means or implies.",
+                                            },
+                                        },
+                                        "required": ["label", "description"],
+                                    },
+                                },
+                                "multiSelect": {
+                                    "type": "boolean",
+                                    "default": False,
+                                    "description": "If true, allow selecting multiple options instead of just one.",
+                                },
+                            },
+                            "required": ["question", "header", "options"],
+                        },
+                    },
+                },
+                "required": ["questions"],
             },
         },
     },
@@ -975,6 +1110,35 @@ _BUILTIN_TOOL_SCHEMAS: list[dict[str, Any]] = [
                     },
                 },
                 "required": [],
+            },
+        },
+    },
+    # ===== Task Output Tool =====
+    {
+        "type": "function",
+        "function": {
+            "name": "get_subagent_output",
+            "description": "Retrieve output from a running or completed background subagent task. Use this to check on the status and results of subagents launched with run_in_background=true.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "task_id": {
+                        "type": "string",
+                        "description": "The task ID returned when the background subagent was spawned",
+                    },
+                    "block": {
+                        "type": "boolean",
+                        "description": "Whether to wait for completion. Set to false for non-blocking status check.",
+                        "default": True,
+                    },
+                    "timeout": {
+                        "type": "integer",
+                        "description": "Maximum wait time in milliseconds (max 600000)",
+                        "default": 30000,
+                        "maximum": 600000,
+                    },
+                },
+                "required": ["task_id"],
             },
         },
     },

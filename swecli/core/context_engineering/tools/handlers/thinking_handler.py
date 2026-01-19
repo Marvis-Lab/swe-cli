@@ -27,7 +27,7 @@ class ThinkingHandler:
         """Initialize thinking handler with empty state."""
         self._blocks: List[ThinkingBlock] = []
         self._next_id = 1
-        self._visible = False  # Default OFF - prevents tool_choice="required" on first iteration
+        self._visible = True  # Default ON - shows thinking content by default
 
     def add_thinking(self, content: str) -> dict:
         """Add a thinking block.
