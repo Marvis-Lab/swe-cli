@@ -36,8 +36,19 @@ def dump_pickle(obj: Any, path: str) -> None:
         pickle.dump(obj, f)
 
 
-def getstate(obj: Any) -> Any:
-    """Get state of an object for pickling."""
+def getstate(obj_or_cls: Any, instance: Any | None = None, transient_properties: list[str] | None = None) -> Any:
+    """
+    Get state of an object for pickling.
+    Supports both single argument (obj) and 3-argument (cls, instance, transient_properties) signatures.
+    """
+    if instance is not None:
+        state = instance.__dict__.copy()
+        if transient_properties:
+            for prop in transient_properties:
+                state.pop(prop, None)
+        return state
+
+    obj = obj_or_cls
     if hasattr(obj, "__getstate__"):
         return obj.__getstate__()
     return obj.__dict__.copy() if hasattr(obj, "__dict__") else None

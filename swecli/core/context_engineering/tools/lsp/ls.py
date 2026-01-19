@@ -91,8 +91,13 @@ class LSPFileBuffer:
 class DocumentSymbols:
     # IMPORTANT: Instances of this class are persisted in the high-level document symbol cache
 
-    def __init__(self, root_symbols: list[ls_types.UnifiedSymbolInformation]):
+    def __init__(
+        self,
+        root_symbols: list[ls_types.UnifiedSymbolInformation],
+        file_range: ls_types.Range | None = None,
+    ):
         self.root_symbols = root_symbols
+        self.file_range = file_range
         self._all_symbols: list[ls_types.UnifiedSymbolInformation] | None = None
 
     def __getstate__(self) -> dict:
@@ -144,7 +149,7 @@ class SolidLanguageServer(ABC):
     """
     RAW_DOCUMENT_SYMBOL_CACHE_FILENAME = "raw_document_symbols.pkl"
     RAW_DOCUMENT_SYMBOL_CACHE_FILENAME_LEGACY_FALLBACK = "document_symbols_cache_v23-06-25.pkl"
-    DOCUMENT_SYMBOL_CACHE_VERSION = 3
+    DOCUMENT_SYMBOL_CACHE_VERSION = 4
     DOCUMENT_SYMBOL_CACHE_FILENAME = "document_symbols.pkl"
 
     # To be overridden and extended by subclasses
@@ -283,8 +288,10 @@ class SolidLanguageServer(ABC):
         self._raw_document_symbols_cache_is_modified: bool = False
         self._load_raw_document_symbols_cache()
         # * high-level document symbols cache
-        self._document_symbols_cache: dict[str, tuple[str, DocumentSymbols]] = {}
-        """maps relative file paths to a tuple of (file_content_hash, document_symbols)"""
+        self._document_symbols_cache: dict[
+            str, tuple[str, float, ls_types.Range | None, DocumentSymbols]
+        ] = {}
+        """maps relative file paths to a tuple of (file_content_hash, mtime, file_range, document_symbols)"""
         self._document_symbols_cache_is_modified: bool = False
         self._load_document_symbols_cache()
 
@@ -964,7 +971,9 @@ class SolidLanguageServer(ABC):
             with self.open_file(relative_file_path) as opened_file_data:
                 return get_raw_document_symbols(opened_file_data)
 
-    def request_document_symbols(self, relative_file_path: str, file_buffer: LSPFileBuffer | None = None) -> DocumentSymbols:
+    def request_document_symbols(
+        self, relative_file_path: str, file_buffer: LSPFileBuffer | None = None
+    ) -> DocumentSymbols:
         """
         Retrieves the collection of symbols in the given file
 
@@ -977,17 +986,73 @@ class SolidLanguageServer(ABC):
             where the parent attribute will be the file symbol which in turn may have a package symbol as parent.
             If you need a symbol tree that contains file symbols as well, you should use `request_full_symbol_tree` instead.
         """
+        # Optimize: Check mtime cache if file_buffer is not provided
+        abs_path = os.path.join(self.repository_root_path, relative_file_path)
+        if file_buffer is None and os.path.exists(abs_path):
+            try:
+                mtime = os.path.getmtime(abs_path)
+                cache_key = relative_file_path
+                cached_entry = self._document_symbols_cache.get(cache_key)
+                if cached_entry:
+                    # Handle version 4 cache (hash, mtime, range, symbols)
+                    if len(cached_entry) == 4:
+                        (
+                            cached_hash,
+                            cached_mtime,
+                            cached_range,
+                            cached_symbols,
+                        ) = cached_entry
+                        if abs(cached_mtime - mtime) < 0.001:  # Float comparison
+                            log.debug(
+                                "Returning cached document symbols for %s (mtime match)",
+                                relative_file_path,
+                            )
+                            return cached_symbols
+            except OSError:
+                pass  # Fallback to standard flow
+
         with self._open_file_context(relative_file_path, file_buffer) as file_data:
             # check if the desired result is cached
             cache_key = relative_file_path
-            file_hash_and_result = self._document_symbols_cache.get(cache_key)
-            if file_hash_and_result is not None:
-                file_hash, document_symbols = file_hash_and_result
+            cached_entry = self._document_symbols_cache.get(cache_key)
+            if cached_entry is not None:
+                # Handle both version 3 and 4 cache entries during session
+                cached_range = None
+                if len(cached_entry) == 4:
+                    file_hash, _, cached_range, document_symbols = cached_entry
+                else:
+                    file_hash, document_symbols = cached_entry  # type: ignore
+
                 if file_hash == file_data.content_hash:
                     log.debug("Returning cached document symbols for %s", relative_file_path)
+
+                    # Update mtime in cache so next time we hit the mtime optimization
+                    try:
+                        mtime = os.path.getmtime(abs_path)
+                    except OSError:
+                        mtime = 0.0
+
+                    # Ensure we have range
+                    range_to_cache = getattr(document_symbols, "file_range", None)
+                    if range_to_cache is None:
+                        range_to_cache = cached_range
+                    if range_to_cache is None:
+                         range_to_cache = self._get_range_from_file_content(file_data.contents)
+                         document_symbols.file_range = range_to_cache
+
+                    self._document_symbols_cache[cache_key] = (
+                        file_hash,
+                        mtime,
+                        range_to_cache,
+                        document_symbols,
+                    )
+                    self._document_symbols_cache_is_modified = True
+
                     return document_symbols
                 else:
-                    log.debug("Cached document symbol content for %s has changed", relative_file_path)
+                    log.debug(
+                        "Cached document symbol content for %s has changed", relative_file_path
+                    )
             else:
                 log.debug("No cache hit for document symbols in %s", relative_file_path)
 
@@ -1075,11 +1140,26 @@ class SolidLanguageServer(ABC):
                 return unified_symbols
 
             unified_root_symbols = convert_symbols_with_common_parent(root_symbols, None)
-            document_symbols = DocumentSymbols(unified_root_symbols)
+
+            # Calculate file range for caching
+            file_range = self._get_range_from_file_content(file_data.contents)
+            document_symbols = DocumentSymbols(unified_root_symbols, file_range=file_range)
 
             # update cache
             log.debug("Updating cached document symbols for %s", relative_file_path)
-            self._document_symbols_cache[cache_key] = (file_data.content_hash, document_symbols)
+
+            # Get current mtime
+            try:
+                mtime = os.path.getmtime(abs_path)
+            except OSError:
+                mtime = 0.0
+
+            self._document_symbols_cache[cache_key] = (
+                file_data.content_hash,
+                mtime,
+                file_range,
+                document_symbols,
+            )
             self._document_symbols_cache_is_modified = True
 
             return document_symbols
@@ -1171,28 +1251,44 @@ class SolidLanguageServer(ABC):
                         child["parent"] = package_symbol
 
                 elif os.path.isfile(contained_dir_or_file_abs_path):
-                    with self._open_file_context(contained_dir_or_file_rel_path) as file_data:
-                        document_symbols = self.request_document_symbols(contained_dir_or_file_rel_path, file_data)
-                        file_root_nodes = document_symbols.root_symbols
+                    # Use optimized request_document_symbols (checks mtime cache first)
+                    document_symbols = self.request_document_symbols(
+                        contained_dir_or_file_rel_path, file_buffer=None
+                    )
+                    file_root_nodes = document_symbols.root_symbols
 
-                        # Create file symbol, link with children
-                        file_range = self._get_range_from_file_content(file_data.contents)
-                        file_symbol = ls_types.UnifiedSymbolInformation(  # type: ignore
-                            name=os.path.splitext(contained_dir_or_file_name)[0],
-                            kind=ls_types.SymbolKind.File,
+                    # Get file range (from cache or calculate if missing)
+                    if document_symbols.file_range:
+                        file_range = document_symbols.file_range
+                    else:
+                        # Should rarely happen if request_document_symbols logic works,
+                        # but as fallback read file to get range
+                        with self._open_file_context(contained_dir_or_file_rel_path) as file_data:
+                            file_range = self._get_range_from_file_content(file_data.contents)
+                            # Update document symbols with range for future use
+                            document_symbols.file_range = file_range
+
+                    # Create file symbol, link with children
+                    file_symbol = ls_types.UnifiedSymbolInformation(  # type: ignore
+                        name=os.path.splitext(contained_dir_or_file_name)[0],
+                        kind=ls_types.SymbolKind.File,
+                        range=file_range,
+                        selectionRange=file_range,
+                        location=ls_types.Location(
+                            uri=str(pathlib.Path(contained_dir_or_file_abs_path).as_uri()),
                             range=file_range,
-                            selectionRange=file_range,
-                            location=ls_types.Location(
-                                uri=str(pathlib.Path(contained_dir_or_file_abs_path).as_uri()),
-                                range=file_range,
-                                absolutePath=str(contained_dir_or_file_abs_path),
-                                relativePath=str(Path(contained_dir_or_file_abs_path).resolve().relative_to(self.repository_root_path)),
+                            absolutePath=str(contained_dir_or_file_abs_path),
+                            relativePath=str(
+                                Path(contained_dir_or_file_abs_path)
+                                .resolve()
+                                .relative_to(self.repository_root_path)
                             ),
-                            children=file_root_nodes,
-                            parent=package_symbol,
-                        )
-                        for child in file_root_nodes:
-                            child["parent"] = file_symbol
+                        ),
+                        children=file_root_nodes,
+                        parent=package_symbol,
+                    )
+                    for child in file_root_nodes:
+                        child["parent"] = file_symbol
 
                     # Link file symbol with package
                     package_symbol["children"].append(file_symbol)
