@@ -78,19 +78,9 @@ class MCPCommands(CommandHandler):
 
     def _show_usage(self) -> None:
         """Show MCP command usage."""
-        self.print_warning("Usage: /mcp <subcommand> [args]")
-        self.console.print("\nAvailable subcommands:")
-        self.console.print("  list              - List configured MCP servers")
-        self.console.print("  status            - Quick status overview")
-        self.console.print("  view <name>       - Interactive server viewer (detailed view)")
-        self.console.print("  connect <name>    - Connect to a specific server")
-        self.console.print("  disconnect <name> - Disconnect from a server")
-        self.console.print("  enable <name>     - Enable auto-start for a server")
-        self.console.print("  disable <name>    - Disable auto-start for a server")
-        self.console.print("  tools [<name>]    - Show tools from server(s)")
-        self.console.print("  test <name>       - Test connection to a server")
-        self.console.print("  reload            - Reload MCP configuration")
-        self.console.print("  debug             - Show debug info (tools in agent)")
+        self.console.print("  ⎿  [cyan]/mcp list[/cyan]       List configured MCP servers")
+        self.console.print("     [cyan]/mcp connect[/cyan]    Connect to a server")
+        self.console.print("     [cyan]/mcp tools[/cyan]      Show available tools")
 
     def _error_no_server_name(self) -> CommandResult:
         """Return error for missing server name."""
