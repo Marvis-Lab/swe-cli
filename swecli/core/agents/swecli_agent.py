@@ -108,12 +108,14 @@ class SwecliAgent(BaseAgent):
             http_client = self._http_client
 
         # Rebuild schemas with current thinking visibility
-        # This ensures think tool is filtered when thinking mode is OFF
-        tool_schemas = self._schema_builder.build(thinking_visible=thinking_visible)
+        # When force_think=False, exclude think tool to prevent model from calling it voluntarily
+        # Think tool should only be available when we explicitly want thinking
+        include_think = thinking_visible and force_think
+        tool_schemas = self._schema_builder.build(thinking_visible=include_think)
 
         # Force think tool when requested (first iteration or after tool execution)
         # This ensures thinking trace is displayed before actions and after results
-        if thinking_visible and force_think:
+        if include_think:
             # Force specifically the think tool (not just any tool)
             tool_choice = {"type": "function", "function": {"name": "think"}}
         else:
@@ -389,11 +391,6 @@ class SwecliAgent(BaseAgent):
                 # Append LLM-only suffix (e.g., retry prompts) - hidden from UI
                 if result.get("_llm_suffix"):
                     tool_result += result["_llm_suffix"]
-
-                # For think tool, replace output with instruction to proceed naturally
-                # This prevents the model from treating its thinking as feedback
-                if tool_name == "think":
-                    tool_result = "[Thinking captured. Now respond directly to the user.]"
 
                 messages.append(
                     {

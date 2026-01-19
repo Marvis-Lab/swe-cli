@@ -915,18 +915,22 @@ _BUILTIN_TOOL_SCHEMAS: list[dict[str, Any]] = [
             },
         },
     },
-    # ===== Think Tool (Reasoning Capture) =====
+    # ===== Think Tool (Reasoning Scratchpad) =====
     {
         "type": "function",
         "function": {
             "name": "think",
-            "description": "Capture your detailed step-by-step reasoning before taking any action. When thinking mode is enabled, you MUST call this tool first to break down the problem systematically: analyze what the user is asking, consider multiple approaches and their trade-offs, identify potential issues or edge cases, and outline your planned steps in sequence. This reasoning is visible to the user and becomes part of the conversation context, so be thorough and explicit in walking through your thought process.",
+            "description": "Use the tool to think about something. It will not obtain new information or change the database, but just append the thought to the log. Use this AFTER gathering information to reason through complex decisions, not as the first action.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "content": {
                         "type": "string",
-                        "description": "Your detailed step-by-step reasoning (aim for 150-300 words). Walk through your analysis methodically: what you understand about the task, what approaches you considered and why you chose one, what assumptions you're making, and the specific steps you plan to take in order. Think out loud as if explaining your reasoning to the user.",
+                        "description": "A thought to think about.",
+                    },
+                    "response": {
+                        "type": "string",
+                        "description": "The ACTUAL response text to show the user (e.g., 'Hello! How can I help you?' for greetings). NOT a description of what you did. Only for pure greetings or acknowledgments.",
                     },
                 },
                 "required": ["content"],
