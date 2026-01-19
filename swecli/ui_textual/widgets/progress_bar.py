@@ -1,14 +1,18 @@
-"""LED heartbeat progress bar.
+"""Pearl string progress bar - weight and size with color shift.
 
-A stealthy, utilitarian indicator: a row of inactive LEDs on a server rack
-where a single, faint signal pulse travels across the line.
+A minimalist string of centered dots where the wave is defined by mass.
+Tiny pinprick dots swell into heavy spheres and shrink back down.
+Like a snake swallowing a meal or a pearl sliding down a string.
+Colors shift smoothly over time through a gradient.
 
-No glowing—just subtle spectral shift. Dots become "awake" (slate-blue)
-then immediately return to "sleep" (dark indigo). Mechanical and precise.
+The vibe: Precious, focused, poised.
+Visual: · · ∘ ○ ● ○ ∘ · ·
 """
 
 from __future__ import annotations
 
+import colorsys
+import math
 from typing import TYPE_CHECKING, Any, Optional
 
 from rich.text import Text
@@ -18,32 +22,36 @@ if TYPE_CHECKING:
     from textual.timer import Timer
 
 
-# Dot character - bullet for visible LED appearance
-SEGMENT = "•"  # U+2022 - medium bullet, balanced size
-
-# LED color palette - stark contrast between sleep and awake
-COLOR_SLEEP = "#252540"    # Dark indigo - dim "off" state
-COLOR_AWAKE = "#5a8fc4"    # Slate-blue - visible "on" state
+# Base dim color for resting dots
+DIM_COLOR = "#6b7280"
 
 # Configuration
-BAR_WIDTH = 28             # Number of LED dots
-FRAME_INTERVAL_MS = 50     # Animation speed (20 fps)
-PULSE_WIDTH = 2            # Pulse width for visibility
+BAR_WIDTH = 36  # Bar width
+FRAME_INTERVAL_MS = 50  # ~20 fps
+WAVE_SPEED = 0.8  # Pearl movement speed
+WAVE_WIDTH = 3.5  # Width of the swell (lower = tighter)
+COLOR_CYCLE_SPEED = 0.006  # How fast colors shift (lower = slower)
+
+
+def hue_to_hex(hue: float, saturation: float = 0.7, value: float = 1.0) -> str:
+    """Convert HSV to hex color string."""
+    r, g, b = colorsys.hsv_to_rgb(hue, saturation, value)
+    return f"#{int(r * 255):02x}{int(g * 255):02x}{int(b * 255):02x}"
 
 
 class ProgressBar(Static):
-    """LED heartbeat progress bar.
+    """Pearl string progress bar.
 
-    A row of dark dots where a single pulse travels left to right,
-    each dot briefly awakening then immediately returning to sleep.
-    Constant velocity, no easing—mechanical and precise.
+    A minimalist string of dots where a wave of "mass" travels
+    through, causing dots to swell into spheres and shrink back.
     """
 
     def __init__(self, **kwargs) -> None:
         super().__init__("", **kwargs)
         self._animation_timer: Optional["Timer"] = None
         self._poll_timer: Optional["Timer"] = None
-        self._pulse_pos: float = 0.0
+        self._wave_pos: float = 0.0
+        self._hue: float = 0.0  # Current hue for color cycling
         self._visible: bool = False
         self._app: Any = None
 
@@ -69,12 +77,12 @@ class ProgressBar(Static):
             self._hide()
 
     def _show(self) -> None:
-        """Start the LED heartbeat animation."""
+        """Start the pearl animation."""
         if self._visible:
             return
 
         self._visible = True
-        self._pulse_pos = 0.0
+        self._wave_pos = 0.0
         self.display = True
 
         self._animation_timer = self.set_interval(
@@ -83,8 +91,8 @@ class ProgressBar(Static):
             pause=False,
         )
 
-        self._render_leds()
-        self.refresh()  # Force initial render
+        self._render_pearls()
+        self.refresh()
 
     def _hide(self) -> None:
         """Stop the animation and hide."""
@@ -97,65 +105,64 @@ class ProgressBar(Static):
             self._animation_timer.stop()
             self._animation_timer = None
 
-        self._pulse_pos = 0.0
+        self._wave_pos = 0.0
         self.update(" ")
         self.display = False
 
     def _on_frame(self) -> None:
-        """Advance pulse position at constant velocity."""
+        """Advance pearl wave position and color hue."""
         if not self._visible:
             return
 
-        # Constant velocity - mechanical feel
-        self._pulse_pos = (self._pulse_pos + 0.8) % BAR_WIDTH
-        self._render_leds()
+        self._wave_pos = (self._wave_pos + WAVE_SPEED) % BAR_WIDTH
+        self._hue = (self._hue + COLOR_CYCLE_SPEED) % 1.0
+        self._render_pearls()
 
-    def _render_leds(self) -> None:
-        """Render LED row with traveling pulse."""
+    def _render_pearls(self) -> None:
+        """Render the pearl string with traveling swell."""
         result = Text()
 
         for i in range(BAR_WIDTH):
-            color = self._get_led_color(i)
-            result.append(SEGMENT, style=color)
+            char, color = self._get_pearl(i)
+            result.append(char, style=color)
 
         self.update(result)
 
-    def _get_led_color(self, idx: int) -> str:
-        """Get LED color: awake if pulse is here, sleep otherwise.
+    def _get_pearl(self, position: int) -> tuple[str, str]:
+        """Get pearl character and color based on distance from wave.
 
-        Creates a tight single-dot pulse with minimal falloff.
+        Returns (character, color) representing the pearl size at this position.
         """
-        # Distance from pulse (with wrapping)
+        # Distance from wave center (with wrapping)
         dist = min(
-            abs(idx - self._pulse_pos),
-            abs(idx - self._pulse_pos + BAR_WIDTH),
-            abs(idx - self._pulse_pos - BAR_WIDTH),
+            abs(position - self._wave_pos),
+            abs(position - self._wave_pos + BAR_WIDTH),
+            abs(position - self._wave_pos - BAR_WIDTH),
         )
 
-        if dist > PULSE_WIDTH:
-            return COLOR_SLEEP
+        # Smooth bell curve for the swell
+        intensity = math.exp(-(dist**2) / WAVE_WIDTH)
 
-        # Sharp falloff - mostly binary on/off feel
-        t = 1.0 - (dist / PULSE_WIDTH)
-        t = t * t  # Square for sharper transition
+        # Dynamic colors based on current hue
+        bright_color = hue_to_hex(self._hue, saturation=0.75, value=1.0)
+        mid_color = hue_to_hex(self._hue, saturation=0.5, value=0.8)
 
-        return self._lerp_hex(COLOR_SLEEP, COLOR_AWAKE, t)
-
-    def _lerp_hex(self, color1: str, color2: str, t: float) -> str:
-        """Linear interpolation between two hex colors."""
-        r1, g1, b1 = self._hex_to_rgb(color1)
-        r2, g2, b2 = self._hex_to_rgb(color2)
-
-        r = int(r1 + (r2 - r1) * t)
-        g = int(g1 + (g2 - g1) * t)
-        b = int(b1 + (b2 - b1) * t)
-
-        return f"#{r:02x}{g:02x}{b:02x}"
-
-    def _hex_to_rgb(self, hex_color: str) -> tuple[int, int, int]:
-        """Convert hex to RGB tuple."""
-        h = hex_color.lstrip("#")
-        return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+        # Map intensity to pearl size and color
+        if intensity > 0.85:
+            # Peak - largest, brightest
+            return "●", bright_color
+        elif intensity > 0.6:
+            # Large hollow
+            return "○", bright_color
+        elif intensity > 0.35:
+            # Medium hollow
+            return "∘", mid_color
+        elif intensity > 0.15:
+            # Small dot, slightly visible
+            return "·", mid_color
+        else:
+            # Resting state - tiny, dim
+            return "·", DIM_COLOR
 
     def on_unmount(self) -> None:
         """Clean up when widget is removed."""
