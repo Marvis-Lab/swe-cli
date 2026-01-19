@@ -95,7 +95,11 @@ task_complete(summary="Fixed issue by updating X in file Y", status="success")
 
 GITHUB_RESOLVER_SUBAGENT: SubAgentSpec = {
     "name": "GitHub-Resolver",
-    "description": "Resolves real GitHub issues in Docker containers. Use for fixing bugs from arbitrary GitHub issue URLs.",
+    "description": (
+        "Fixes bugs from GitHub issue URLs by cloning the repo and writing code fixes in Docker. "
+        "USE FOR: Bug fix tasks with a specific GitHub issue URL (e.g., 'fix github.com/org/repo/issues/123'). "
+        "NOT FOR: Searching repos, listing issues, creating PRs, or any GitHub API queries - use MCP tools instead."
+    ),
     "system_prompt": GITHUB_RESOLVER_SYSTEM_PROMPT,
     "tools": [
         "read_file",

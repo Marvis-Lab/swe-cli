@@ -96,7 +96,11 @@ task_complete(summary="Fixed issue by updating X in file Y", status="success")
 
 ISSUE_RESOLVER_SUBAGENT = SubAgentSpec(
     name="Issue-Resolver",
-    description="Expert at analyzing GitHub issues and implementing targeted fixes. Use for bug fixes, small features, and issue resolution tasks. Can delegate to Code-Explorer for research.",
+    description=(
+        "Implements targeted fixes for issues in the LOCAL codebase (already cloned in Docker). "
+        "USE FOR: Bug fixes and small features when you have the issue details AND the code is local. "
+        "NOT FOR: Remote GitHub operations (searching repos, listing issues, creating PRs) - use MCP tools instead."
+    ),
     system_prompt=ISSUE_RESOLVER_SYSTEM_PROMPT,
     tools=[
         "read_file",
