@@ -62,7 +62,10 @@ class AgentsCommands(CommandHandler):
         Returns:
             CommandResult with execution status
         """
-        self.print_command_header("/agents", args if args else "")
+        if args:
+            self.console.print(f"[cyan]⏺[/cyan] /agents {args}")
+        else:
+            self.console.print("[cyan]⏺[/cyan] /agents")
 
         if not args:
             return self._show_menu()
@@ -83,16 +86,9 @@ class AgentsCommands(CommandHandler):
             return self._show_menu()
 
     def _show_menu(self) -> CommandResult:
-        """Show interactive menu for agent management."""
-        self.print_info("Agent management commands:")
-        self.console.print("  [cyan]/agents create[/cyan]       - Create a new custom agent")
-        self.console.print("  [cyan]/agents list[/cyan]         - List all available agents")
-        self.console.print("  [cyan]/agents edit <name>[/cyan]  - Edit an existing agent")
-        self.console.print("  [cyan]/agents delete <name>[/cyan] - Delete a custom agent")
-        self.console.print("")
-        self.print_info("Custom agents are defined as markdown files in:")
-        self.console.print(f"  Personal: [dim]~/{APP_DIR_NAME}/agents/*.md[/dim]")
-        self.console.print(f"  Project:  [dim]{APP_DIR_NAME}/agents/*.md[/dim]")
+        """Show available agent commands."""
+        self.console.print("  ⎿  [cyan]/agents create[/cyan]  Create a new custom agent")
+        self.console.print("     [cyan]/agents list[/cyan]    List all available agents")
 
         return CommandResult(success=True)
 
@@ -181,26 +177,28 @@ class AgentsCommands(CommandHandler):
         Returns:
             CommandResult with agent list
         """
-        table = Table(title="Available Agents", show_header=True, header_style="bold")
+        from swecli.core.agents.subagents.agents import ALL_SUBAGENTS
+
+        table = Table(show_header=True, header_style="bold")
         table.add_column("Name", style="cyan")
         table.add_column("Description")
         table.add_column("Source", style="dim")
 
-        # Get agents from subagent_manager if available
-        if self.subagent_manager:
-            configs = self.subagent_manager.get_agent_configs()
-            for config in configs:
-                source_str = config.source.value if hasattr(config, 'source') else "builtin"
-                # Truncate description if too long
-                desc = config.description[:60] + "..." if len(config.description) > 60 else config.description
-                table.add_row(config.name, desc, source_str)
-        else:
-            # Fallback: load custom agents from config
-            custom_agents = self.config_manager.load_custom_agents()
-            for agent in custom_agents:
-                desc = agent.get("description", "")[:60]
-                source = agent.get("_source", "custom")
-                table.add_row(agent.get("name", ""), desc, source)
+        # Add builtin agents
+        for spec in ALL_SUBAGENTS:
+            desc = spec.get("description", "")
+            if len(desc) > 60:
+                desc = desc[:60] + "..."
+            table.add_row(spec["name"], desc, "built-in")
+
+        # Add custom agents from config
+        custom_agents = self.config_manager.load_custom_agents()
+        for agent in custom_agents:
+            desc = agent.get("description", "")
+            if len(desc) > 60:
+                desc = desc[:60] + "..."
+            source = agent.get("_source", "custom")
+            table.add_row(agent.get("name", ""), desc, source)
 
         self.console.print(table)
 
