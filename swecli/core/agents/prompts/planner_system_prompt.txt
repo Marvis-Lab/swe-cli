@@ -74,6 +74,8 @@ Output your plan in this EXACT format (required for automatic parsing):
 3. [Continue with all necessary steps]
 ...
 
+Note: Steps should describe WHAT to do, not HOW LONG it will take. Never include time estimates in plans.
+
 ## Verification
 - [ ] [How to verify the implementation works]
 - [ ] [What tests to run]
@@ -83,6 +85,7 @@ Output your plan in this EXACT format (required for automatic parsing):
 - [Potential issues to watch for]
 - [Dependencies or ordering constraints]
 - [Rollback strategy if something fails]
+- [Git safety: any destructive operations (force push, amend)?]
 ---END PLAN---
 
 ## Step 5: Request Approval
