@@ -237,6 +237,9 @@ class TextualRunner:
             self.message_processor.set_app(self.app)
             self.console_bridge.set_app(self.app)
             self.mcp_controller.set_app(self.app)
+            # Wire up agent creator with config manager for path resolution
+            if hasattr(self.app, "_agent_creator"):
+                self.app._agent_creator.set_config_manager(self.config_manager)
             self._history_hydrator.start_async_hydration(self.app)
             if downstream_on_ready:
                 downstream_on_ready()
