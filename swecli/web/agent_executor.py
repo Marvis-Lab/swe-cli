@@ -127,6 +127,9 @@ class AgentExecutor:
             OpenBrowserTool,
             WebScreenshotTool,
         )
+        from swecli.core.context_engineering.tools.implementations.web_search_tool import WebSearchTool
+        from swecli.core.context_engineering.tools.implementations.notebook_edit_tool import NotebookEditTool
+        from swecli.core.context_engineering.tools.implementations.ask_user_tool import AskUserTool
         from swecli.web.web_approval_manager import WebApprovalManager
         from swecli.web.ws_tool_broadcaster import WebSocketToolBroadcaster
 
@@ -142,6 +145,9 @@ class AgentExecutor:
         edit_tool = EditTool(config, working_dir)
         bash_tool = BashTool(config, working_dir)
         web_fetch_tool = WebFetchTool(config, working_dir)
+        web_search_tool = WebSearchTool(config, working_dir)
+        notebook_edit_tool = NotebookEditTool(working_dir)
+        ask_user_tool = AskUserTool()  # Uses console fallback in web mode
         open_browser_tool = OpenBrowserTool(config, working_dir)
         web_screenshot_tool = WebScreenshotTool(config, working_dir)
 
@@ -156,6 +162,9 @@ class AgentExecutor:
             edit_tool=edit_tool,
             bash_tool=bash_tool,
             web_fetch_tool=web_fetch_tool,
+            web_search_tool=web_search_tool,
+            notebook_edit_tool=notebook_edit_tool,
+            ask_user_tool=ask_user_tool,
             open_browser_tool=open_browser_tool,
             web_screenshot_tool=web_screenshot_tool,
             mcp_manager=self.state.mcp_manager,
