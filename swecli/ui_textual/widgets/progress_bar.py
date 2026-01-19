@@ -1,8 +1,10 @@
-"""Minimal animated progress bar with subtle luminance wave.
+"""LED heartbeat progress bar.
 
-A restrained, precise loading indicator: small dots with a soft
-brightness wave traveling left to right. No white, no glow, no
-decorative effects—just calm, controlled color interpolation.
+A stealthy, utilitarian indicator: a row of inactive LEDs on a server rack
+where a single, faint signal pulse travels across the line.
+
+No glowing—just subtle spectral shift. Dots become "awake" (slate-blue)
+then immediately return to "sleep" (dark indigo). Mechanical and precise.
 """
 
 from __future__ import annotations
@@ -16,33 +18,32 @@ if TYPE_CHECKING:
     from textual.timer import Timer
 
 
-# Dot character - middle dot for pixel-like appearance
-SEGMENT = "·"  # U+00B7 - smaller than bullet, terminal-appropriate
+# Dot character - bullet for visible LED appearance
+SEGMENT = "•"  # U+2022 - medium bullet, balanced size
 
-# Muted, low-contrast blue palette
-# Never white, never neon, never glowing
-BLUE_BASE = "#3a4a5a"      # Subdued blue-gray (visible on dark backgrounds)
-BLUE_PEAK = "#5a7a90"      # Slightly brighter (subtle highlight, not glowing)
+# LED color palette - stark contrast between sleep and awake
+COLOR_SLEEP = "#252540"    # Dark indigo - dim "off" state
+COLOR_AWAKE = "#5a8fc4"    # Slate-blue - visible "on" state
 
 # Configuration
-BAR_WIDTH = 32             # Compact width
-FRAME_INTERVAL_MS = 60     # Smooth timing
-WAVE_WIDTH = 2             # Tight, focused highlight (1-2 dots)
+BAR_WIDTH = 28             # Number of LED dots
+FRAME_INTERVAL_MS = 50     # Animation speed (20 fps)
+PULSE_WIDTH = 2            # Pulse width for visibility
 
 
 class ProgressBar(Static):
-    """Minimal progress bar with subtle luminance wave.
+    """LED heartbeat progress bar.
 
-    Small dots in a cohesive row. A soft wave travels left to right,
-    each dot subtly brightening then fading back. Constant velocity,
-    no acceleration, no easing—calm and controlled.
+    A row of dark dots where a single pulse travels left to right,
+    each dot briefly awakening then immediately returning to sleep.
+    Constant velocity, no easing—mechanical and precise.
     """
 
     def __init__(self, **kwargs) -> None:
         super().__init__("", **kwargs)
         self._animation_timer: Optional["Timer"] = None
         self._poll_timer: Optional["Timer"] = None
-        self._wave_pos: float = 0.0
+        self._pulse_pos: float = 0.0
         self._visible: bool = False
         self._app: Any = None
 
@@ -68,12 +69,12 @@ class ProgressBar(Static):
             self._hide()
 
     def _show(self) -> None:
-        """Start the progress bar animation."""
+        """Start the LED heartbeat animation."""
         if self._visible:
             return
 
         self._visible = True
-        self._wave_pos = 0.0
+        self._pulse_pos = 0.0
         self.display = True
 
         self._animation_timer = self.set_interval(
@@ -82,10 +83,11 @@ class ProgressBar(Static):
             pause=False,
         )
 
-        self._render_bar()
+        self._render_leds()
+        self.refresh()  # Force initial render
 
     def _hide(self) -> None:
-        """Stop the progress bar animation and hide."""
+        """Stop the animation and hide."""
         if not self._visible:
             return
 
@@ -95,51 +97,49 @@ class ProgressBar(Static):
             self._animation_timer.stop()
             self._animation_timer = None
 
-        self._wave_pos = 0.0
+        self._pulse_pos = 0.0
         self.update(" ")
         self.display = False
 
     def _on_frame(self) -> None:
-        """Advance wave position at constant velocity."""
+        """Advance pulse position at constant velocity."""
         if not self._visible:
             return
 
-        # Constant velocity - no acceleration, no easing
-        self._wave_pos = (self._wave_pos + 0.5) % BAR_WIDTH
-        self._render_bar()
+        # Constant velocity - mechanical feel
+        self._pulse_pos = (self._pulse_pos + 0.8) % BAR_WIDTH
+        self._render_leds()
 
-    def _render_bar(self) -> None:
-        """Render bar with luminance wave."""
+    def _render_leds(self) -> None:
+        """Render LED row with traveling pulse."""
         result = Text()
 
         for i in range(BAR_WIDTH):
-            color = self._get_color(i)
+            color = self._get_led_color(i)
             result.append(SEGMENT, style=color)
 
         self.update(result)
 
-    def _get_color(self, idx: int) -> str:
-        """Get color for dot based on distance from wave center.
+    def _get_led_color(self, idx: int) -> str:
+        """Get LED color: awake if pulse is here, sleep otherwise.
 
-        Uses smooth interpolation - dots closer to wave are brighter,
-        those further away fade to base. Narrow highlight, no white.
+        Creates a tight single-dot pulse with minimal falloff.
         """
-        # Distance from wave (with wrapping for seamless loop)
+        # Distance from pulse (with wrapping)
         dist = min(
-            abs(idx - self._wave_pos),
-            abs(idx - self._wave_pos + BAR_WIDTH),
-            abs(idx - self._wave_pos - BAR_WIDTH),
+            abs(idx - self._pulse_pos),
+            abs(idx - self._pulse_pos + BAR_WIDTH),
+            abs(idx - self._pulse_pos - BAR_WIDTH),
         )
 
-        if dist >= WAVE_WIDTH:
-            return BLUE_BASE
+        if dist > PULSE_WIDTH:
+            return COLOR_SLEEP
 
-        # Smooth falloff: 1.0 at center, 0.0 at edge
-        # Using simple linear falloff for constant, controlled feel
-        t = 1.0 - (dist / WAVE_WIDTH)
+        # Sharp falloff - mostly binary on/off feel
+        t = 1.0 - (dist / PULSE_WIDTH)
+        t = t * t  # Square for sharper transition
 
-        # Interpolate from base to peak
-        return self._lerp_hex(BLUE_BASE, BLUE_PEAK, t)
+        return self._lerp_hex(COLOR_SLEEP, COLOR_AWAKE, t)
 
     def _lerp_hex(self, color1: str, color2: str, t: float) -> str:
         """Linear interpolation between two hex colors."""
