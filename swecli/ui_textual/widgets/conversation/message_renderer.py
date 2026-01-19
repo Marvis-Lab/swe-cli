@@ -27,7 +27,10 @@ class DefaultMessageRenderer:
             if last_plain:
                 self.log.write(Text(""))
         self.log.write(Text(f"› {message}", style=f"bold {PRIMARY}"))
-        self.log.write(Text(""))
+        # Only add trailing blank line for non-command messages
+        # Commands output directly below without spacing
+        if not message.strip().startswith("/"):
+            self.log.write(Text(""))
 
     def add_assistant_message(self, message: str) -> None:
         """Render an assistant message, parsing markdown and code blocks."""
