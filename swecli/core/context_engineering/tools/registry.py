@@ -12,6 +12,9 @@ from swecli.core.context_engineering.tools.handlers.file_handlers import FileToo
 from swecli.core.context_engineering.mcp.handler import McpToolHandler
 from swecli.core.context_engineering.tools.handlers.process_handlers import ProcessToolHandler
 from swecli.core.context_engineering.tools.handlers.web_handlers import WebToolHandler
+from swecli.core.context_engineering.tools.handlers.web_search_handler import WebSearchHandler
+from swecli.core.context_engineering.tools.handlers.notebook_edit_handler import NotebookEditHandler
+from swecli.core.context_engineering.tools.handlers.ask_user_handler import AskUserHandler
 from swecli.core.context_engineering.tools.handlers.screenshot_handler import ScreenshotToolHandler
 from swecli.core.context_engineering.tools.handlers.todo_handler import TodoHandler
 from swecli.core.context_engineering.tools.handlers.mcp_config_handler import MCPConfigHandler
@@ -38,6 +41,7 @@ _PLAN_READ_ONLY_TOOLS = {
     "list_files",
     "search",  # Unified search: text (ripgrep) and AST (ast-grep) modes
     "fetch_url",
+    "web_search",  # Web search is read-only
     "list_processes",
     "get_process_output",
     "list_screenshots",
@@ -67,6 +71,9 @@ class ToolRegistry:
         edit_tool: Union[Any, None] = None,
         bash_tool: Union[Any, None] = None,
         web_fetch_tool: Union[Any, None] = None,
+        web_search_tool: Union[Any, None] = None,
+        notebook_edit_tool: Union[Any, None] = None,
+        ask_user_tool: Union[Any, None] = None,
         open_browser_tool: Union[Any, None] = None,
         vlm_tool: Union[Any, None] = None,
         web_screenshot_tool: Union[Any, None] = None,
@@ -77,6 +84,9 @@ class ToolRegistry:
         self.edit_tool = edit_tool
         self.bash_tool = bash_tool
         self.web_fetch_tool = web_fetch_tool
+        self.web_search_tool = web_search_tool
+        self.notebook_edit_tool = notebook_edit_tool
+        self.ask_user_tool = ask_user_tool
         self.open_browser_tool = open_browser_tool
         self.vlm_tool = vlm_tool
         self.web_screenshot_tool = web_screenshot_tool
@@ -84,6 +94,9 @@ class ToolRegistry:
         self._file_handler = FileToolHandler(file_ops, write_tool, edit_tool)
         self._process_handler = ProcessToolHandler(bash_tool)
         self._web_handler = WebToolHandler(web_fetch_tool)
+        self._web_search_handler = WebSearchHandler(web_search_tool)
+        self._notebook_edit_handler = NotebookEditHandler(notebook_edit_tool)
+        self._ask_user_handler = AskUserHandler(ask_user_tool)
         self._mcp_handler = McpToolHandler(mcp_manager)
         self._mcp_config_handler = MCPConfigHandler(mcp_manager)
         self._screenshot_handler = ScreenshotToolHandler()
@@ -115,6 +128,9 @@ class ToolRegistry:
             "get_process_output": self._process_handler.get_process_output,
             "kill_process": self._process_handler.kill_process,
             "fetch_url": self._web_handler.fetch_url,
+            "web_search": self._web_search_handler.search,
+            "notebook_edit": self._notebook_edit_handler.edit_cell,
+            "ask_user": self._ask_user_handler.ask_questions,
             "open_browser": self._open_browser,
             "capture_screenshot": self._screenshot_handler.capture_screenshot,
             "list_screenshots": lambda args: self._screenshot_handler.list_screenshots(),
@@ -136,6 +152,8 @@ class ToolRegistry:
             "rename_symbol": lambda args: handle_rename_symbol(args),
             # Subagent spawning tool
             "spawn_subagent": self._execute_spawn_subagent,
+            # Get output from background subagent
+            "get_subagent_output": self._get_subagent_output,
             # PDF extraction tool
             "read_pdf": self._read_pdf,
             # MCP configuration tools
@@ -223,7 +241,7 @@ class ToolRegistry:
         """Execute the spawn_subagent tool to spawn a subagent.
 
         Args:
-            arguments: Tool arguments with 'description' and 'subagent_type'
+            arguments: Tool arguments with 'description', 'prompt', and 'subagent_type'
             context: Tool execution context
 
         Returns:
@@ -237,12 +255,14 @@ class ToolRegistry:
             }
 
         description = arguments.get("description", "")
+        # Use 'prompt' as task content, fallback to 'description' for backward compatibility
+        task = arguments.get("prompt") or description
         subagent_type = arguments.get("subagent_type", "general-purpose")
 
-        if not description:
+        if not task:
             return {
                 "success": False,
-                "error": "Task description is required for spawn_subagent",
+                "error": "Task prompt is required for spawn_subagent",
                 "output": None,
             }
 
@@ -265,7 +285,7 @@ class ToolRegistry:
         # via on_tool_call before calling this tool handler
         result = self._subagent_manager.execute_subagent(
             name=subagent_type,
-            task=description,
+            task=task,
             deps=deps,
             ui_callback=ui_callback,
             task_monitor=task_monitor,
@@ -295,6 +315,46 @@ class ToolRegistry:
                 "output": None,
                 "interrupted": result.get("interrupted", False),  # Propagate interrupt flag
             }
+
+    def _get_subagent_output(self, arguments: dict[str, Any], context: Any = None) -> dict[str, Any]:
+        """Get output from a background subagent task.
+
+        Args:
+            arguments: Tool arguments with 'task_id', optional 'block' and 'timeout'
+            context: Tool execution context
+
+        Returns:
+            Result from background subagent or status information
+        """
+        task_id = arguments.get("task_id", "")
+        block = arguments.get("block", True)
+        timeout = arguments.get("timeout", 30000)
+
+        if not task_id:
+            return {
+                "success": False,
+                "error": "task_id is required",
+                "output": None,
+            }
+
+        if not self._subagent_manager:
+            return {
+                "success": False,
+                "error": "SubAgentManager not configured",
+                "output": None,
+            }
+
+        # Check if manager has background task support
+        if hasattr(self._subagent_manager, "get_background_task_output"):
+            return self._subagent_manager.get_background_task_output(task_id, block=block, timeout=timeout)
+
+        # Fallback for managers without background support
+        return {
+            "success": False,
+            "error": f"Background task support not available. Task ID '{task_id}' not found.",
+            "output": "Background subagent execution is not yet fully implemented. "
+                     "Subagents currently run synchronously.",
+        }
 
     def get_schemas(self) -> list[dict[str, Any]]:
         """Compatibility hook (schemas generated elsewhere)."""

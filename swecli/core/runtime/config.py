@@ -227,12 +227,69 @@ class ConfigManager:
             dirs.append(self.user_skills_dir)
         return dirs
 
-    def load_custom_agents(self) -> list[dict[str, Any]]:
-        """Load custom agent definitions from config files.
+    def _load_markdown_agent(self, path: Path, source: str) -> dict[str, Any] | None:
+        """Load a Claude Code-style markdown agent file.
 
-        Loads from:
-        1. ~/.swecli/agents.json (user global)
-        2. <project>/.swecli/agents.json (project local, takes priority)
+        Markdown agents use YAML frontmatter for configuration:
+        ```markdown
+        ---
+        name: agent-name
+        description: "Agent description"
+        model: sonnet
+        tools: "*"
+        ---
+
+        System prompt content here...
+        ```
+
+        Args:
+            path: Path to the markdown file
+            source: Source identifier ("user-global" or "project")
+
+        Returns:
+            Agent definition dict or None if parsing fails
+        """
+        try:
+            content = path.read_text(encoding="utf-8")
+
+            # Parse YAML frontmatter
+            if content.startswith("---"):
+                parts = content.split("---", 2)
+                if len(parts) >= 3:
+                    import yaml
+                    frontmatter = yaml.safe_load(parts[1])
+                    if not isinstance(frontmatter, dict):
+                        frontmatter = {}
+                    system_prompt = parts[2].strip()
+
+                    return {
+                        "name": frontmatter.get("name", path.stem),
+                        "description": frontmatter.get("description", f"Custom agent from {path.name}"),
+                        "model": frontmatter.get("model"),
+                        "tools": frontmatter.get("tools", "*"),
+                        "_system_prompt": system_prompt,  # Direct prompt, not skillPath
+                        "_source": source,
+                    }
+
+            # Fallback: use filename as name, content as prompt
+            return {
+                "name": path.stem,
+                "description": f"Custom agent from {path.name}",
+                "_system_prompt": content,
+                "_source": source,
+            }
+        except Exception as e:
+            logger.warning(f"Failed to load markdown agent {path}: {e}")
+            return None
+
+    def load_custom_agents(self) -> list[dict[str, Any]]:
+        """Load custom agent definitions from config files and markdown agents.
+
+        Loads from (in priority order, later sources override earlier):
+        1. ~/.swecli/agents.json (user global JSON)
+        2. ~/.swecli/agents/*.md (user global markdown)
+        3. <project>/.swecli/agents.json (project local JSON)
+        4. <project>/.swecli/agents/*.md (project local markdown)
 
         Returns:
             List of agent definitions merged from all sources
@@ -240,21 +297,40 @@ class ConfigManager:
         agents: list[dict[str, Any]] = []
         seen_names: set[str] = set()
 
-        # Load user global agents
+        def add_agent(agent: dict[str, Any]) -> None:
+            """Add agent, removing any existing agent with the same name."""
+            name = agent.get("name")
+            if not name:
+                return
+            # Remove existing agent with same name (later sources override)
+            nonlocal agents, seen_names
+            agents = [a for a in agents if a.get("name") != name]
+            seen_names.discard(name)
+            agents.append(agent)
+            seen_names.add(name)
+
+        # 1. Load user global JSON agents
         global_agents_file = Path.home() / ".swecli" / "agents.json"
         if global_agents_file.exists():
             try:
                 with open(global_agents_file) as f:
                     data = json.load(f)
                     for agent in data.get("agents", []):
-                        if agent.get("name") and agent["name"] not in seen_names:
+                        if agent.get("name"):
                             agent["_source"] = "user-global"
-                            agents.append(agent)
-                            seen_names.add(agent["name"])
+                            add_agent(agent)
             except (json.JSONDecodeError, OSError) as e:
                 logger.warning(f"Failed to load global agents.json: {e}")
 
-        # Load project agents (override user global)
+        # 2. Load user global markdown agents
+        global_agents_dir = Path.home() / ".swecli" / "agents"
+        if global_agents_dir.exists() and global_agents_dir.is_dir():
+            for md_file in sorted(global_agents_dir.glob("*.md")):
+                agent = self._load_markdown_agent(md_file, "user-global")
+                if agent:
+                    add_agent(agent)
+
+        # 3. Load project JSON agents
         if self.working_dir:
             project_agents_file = self.working_dir / ".swecli" / "agents.json"
             if project_agents_file.exists():
@@ -262,13 +338,18 @@ class ConfigManager:
                     with open(project_agents_file) as f:
                         data = json.load(f)
                         for agent in data.get("agents", []):
-                            name = agent.get("name")
-                            if name:
-                                # Remove existing agent with same name (project overrides)
-                                agents = [a for a in agents if a.get("name") != name]
+                            if agent.get("name"):
                                 agent["_source"] = "project"
-                                agents.append(agent)
+                                add_agent(agent)
                 except (json.JSONDecodeError, OSError) as e:
                     logger.warning(f"Failed to load project agents.json: {e}")
+
+            # 4. Load project markdown agents
+            project_agents_dir = self.working_dir / ".swecli" / "agents"
+            if project_agents_dir.exists() and project_agents_dir.is_dir():
+                for md_file in sorted(project_agents_dir.glob("*.md")):
+                    agent = self._load_markdown_agent(md_file, "project")
+                    if agent:
+                        add_agent(agent)
 
         return agents

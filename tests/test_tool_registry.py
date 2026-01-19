@@ -145,7 +145,7 @@ def test_subagent_spawn_missing_description(registry):
     result = registry._execute_spawn_subagent({"subagent_type": "test"}, None)
 
     assert result["success"] is False
-    assert "Task description is required" in result["error"]
+    assert "Task prompt is required" in result["error"]
 
 def test_subagent_spawn_success(registry, tool_registry_cls):
     registry._subagent_manager = MagicMock()

@@ -495,7 +495,7 @@ class TestToolRegistryIntegration:
         )
 
         assert result["success"] is False
-        assert "description" in result["error"].lower()
+        assert "prompt" in result["error"].lower()
 
 
 def _can_import_agent_factory():

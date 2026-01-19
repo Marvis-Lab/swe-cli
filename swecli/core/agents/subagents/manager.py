@@ -254,12 +254,16 @@ class SubAgentManager:
     def register_custom_agents(self, custom_agents: list[dict]) -> None:
         """Register custom agents from config files.
 
-        Custom agents can be defined in ~/.swecli/agents.json or <project>/.swecli/agents.json.
+        Custom agents can be defined in:
+        - ~/.swecli/agents.json or <project>/.swecli/agents.json (JSON format)
+        - ~/.swecli/agents/*.md or <project>/.swecli/agents/*.md (Claude Code markdown format)
+
         Each agent definition can specify:
         - name: Unique agent name (required)
         - description: Human-readable description (optional)
         - tools: List of tool names, "*" for all, or {"exclude": [...]} (optional)
-        - skillPath: Path to skill file to use as system prompt (optional)
+        - skillPath: Path to skill file to use as system prompt (optional, JSON format)
+        - _system_prompt: Direct system prompt content (markdown format)
         - model: Model override for this agent (optional)
 
         Args:
@@ -286,8 +290,12 @@ class SubAgentManager:
                 model=agent_def.get("model"),
             )
 
-            # Build system prompt from skill file or use default
-            system_prompt = self._build_custom_agent_prompt(config)
+            # Check for direct system prompt (from markdown agent files)
+            # or build from skill file
+            if "_system_prompt" in agent_def:
+                system_prompt = agent_def["_system_prompt"]
+            else:
+                system_prompt = self._build_custom_agent_prompt(config)
 
             # Create SubAgentSpec for registration
             spec: SubAgentSpec = {

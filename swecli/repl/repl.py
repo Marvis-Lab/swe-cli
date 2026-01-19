@@ -42,6 +42,7 @@ from swecli.repl.commands import (
     HelpCommand,
     ConfigCommands,
     ToolCommands,
+    AgentsCommands,
 )
 
 # UI components
@@ -97,6 +98,9 @@ class REPL:
             VLMTool,
             WebScreenshotTool,
         )
+        from swecli.core.context_engineering.tools.implementations.web_search_tool import WebSearchTool
+        from swecli.core.context_engineering.tools.implementations.notebook_edit_tool import NotebookEditTool
+        from swecli.core.context_engineering.tools.implementations.ask_user_tool import AskUserTool
         from swecli.core.context_engineering.mcp.manager import MCPManager
 
         self.file_ops = FileOperations(self.config, self.config_manager.working_dir)
@@ -104,6 +108,9 @@ class REPL:
         self.edit_tool = EditTool(self.config, self.config_manager.working_dir)
         self.bash_tool = BashTool(self.config, self.config_manager.working_dir)
         self.web_fetch_tool = WebFetchTool(self.config, self.config_manager.working_dir)
+        self.web_search_tool = WebSearchTool(self.config, self.config_manager.working_dir)
+        self.notebook_edit_tool = NotebookEditTool(self.config_manager.working_dir)
+        self.ask_user_tool = AskUserTool()  # Uses console fallback
         self.open_browser_tool = OpenBrowserTool(self.config, self.config_manager.working_dir)
         self.vlm_tool = VLMTool(self.config, self.config_manager.working_dir)
         self.web_screenshot_tool = WebScreenshotTool(self.config, self.config_manager.working_dir)
@@ -125,6 +132,9 @@ class REPL:
             edit_tool=self.edit_tool,
             bash_tool=self.bash_tool,
             web_fetch_tool=self.web_fetch_tool,
+            web_search_tool=self.web_search_tool,
+            notebook_edit_tool=self.notebook_edit_tool,
+            ask_user_tool=self.ask_user_tool,
             open_browser_tool=self.open_browser_tool,
             vlm_tool=self.vlm_tool,
             web_screenshot_tool=self.web_screenshot_tool,
@@ -241,6 +251,12 @@ class REPL:
         self.help_command = HelpCommand(
             self.console,
             self.mode_manager,
+        )
+
+        self.agents_commands = AgentsCommands(
+            self.console,
+            self.config_manager,
+            subagent_manager=self.runtime_suite.subagent_manager if hasattr(self.runtime_suite, 'subagent_manager') else None,
         )
 
     def _init_query_processor(self):
@@ -538,6 +554,8 @@ class REPL:
             self.tool_commands.resolve_issue(command)
         elif cmd == "/paper2code":
             self.tool_commands.paper2code(command)
+        elif cmd == "/agents":
+            self.agents_commands.handle(args)
         else:
             self.console.print(f"[cyan]⏺[/cyan] {cmd}")
             self.console.print(f"  ⎿  [red]Unknown command[/red]")

@@ -26,10 +26,13 @@ TASK_TOOL_DESCRIPTION = """Spawn an ephemeral subagent to handle complex, multi-
 {subagent_descriptions}
 
 ## Usage Notes
-1. Each subagent runs with fresh context - provide all necessary information in the description
-2. The subagent returns a single result - you won't see intermediate steps
-3. Use specific, detailed task descriptions for best results
-4. Multiple spawn_subagent calls can run in parallel for independent work"""
+1. Provide a short `description` (3-5 words) summarizing what the agent will do
+2. Include all context in `prompt` - subagents have no access to conversation history
+3. The subagent returns a single result - you won't see intermediate steps
+4. Multiple spawn_subagent calls can run in parallel for independent work
+5. Use `run_in_background` for long-running tasks you want to check on later
+6. Use `model` to select a specific model (haiku for quick tasks, opus for complex ones)
+7. Use `resume` with an agent_id to continue a previous subagent session"""
 
 
 def create_task_tool_schema(manager: "SubAgentManager") -> dict[str, Any]:
@@ -64,10 +67,13 @@ def create_task_tool_schema(manager: "SubAgentManager") -> dict[str, Any]:
                 "properties": {
                     "description": {
                         "type": "string",
+                        "description": "A short (3-5 word) description of the task",
+                    },
+                    "prompt": {
+                        "type": "string",
                         "description": (
-                            "Detailed task description for the subagent. "
-                            "Include all context needed since the subagent has no access "
-                            "to the conversation history."
+                            "The task for the agent to perform. Include all context needed "
+                            "since the subagent has no access to the conversation history."
                         ),
                     },
                     "subagent_type": {
@@ -75,8 +81,33 @@ def create_task_tool_schema(manager: "SubAgentManager") -> dict[str, Any]:
                         "description": "Type of subagent to use for this task",
                         "enum": available_types,
                     },
+                    "model": {
+                        "type": "string",
+                        "enum": ["sonnet", "opus", "haiku"],
+                        "description": (
+                            "Optional model to use for this subagent. If not specified, "
+                            "inherits from parent. Use 'haiku' for quick, straightforward "
+                            "tasks to minimize cost and latency."
+                        ),
+                    },
+                    "run_in_background": {
+                        "type": "boolean",
+                        "default": False,
+                        "description": (
+                            "Set to true to run this subagent in the background. The tool "
+                            "result will include a task_id - use get_subagent_output to "
+                            "check on output later."
+                        ),
+                    },
+                    "resume": {
+                        "type": "string",
+                        "description": (
+                            "Optional agent ID to resume from. If provided, the subagent "
+                            "will continue from the previous execution with full context preserved."
+                        ),
+                    },
                 },
-                "required": ["description", "subagent_type"],
+                "required": ["description", "prompt", "subagent_type"],
             },
         },
     }
