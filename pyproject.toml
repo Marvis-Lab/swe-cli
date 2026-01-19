@@ -68,6 +68,8 @@ dependencies = [
     "pypdf>=4.0.0",
     # SWE-bench dataset loading
     "datasets>=2.0.0",
+    # Web search via DuckDuckGo
+    "duckduckgo-search>=6.0.0",
 ]
 
 [project.optional-dependencies]

@@ -24,6 +24,9 @@ from swecli.core.context_engineering.tools.implementations import (
     WebScreenshotTool,
     WriteTool,
 )
+from swecli.core.context_engineering.tools.implementations.web_search_tool import WebSearchTool
+from swecli.core.context_engineering.tools.implementations.notebook_edit_tool import NotebookEditTool
+from swecli.core.context_engineering.tools.implementations.ask_user_tool import AskUserTool
 
 
 def main() -> None:
@@ -706,6 +709,9 @@ def _run_non_interactive(
     edit_tool = EditTool(config, config_manager.working_dir)
     bash_tool = BashTool(config, config_manager.working_dir)
     web_fetch_tool = WebFetchTool(config, config_manager.working_dir)
+    web_search_tool = WebSearchTool(config, config_manager.working_dir)
+    notebook_edit_tool = NotebookEditTool(config_manager.working_dir)
+    ask_user_tool = AskUserTool()  # Uses console fallback in non-interactive mode
     vlm_tool = VLMTool(config, config_manager.working_dir)
     web_screenshot_tool = WebScreenshotTool(config, config_manager.working_dir)
 
@@ -716,6 +722,9 @@ def _run_non_interactive(
         edit_tool=edit_tool,
         bash_tool=bash_tool,
         web_fetch_tool=web_fetch_tool,
+        web_search_tool=web_search_tool,
+        notebook_edit_tool=notebook_edit_tool,
+        ask_user_tool=ask_user_tool,
         vlm_tool=vlm_tool,
         web_screenshot_tool=web_screenshot_tool,
         mcp_manager=None,
