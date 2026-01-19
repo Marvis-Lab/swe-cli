@@ -78,9 +78,10 @@ class MCPCommands(CommandHandler):
 
     def _show_usage(self) -> None:
         """Show MCP command usage."""
-        self.console.print("  ⎿  [cyan]/mcp list[/cyan]       List configured MCP servers")
-        self.console.print("     [cyan]/mcp connect[/cyan]    Connect to a server")
-        self.console.print("     [cyan]/mcp tools[/cyan]      Show available tools")
+        self.console.print("⎿  [cyan]/mcp list[/cyan]       List configured MCP servers")
+        self.console.print("   [cyan]/mcp connect[/cyan]    Connect to a server")
+        self.console.print("   [cyan]/mcp tools[/cyan]      Show available tools")
+        self.console.print()
 
     def _error_no_server_name(self) -> CommandResult:
         """Return error for missing server name."""

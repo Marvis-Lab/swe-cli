@@ -57,6 +57,7 @@ class ModeCommands(CommandHandler):
             )
             self.console.print(f"  ⎿  {self.mode_manager.get_mode_description()}")
             self.console.print("  ⎿  [dim]Available: normal, plan[/dim]")
+            self.console.print()
             return CommandResult(success=True)
 
         mode_name = mode_name.strip().lower()
@@ -69,6 +70,7 @@ class ModeCommands(CommandHandler):
             else:
                 self.print_error(f"Unknown mode: {mode_name}")
                 self.console.print("  ⎿  [dim]Available: normal, plan[/dim]")
+                self.console.print()
                 return CommandResult(success=False, message=f"Unknown mode: {mode_name}")
 
             self.mode_manager.set_mode(new_mode)
@@ -79,6 +81,7 @@ class ModeCommands(CommandHandler):
 
             self.print_success(f"Switched to {new_mode.value.upper()} mode")
             self.console.print(f"  ⎿  {self.mode_manager.get_mode_description()}")
+            self.console.print()
 
             return CommandResult(
                 success=True,

@@ -70,4 +70,5 @@ class HelpCommand(CommandHandler):
         )
 
         self.console.print(Panel(Markdown(help_text), title="Help", border_style="green"))
+        self.console.print()
         return CommandResult(success=True)

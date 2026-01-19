@@ -53,9 +53,11 @@ class SessionCommands(CommandHandler):
                 working_directory=str(self.config_manager.working_dir)
             )
             self.print_success("Session cleared. Previous session saved.")
+            self.console.print()
             return CommandResult(success=True, message="Session cleared")
         else:
             self.print_warning("No active session to clear.")
+            self.console.print()
             return CommandResult(success=False, message="No active session")
 
     def list_sessions(self) -> CommandResult:
@@ -68,6 +70,7 @@ class SessionCommands(CommandHandler):
 
         if not sessions:
             self.print_warning("No saved sessions found.")
+            self.console.print()
             return CommandResult(success=True, message="No sessions found")
 
         self.console.print("\n[bold]Saved Sessions:[/bold]\n")
@@ -90,6 +93,7 @@ class SessionCommands(CommandHandler):
             latest = self.session_manager.find_latest_session(self.config_manager.working_dir)
             if not latest:
                 self.print_warning("No saved sessions for this repository.")
+                self.console.print()
                 return CommandResult(success=False, message="No sessions available")
             candidate = latest.id
             self.print_success(f"Resuming latest session {candidate}")
@@ -98,9 +102,11 @@ class SessionCommands(CommandHandler):
             session = self.session_manager.load_session(candidate)
             if session.working_directory:
                 self.config_manager.working_dir = Path(session.working_directory)
+            self.console.print()
             return CommandResult(success=True, message=f"Resumed {candidate}")
         except FileNotFoundError:
             self.print_error(f"Session {candidate} not found.")
+            self.console.print()
             return CommandResult(success=False, message=f"Session {candidate} not found")
 
     def changed_files(self) -> CommandResult:
@@ -113,6 +119,7 @@ class SessionCommands(CommandHandler):
 
         if not session:
             self.print_warning("No active session.")
+            self.console.print()
             return CommandResult(success=False, message="No active session")
 
         if not session.file_changes:
