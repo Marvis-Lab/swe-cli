@@ -82,8 +82,8 @@ class AgentsCommands(CommandHandler):
 
     def _show_menu(self) -> CommandResult:
         """Show available agent commands."""
-        self.console.print("  ⎿  [cyan]/agents create[/cyan]  Create a new custom agent")
-        self.console.print("     [cyan]/agents list[/cyan]    List all available agents")
+        self.print_line("[cyan]/agents create[/cyan]  Create a new custom agent")
+        self.print_continuation("[cyan]/agents list[/cyan]    List all available agents")
         self.console.print()
 
         return CommandResult(success=True)

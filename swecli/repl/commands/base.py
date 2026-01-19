@@ -9,6 +9,8 @@ from rich.console import Console
 from swecli.ui_textual.formatters.result_formatter import (
     ToolResultFormatter,
     get_formatter,
+    RESULT_PREFIX,
+    RESULT_CONTINUATION,
 )
 
 
@@ -101,4 +103,20 @@ class CommandHandler(ABC):
             message: Info message to display
         """
         self.console.print(self._formatter.format_info(message))
+
+    def print_line(self, message: str) -> None:
+        """Print a line with standard ⎿ prefix (2 spaces + ⎿ + 2 spaces).
+
+        Args:
+            message: Message to display
+        """
+        self.console.print(f"{RESULT_PREFIX}{message}")
+
+    def print_continuation(self, message: str) -> None:
+        """Print a continuation line (5 spaces, aligned with content after ⎿).
+
+        Args:
+            message: Message to display
+        """
+        self.console.print(f"{RESULT_CONTINUATION}{message}")
 
