@@ -6,14 +6,14 @@ from pathlib import Path
 from typing import Optional
 
 from swecli.core.context_engineering.mcp.models import MCPConfig, MCPServerConfig
+from swecli.core.paths import get_paths
 
 
 def get_config_path() -> Path:
     """Get the path to the MCP configuration file."""
-    home = Path.home()
-    config_dir = home / ".swecli"
-    config_dir.mkdir(parents=True, exist_ok=True)
-    return config_dir / "mcp.json"
+    paths = get_paths()
+    paths.global_dir.mkdir(parents=True, exist_ok=True)
+    return paths.global_mcp_config
 
 
 def get_project_config_path(working_dir: Optional[Path] = None) -> Optional[Path]:
@@ -25,10 +25,8 @@ def get_project_config_path(working_dir: Optional[Path] = None) -> Optional[Path
     Returns:
         Path to .mcp.json if it exists, None otherwise
     """
-    if working_dir is None:
-        working_dir = Path.cwd()
-
-    project_config = working_dir / ".mcp.json"
+    paths = get_paths(working_dir)
+    project_config = paths.project_mcp_config
     return project_config if project_config.exists() else None
 
 
@@ -168,10 +166,9 @@ def save_server_config(
         project_config: If True, save to project config, else global
         working_dir: Working directory for project config
     """
+    paths = get_paths(working_dir)
     if project_config:
-        if working_dir is None:
-            working_dir = Path.cwd()
-        config_path = working_dir / ".mcp.json"
+        config_path = paths.project_mcp_config
     else:
         config_path = get_config_path()
 
@@ -197,10 +194,9 @@ def remove_server_config(
         project_config: If True, remove from project config, else global
         working_dir: Working directory for project config
     """
+    paths = get_paths(working_dir)
     if project_config:
-        if working_dir is None:
-            working_dir = Path.cwd()
-        config_path = working_dir / ".mcp.json"
+        config_path = paths.project_mcp_config
     else:
         config_path = get_config_path()
 

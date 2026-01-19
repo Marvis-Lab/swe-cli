@@ -416,7 +416,8 @@ def _handle_config_command(args) -> None:
 
     elif args.config_command == "show":
         # Display current configuration
-        config_file = Path.home() / ".swecli" / "settings.json"
+        from swecli.core.paths import get_paths
+        config_file = get_paths().global_settings
 
         if not config_file.exists():
             console.print("[yellow]No configuration found. Run 'swecli config setup' first.[/yellow]")

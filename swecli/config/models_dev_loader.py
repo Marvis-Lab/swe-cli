@@ -11,6 +11,8 @@ import urllib.request
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from swecli.core.paths import get_paths
+
 _LOG = logging.getLogger(__name__)
 
 MODELS_DEV_URL = "https://models.dev/api.json"
@@ -74,7 +76,7 @@ def load_models_dev_catalog(
             _LOG.warning("SWECLI_MODELS_DEV_PATH %s does not exist", override)
 
     if cache_dir is None:
-        cache_dir = Path.home() / ".swecli" / "cache"
+        cache_dir = get_paths().global_cache_dir
     cache_path: Optional[Path] = None
     try:
         cache_dir.mkdir(parents=True, exist_ok=True)

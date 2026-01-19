@@ -14,6 +14,7 @@ import os
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
 
+from swecli.core.paths import get_paths
 from .models import (
     AssembledContext,
     ContextCategory,
@@ -313,9 +314,9 @@ class ContextPicker:
                 
                 # Default cache file if not specified
                 if cache_file is None and playbook_config.cache_embeddings:
-                    swecli_dir = os.path.expanduser(self.config.swecli_dir)
-                    cache_file = os.path.join(
-                        swecli_dir, "sessions", f"{session.session_id}_embeddings.json"
+                    paths = get_paths()
+                    cache_file = str(
+                        paths.global_sessions_dir / f"{session.session_id}_embeddings.json"
                     )
             else:
                 max_strategies = self.DEFAULT_MAX_STRATEGIES

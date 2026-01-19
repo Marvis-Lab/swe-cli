@@ -5,6 +5,8 @@ from typing import Any, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
+from swecli.core.paths import APP_DIR_NAME
+
 
 class ToolPermission(BaseModel):
     """Permission settings for a specific tool."""
@@ -143,11 +145,11 @@ class AppConfig(BaseModel):
     # ACE Playbook settings
     playbook: PlaybookConfig = Field(default_factory=PlaybookConfig)
 
-    # Paths
-    swecli_dir: str = "~/.swecli"
-    session_dir: str = "~/.swecli/sessions"
-    log_dir: str = "~/.swecli/logs"
-    command_dir: str = ".swecli/commands"
+    # Paths - using APP_DIR_NAME constant for consistency
+    swecli_dir: str = f"~/{APP_DIR_NAME}"
+    session_dir: str = f"~/{APP_DIR_NAME}/sessions"
+    log_dir: str = f"~/{APP_DIR_NAME}/logs"
+    command_dir: str = f"{APP_DIR_NAME}/commands"
 
     @field_validator("model_provider")
     @classmethod

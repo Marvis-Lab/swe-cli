@@ -201,13 +201,15 @@ def get_state() -> WebState:
         from swecli.core.context_engineering.history import SessionManager, UndoManager
         from swecli.core.runtime.approval import ApprovalManager
         from swecli.core.context_engineering.mcp.manager import MCPManager
+        from swecli.core.paths import get_paths
         from rich.console import Console
 
         console = Console()
         working_dir = Path.cwd()
+        paths = get_paths(working_dir)
 
         config_manager = ConfigManager(working_dir)
-        session_manager = SessionManager(Path.home() / ".swecli" / "sessions")
+        session_manager = SessionManager(paths.global_sessions_dir)
         mode_manager = ModeManager()
         approval_manager = ApprovalManager(console)
         undo_manager = UndoManager(50)

@@ -13,6 +13,7 @@ from rich.table import Table
 from .providers import get_provider_config, get_provider_choices, get_provider_models
 from .validator import validate_api_key
 from .interactive_menu import InteractiveMenu
+from swecli.core.paths import get_paths, APP_DIR_NAME
 
 
 console = Console()
@@ -83,7 +84,7 @@ def run_setup_wizard() -> bool:
 
     if save_config(config):
         console.print()
-        console.print("[bold green]✓[/bold green] Configuration saved to ~/.swecli/settings.json")
+        console.print(f"[bold green]✓[/bold green] Configuration saved to ~/{APP_DIR_NAME}/settings.json")
         console.print("[bold green]✓[/bold green] All set! Starting SWE-CLI...")
         console.print()
         return True
@@ -240,10 +241,10 @@ def configure_advanced_settings() -> dict:
 def save_config(config: dict) -> bool:
     """Save configuration to settings.json."""
     try:
-        config_dir = Path.home() / ".swecli"
-        config_dir.mkdir(parents=True, exist_ok=True)
+        paths = get_paths()
+        paths.global_dir.mkdir(parents=True, exist_ok=True)
 
-        config_file = config_dir / "settings.json"
+        config_file = paths.global_settings
         with open(config_file, "w") as f:
             json.dump(config, f, indent=2)
 
@@ -255,5 +256,4 @@ def save_config(config: dict) -> bool:
 
 def config_exists() -> bool:
     """Check if configuration file exists."""
-    config_file = Path.home() / ".swecli" / "settings.json"
-    return config_file.exists()
+    return get_paths().global_settings.exists()

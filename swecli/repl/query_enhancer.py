@@ -132,8 +132,9 @@ class QueryEnhancer:
                     cache_file = playbook_config.cache_file
                     # If cache_file not specified but cache enabled, use session-based default
                     if cache_file is None and playbook_config.cache_embeddings and session:
-                        swecli_dir = os.path.expanduser(self.config.swecli_dir)
-                        cache_file = os.path.join(swecli_dir, "sessions", f"{session.session_id}_embeddings.json")
+                        from swecli.core.paths import get_paths
+                        paths = get_paths()
+                        cache_file = str(paths.global_sessions_dir / f"{session.session_id}_embeddings.json")
                 else:
                     # Fallback to defaults if config not available
                     max_strategies = 30

@@ -178,7 +178,9 @@ class REPL:
     def _init_prompt_session(self):
         """Initialize prompt session with history and autocomplete."""
         # Setup prompt session with history
-        history_file = Path(self.config.swecli_dir).expanduser() / "history.txt"
+        from swecli.core.paths import get_paths
+        paths = get_paths(self.config_manager.working_dir)
+        history_file = paths.global_history_file
         history_file.parent.mkdir(parents=True, exist_ok=True)
 
         # Create autocomplete for @ mentions and / commands

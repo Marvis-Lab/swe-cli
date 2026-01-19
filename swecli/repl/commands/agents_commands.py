@@ -8,6 +8,7 @@ from rich.table import Table
 from rich.prompt import Prompt, Confirm
 
 from swecli.repl.commands.base import CommandHandler, CommandResult
+from swecli.core.paths import get_paths, APP_DIR_NAME
 
 
 # Default template for new agents (Claude Code style)
@@ -90,8 +91,8 @@ class AgentsCommands(CommandHandler):
         self.console.print("  [cyan]/agents delete <name>[/cyan] - Delete a custom agent")
         self.console.print("")
         self.print_info("Custom agents are defined as markdown files in:")
-        self.console.print(f"  Personal: [dim]~/.swecli/agents/*.md[/dim]")
-        self.console.print(f"  Project:  [dim].swecli/agents/*.md[/dim]")
+        self.console.print(f"  Personal: [dim]~/{APP_DIR_NAME}/agents/*.md[/dim]")
+        self.console.print(f"  Project:  [dim]{APP_DIR_NAME}/agents/*.md[/dim]")
 
         return CommandResult(success=True)
 
@@ -106,17 +107,18 @@ class AgentsCommands(CommandHandler):
         """
         try:
             # Ask for location
+            paths = get_paths(self.config_manager.working_dir)
             self.print_info("Where should the agent be created?")
-            self.console.print("  [cyan]1[/cyan]. Personal (~/.swecli/agents/)")
-            self.console.print("  [cyan]2[/cyan]. Project (.swecli/agents/)")
+            self.console.print(f"  [cyan]1[/cyan]. Personal (~/{APP_DIR_NAME}/agents/)")
+            self.console.print(f"  [cyan]2[/cyan]. Project ({APP_DIR_NAME}/agents/)")
 
             choice = Prompt.ask("Select location", choices=["1", "2"], default="1")
             is_personal = choice == "1"
 
             if is_personal:
-                agents_dir = Path.home() / ".swecli" / "agents"
+                agents_dir = paths.global_agents_dir
             else:
-                agents_dir = self.config_manager.working_dir / ".swecli" / "agents"
+                agents_dir = paths.project_agents_dir
 
             # Ask for agent name
             if args:
@@ -283,10 +285,11 @@ class AgentsCommands(CommandHandler):
         name = name.replace(".md", "").strip()
 
         # Search in project first, then user global
+        paths = get_paths(self.config_manager.working_dir)
         search_dirs = []
         if self.config_manager.working_dir:
-            search_dirs.append(self.config_manager.working_dir / ".swecli" / "agents")
-        search_dirs.append(Path.home() / ".swecli" / "agents")
+            search_dirs.append(paths.project_agents_dir)
+        search_dirs.append(paths.global_agents_dir)
 
         for agents_dir in search_dirs:
             agent_file = agents_dir / f"{name}.md"

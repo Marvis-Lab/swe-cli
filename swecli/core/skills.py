@@ -36,6 +36,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from swecli.core.paths import get_paths
+
 try:
     import yaml
 
@@ -120,8 +122,8 @@ class SkillLoader:
 
     def _detect_source(self, skill_dir: Path) -> str:
         """Detect if skill directory is user-global or project-local."""
-        user_dir = Path.home() / ".swecli" / "skills"
-        if skill_dir == user_dir or str(skill_dir).startswith(str(user_dir)):
+        global_skills_dir = get_paths().global_skills_dir
+        if skill_dir == global_skills_dir or str(skill_dir).startswith(str(global_skills_dir)):
             return "user-global"
         return "project"
 

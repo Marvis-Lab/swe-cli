@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
+from swecli.core.paths import get_paths
+
 
 @dataclass
 class CloneResult:
@@ -39,7 +41,7 @@ class GitHelper:
         Args:
             working_dir: Base working directory for cloned repos
         """
-        self.working_dir = working_dir or Path.home() / ".swecli" / "repos"
+        self.working_dir = working_dir or get_paths().global_repos_dir
         self.working_dir.mkdir(parents=True, exist_ok=True)
 
     def clone_repo(

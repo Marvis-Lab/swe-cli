@@ -7,6 +7,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from swecli.core.paths import get_paths
 from swecli.models.config import AppConfig
 
 logger = logging.getLogger(__name__)
@@ -38,7 +39,8 @@ class ConfigManager:
         local_data: dict = {}
 
         # Load global config
-        global_config = Path.home() / ".swecli" / "settings.json"
+        paths = get_paths(self.working_dir)
+        global_config = paths.global_settings
         if global_config.exists():
             with open(global_config) as f:
                 global_data = json.load(f)
@@ -51,7 +53,7 @@ class ConfigManager:
                 config_data.update(global_data)
 
         # Load local project config
-        local_config = self.working_dir / ".swecli" / "settings.json"
+        local_config = paths.project_settings
         if local_config.exists():
             with open(local_config) as f:
                 local_data = json.load(f)
@@ -93,10 +95,11 @@ class ConfigManager:
             config: Configuration to save
             global_config: If True, save to global config; otherwise save to local project
         """
+        paths = get_paths(self.working_dir)
         if global_config:
-            config_path = Path.home() / ".swecli" / "settings.json"
+            config_path = paths.global_settings
         else:
-            config_path = self.working_dir / ".swecli" / "settings.json"
+            config_path = paths.project_settings
 
         config_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -146,9 +149,10 @@ class ConfigManager:
             List of context file contents, from global to local
         """
         contexts = []
+        paths = get_paths(self.working_dir)
 
         # Global context
-        global_context = Path.home() / ".swecli" / "OPENCLI.md"
+        global_context = paths.global_context_file
         if global_context.exists():
             contexts.append(global_context.read_text())
 
@@ -200,7 +204,7 @@ class ConfigManager:
     @property
     def user_skills_dir(self) -> Path:
         """Get user-global skills directory (~/.swecli/skills/)."""
-        return Path.home() / ".swecli" / "skills"
+        return get_paths(self.working_dir).global_skills_dir
 
     @property
     def project_skills_dir(self) -> Path | None:
@@ -209,7 +213,7 @@ class ConfigManager:
         Returns None if no working directory is set.
         """
         if self.working_dir:
-            return self.working_dir / ".swecli" / "skills"
+            return get_paths(self.working_dir).project_skills_dir
         return None
 
     def get_skill_dirs(self) -> list[Path]:
@@ -296,6 +300,7 @@ class ConfigManager:
         """
         agents: list[dict[str, Any]] = []
         seen_names: set[str] = set()
+        paths = get_paths(self.working_dir)
 
         def add_agent(agent: dict[str, Any]) -> None:
             """Add agent, removing any existing agent with the same name."""
@@ -310,7 +315,7 @@ class ConfigManager:
             seen_names.add(name)
 
         # 1. Load user global JSON agents
-        global_agents_file = Path.home() / ".swecli" / "agents.json"
+        global_agents_file = paths.global_agents_file
         if global_agents_file.exists():
             try:
                 with open(global_agents_file) as f:
@@ -323,7 +328,7 @@ class ConfigManager:
                 logger.warning(f"Failed to load global agents.json: {e}")
 
         # 2. Load user global markdown agents
-        global_agents_dir = Path.home() / ".swecli" / "agents"
+        global_agents_dir = paths.global_agents_dir
         if global_agents_dir.exists() and global_agents_dir.is_dir():
             for md_file in sorted(global_agents_dir.glob("*.md")):
                 agent = self._load_markdown_agent(md_file, "user-global")
@@ -332,7 +337,7 @@ class ConfigManager:
 
         # 3. Load project JSON agents
         if self.working_dir:
-            project_agents_file = self.working_dir / ".swecli" / "agents.json"
+            project_agents_file = paths.project_agents_file
             if project_agents_file.exists():
                 try:
                     with open(project_agents_file) as f:
@@ -345,7 +350,7 @@ class ConfigManager:
                     logger.warning(f"Failed to load project agents.json: {e}")
 
             # 4. Load project markdown agents
-            project_agents_dir = self.working_dir / ".swecli" / "agents"
+            project_agents_dir = paths.project_agents_dir
             if project_agents_dir.exists() and project_agents_dir.is_dir():
                 for md_file in sorted(project_agents_dir.glob("*.md")):
                     agent = self._load_markdown_agent(md_file, "project")
