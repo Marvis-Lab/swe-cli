@@ -358,6 +358,75 @@ class ChatTextArea(TextArea):
                     app._model_picker_back()
                 return
 
+        # Agent creator wizard keyboard handling
+        agent_creator = getattr(app, "_agent_creator", None)
+        wizard_stage = None
+        if agent_creator and hasattr(agent_creator, "state") and agent_creator.state:
+            wizard_stage = agent_creator.state.get("stage")
+
+        # During GENERATING stage, allow normal input so user can queue messages
+        agent_wizard_active = bool(
+            agent_creator
+            and getattr(agent_creator, "active", False)
+            and wizard_stage != "generating"
+        )
+
+        if agent_wizard_active:
+
+            text_input_stages = ("identifier", "prompt", "description")
+            is_text_input_stage = wizard_stage in text_input_stages
+
+            # SELECTION STAGES: intercept up/down for navigation, B for back
+            if not is_text_input_stage:
+                if event.key == "up":
+                    event.stop()
+                    event.prevent_default()
+                    if hasattr(app, "_agent_wizard_move"):
+                        app._agent_wizard_move(-1)
+                    return
+                if event.key == "down":
+                    event.stop()
+                    event.prevent_default()
+                    if hasattr(app, "_agent_wizard_move"):
+                        app._agent_wizard_move(1)
+                    return
+                if event.character and event.character.lower() == "b":
+                    event.stop()
+                    event.prevent_default()
+                    if hasattr(app, "_agent_wizard_back"):
+                        app._agent_wizard_back()
+                    return
+
+            # BOTH STAGES: Enter confirms, Escape cancels
+            if event.key in {"enter", "return"} and "+" not in event.key:
+                event.stop()
+                event.prevent_default()
+                # Sync current text to state before confirming (for text input stages)
+                if is_text_input_stage and hasattr(agent_creator, "update_input_preview"):
+                    agent_creator.update_input_preview(self.text or "")
+                confirm = getattr(app, "_agent_wizard_confirm", None)
+                if confirm is not None:
+                    result = confirm()
+                    if inspect.isawaitable(result):
+                        await result
+                return
+
+            if event.key in {"escape", "ctrl+c"}:
+                event.stop()
+                event.prevent_default()
+                if hasattr(app, "_agent_wizard_cancel"):
+                    app._agent_wizard_cancel()
+                return
+
+            # TEXT INPUT STAGES: Allow typing, update live preview after keystroke
+            if is_text_input_stage:
+                await super()._on_key(event)
+                self.update_suggestion()
+                # Update live preview in the wizard panel
+                if hasattr(agent_creator, "update_input_preview"):
+                    agent_creator.update_input_preview(self.text or "")
+                return
+
         if event.key in {"pageup", "pagedown"}:
             event.stop()
             event.prevent_default()
