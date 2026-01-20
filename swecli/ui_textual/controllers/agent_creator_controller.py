@@ -424,6 +424,17 @@ class AgentCreatorController:
         if not state:
             return
 
+        # Set stage to GENERATING so keyboard handler allows normal input
+        state["stage"] = self.STAGE_GENERATING
+
+        # Set processing state so messages get queued during generation
+        self.app._set_processing_state(True)
+
+        # Pause message processor so queued messages wait until generation completes
+        runner = getattr(self.app, "_runner", None)
+        if runner:
+            runner.pause_processing()
+
         description = state.get("description", "")
 
         # Get spinner service from app
@@ -542,6 +553,18 @@ class AgentCreatorController:
             if spinner_service and spinner_id:
                 spinner_service.stop(spinner_id)
             self.end(f"Failed to create agent: {e}", clear_panel=True)
+        finally:
+            # Resume message processor first (will process any queued messages)
+            if runner:
+                runner.resume_processing()
+
+            # Check queue and reset processing state appropriately
+            queue_size = runner.get_queue_size() if runner else 0
+            if queue_size == 0:
+                # No queued messages, reset processing state
+                self.app.notify_processing_complete()
+            # If queue has messages, the queue processor will call
+            # notify_processing_complete() after processing them all
 
     def _parse_generated_agent(self, content: str, description: str) -> tuple[str, str]:
         """Parse LLM-generated agent content and extract name.

@@ -35,7 +35,6 @@ def _reset_terminal_mouse_mode() -> None:
 atexit.register(_reset_terminal_mouse_mode)
 
 
-
 from swecli.core.agents.components import extract_plan_from_response
 from swecli.ui_textual.style_tokens import ERROR
 from swecli.core.runtime import ConfigManager, OperationMode
@@ -46,12 +45,31 @@ from swecli.ui_textual.managers.approval_manager import ChatApprovalManager
 from swecli.ui_textual.chat_app import create_chat_app
 from swecli.ui_textual.constants import TOOL_ERROR_SENTINEL
 from swecli.ui_textual.utils import build_tool_call_text
-from swecli.ui_textual.runner_components import HistoryHydrator, ToolRenderer, ModelConfigManager, CommandRouter, MessageProcessor, ConsoleBridge, MCPController
+from swecli.ui_textual.runner_components import (
+    HistoryHydrator,
+    ToolRenderer,
+    ModelConfigManager,
+    CommandRouter,
+    MessageProcessor,
+    ConsoleBridge,
+    MCPController,
+)
 
 # Approval phrases for plan execution
 PLAN_APPROVAL_PHRASES = {
-    "yes", "approve", "execute", "go ahead", "do it", "proceed",
-    "start", "run", "ok", "okay", "y", "sure", "go",
+    "yes",
+    "approve",
+    "execute",
+    "go ahead",
+    "do it",
+    "proceed",
+    "start",
+    "run",
+    "ok",
+    "okay",
+    "y",
+    "sure",
+    "go",
 }
 
 
@@ -60,7 +78,7 @@ class TextualRunner:
 
     This class serves as the main entry point and controller for the UI-based
     interaction mode. It coordinates:
-    
+
     1. **Core Runtime**: REPL, ConfigManager, SessionManager
     2. **UI Components**: Textual App, History Hydration, Tool Rendering
     3. **Background Services**: Message Processing, Console Bridging, MCP Auto-connect
@@ -77,19 +95,15 @@ class TextualRunner:
         self,
         *,
         working_dir: Optional[Path] = None,
-        resume_session: Optional[str] = None,
-        continue_session: bool = False,
         repl: Optional[REPL] = None,
         config_manager: Optional[ConfigManager] = None,
         session_manager: Optional[SessionManager] = None,
         auto_connect_mcp: bool = False,
     ) -> None:
         self.working_dir = Path(working_dir or Path.cwd()).resolve()
-        
+
         # 1. Setup Core Runtime (Config, REPL, Session)
         self._setup_runtime(
-            resume_session=resume_session,
-            continue_session=continue_session,
             repl=repl,
             config_manager=config_manager,
             session_manager=session_manager,
@@ -105,12 +119,12 @@ class TextualRunner:
         # 4. Finalize
         self._loop = asyncio.new_event_loop()
         self._console_task: asyncio.Task[None] | None = None
-        self._queue_update_callback: Callable[[int], None] | None = getattr(self.app, "update_queue_indicator", None)
+        self._queue_update_callback: Callable[[int], None] | None = getattr(
+            self.app, "update_queue_indicator", None
+        )
 
     def _setup_runtime(
         self,
-        resume_session: Optional[str],
-        continue_session: bool,
         repl: Optional[REPL],
         config_manager: Optional[ConfigManager],
         session_manager: Optional[SessionManager],
@@ -119,23 +133,27 @@ class TextualRunner:
         """Initialize the core SWE-CLI runtime (REPL, Config, Session)."""
         if repl is not None:
             self.repl = repl
-            self.config_manager = config_manager or getattr(repl, "config_manager", ConfigManager(self.working_dir))
+            self.config_manager = config_manager or getattr(
+                repl, "config_manager", ConfigManager(self.working_dir)
+            )
             self.config = getattr(repl, "config", None) or self.config_manager.get_config()
             self.session_manager = session_manager or getattr(repl, "session_manager", None)
-            
+
             if self.session_manager is None:
                 raise ValueError("SessionManager is required when providing a custom REPL")
-            
+
             # Ensure config consistency
             if not hasattr(self.repl, "config"):
                 self.repl.config = self.config
-            
+
             # Sync bash permissions
-            if hasattr(self.repl.config, "permissions") and hasattr(self.repl.config.permissions, "bash"):
+            if hasattr(self.repl.config, "permissions") and hasattr(
+                self.repl.config.permissions, "bash"
+            ):
                 self.repl.config.permissions.bash.enabled = True
             elif hasattr(self.repl.config, "enable_bash"):
                 self.repl.config.enable_bash = True
-                
+
             self._auto_connect_mcp = auto_connect_mcp and hasattr(self.repl, "mcp_manager")
         else:
             self.config_manager = config_manager or ConfigManager(self.working_dir)
@@ -144,17 +162,19 @@ class TextualRunner:
 
             session_root = Path(self.config.session_dir).expanduser()
             self.session_manager = session_manager or SessionManager(session_root)
-            self._configure_session(resume_session, continue_session)
+            self.session_manager.create_session(working_directory=str(self.working_dir))
 
             self.repl = REPL(self.config_manager, self.session_manager)
             self.repl.mode_manager.set_mode(OperationMode.NORMAL)
             self.repl.approval_manager = ChatApprovalManager(self.repl.console)
-            
-            if hasattr(self.repl.config, "permissions") and hasattr(self.repl.config.permissions, "bash"):
+
+            if hasattr(self.repl.config, "permissions") and hasattr(
+                self.repl.config.permissions, "bash"
+            ):
                 self.repl.config.permissions.bash.enabled = True
             elif hasattr(self.repl.config, "enable_bash"):
                 self.repl.config.enable_bash = True
-                
+
             self._auto_connect_mcp = auto_connect_mcp and hasattr(self.repl, "mcp_manager")
 
     def _setup_components(self, auto_connect_mcp: bool) -> None:
@@ -176,7 +196,7 @@ class TextualRunner:
             callbacks={
                 "enqueue_console_text": self.console_bridge.enqueue_text,
                 "refresh_ui_config": self.model_config_manager.refresh_ui_config,
-            }
+            },
         )
         self.mcp_controller.set_auto_connect(auto_connect_mcp)
 
@@ -187,7 +207,7 @@ class TextualRunner:
                 "enqueue_console_text": self.console_bridge.enqueue_text,
                 "start_mcp_connect_thread": self.mcp_controller.start_autoconnect_thread,
                 "refresh_ui_config": self.model_config_manager.refresh_ui_config,
-            }
+            },
         )
 
         self.message_processor = MessageProcessor(
@@ -197,8 +217,12 @@ class TextualRunner:
                 "handle_query": self._run_query,
                 "render_responses": self._render_responses,
                 "on_error": lambda msg: self.app.notify_processing_error(msg),
-                "on_command_error": lambda msg: self.app.conversation.add_error(msg) if hasattr(self.app, 'conversation') else None,
-            }
+                "on_command_error": lambda msg: (
+                    self.app.conversation.add_error(msg)
+                    if hasattr(self.app, "conversation")
+                    else None
+                ),
+            },
         )
 
     def _setup_app(self) -> None:
@@ -222,9 +246,13 @@ class TextualRunner:
             "get_model_config": self.model_config_manager.get_model_config_snapshot,
             "on_interrupt": self._handle_interrupt,
             "working_dir": str(self.working_dir),
-            "todo_handler": getattr(self.repl.tool_registry, "todo_handler", None) if hasattr(self.repl, "tool_registry") else None,
+            "todo_handler": (
+                getattr(self.repl.tool_registry, "todo_handler", None)
+                if hasattr(self.repl, "tool_registry")
+                else None
+            ),
         }
-        
+
         if self._auto_connect_mcp:
             downstream_on_ready = lambda: self.mcp_controller.start_autoconnect_thread(self._loop)
         else:
@@ -257,45 +285,40 @@ class TextualRunner:
                 "completer": getattr(self.repl, "completer", None),
             }
             self.app = create_chat_app(**legacy_kwargs)
-            
+
         if hasattr(self.repl.approval_manager, "chat_app"):
             self.repl.approval_manager.chat_app = self.app
-            
+
         # Store approval manager reference on the app for action_cycle_autonomy
         self.app._approval_manager = self.repl.approval_manager
 
         # Store thinking handler reference for action_toggle_thinking to sync with query_processor
-        self.app._thinking_handler = getattr(self.repl.tool_registry, 'thinking_handler', None)
+        self.app._thinking_handler = getattr(self.repl.tool_registry, "thinking_handler", None)
 
         if hasattr(self.repl, "config_commands"):
             self.repl.config_commands.chat_app = self.app
 
         # Store runner reference on app for queue indicator updates
         self.app._runner = self
-        
+
         # Link console bridge to app for rendering
         self.console_bridge.set_app(self.app)
-
-
-    def _configure_session(self, resume: Optional[str], continue_session: bool) -> None:
-        """Prepare session state mirroring CLI semantics."""
-
-        if resume:
-            self.session_manager.load_session(resume)
-            return
-
-        if continue_session:
-            loaded = self.session_manager.load_latest_session(self.working_dir)
-            if loaded:
-                return
-
-        self.session_manager.create_session(working_directory=str(self.working_dir))
 
     def get_queue_size(self) -> int:
         """Get number of messages waiting in queue."""
         if hasattr(self, "message_processor"):
             return self.message_processor.get_queue_size()
         return 0
+
+    def pause_processing(self) -> None:
+        """Pause message processing."""
+        if hasattr(self, "message_processor"):
+            self.message_processor.pause()
+
+    def resume_processing(self) -> None:
+        """Resume message processing."""
+        if hasattr(self, "message_processor"):
+            self.message_processor.resume()
 
     def enqueue_message(self, text: str, needs_display: bool = False) -> None:
         """Queue a message from the UI for processing.
@@ -308,8 +331,6 @@ class TextualRunner:
         """
         if hasattr(self, "message_processor"):
             self.message_processor.enqueue_message(text, needs_display)
-
-
 
     def _run_query(self, message: str) -> list[ChatMessage]:
         """Execute a user query via the REPL and return new session messages."""
@@ -353,10 +374,11 @@ class TextualRunner:
             try:
                 # Use the same query method the app uses to get the conversation widget
                 from swecli.ui_textual.chat_app import ConversationLog
+
                 conversation_widget = self.app.query_one("#conversation", ConversationLog)
             except Exception:
                 # Fallback to direct attribute access
-                if hasattr(self.app, 'conversation') and self.app.conversation is not None:
+                if hasattr(self.app, "conversation") and self.app.conversation is not None:
                     conversation_widget = self.app.conversation
 
             if conversation_widget is not None:
@@ -365,20 +387,22 @@ class TextualRunner:
                 conversation_widget.set_debug_enabled(config.debug_logging)
 
                 from swecli.ui_textual.ui_callback import TextualUICallback
+
                 ui_callback = TextualUICallback(conversation_widget, self.app, self.working_dir)
             else:
                 # Create a mock callback for when app is not mounted (e.g., during testing)
                 # BaseUICallback provides no-op implementations for all methods
                 from swecli.ui_textual.callback_interface import BaseUICallback
+
                 ui_callback = BaseUICallback()
 
             # Temporarily disable console bridge to prevent duplicate rendering
             # All relevant messages are already in session.messages
             self.console_bridge.uninstall()
-            
+
             try:
                 # Process query with UI callback for real-time display
-                if hasattr(self.repl, '_process_query_with_callback'):
+                if hasattr(self.repl, "_process_query_with_callback"):
                     self.repl._process_query_with_callback(message, ui_callback)
                 else:
                     # Fallback to normal processing if callback method doesn't exist
@@ -443,6 +467,7 @@ class TextualRunner:
         todo_handler = getattr(self.repl.tool_registry, "todo_handler", None)
         if todo_handler:
             from swecli.core.agents.components import extract_plan_from_response
+
             parsed = extract_plan_from_response(f"---BEGIN PLAN---\n{plan_text}\n---END PLAN---")
             if parsed:
                 todos = parsed.get_todo_items()
@@ -495,8 +520,6 @@ Work through each implementation step in order. Mark each todo item as 'in_progr
             return
         self.command_router.run_generic_command(command)
 
-
-
     def _handle_interrupt(self) -> bool:
         """Handle interrupt request from UI (ESC key press).
 
@@ -513,11 +536,7 @@ Work through each implementation step in order. Mark each todo item as 'in_progr
         current = self.repl.mode_manager.current_mode
         from swecli.core.runtime import OperationMode
 
-        new_mode = (
-            OperationMode.PLAN
-            if current == OperationMode.NORMAL
-            else OperationMode.NORMAL
-        )
+        new_mode = OperationMode.PLAN if current == OperationMode.NORMAL else OperationMode.NORMAL
 
         self.repl.mode_manager.set_mode(new_mode)
         if new_mode == OperationMode.PLAN:
@@ -560,13 +579,13 @@ Work through each implementation step in order. Mark each todo item as 'in_progr
                 if content and not has_tool_calls:
                     self.app.conversation.add_assistant_message(msg.content)
                     # Force refresh to ensure immediate visual update
-                    if hasattr(self.app.conversation, 'refresh'):
+                    if hasattr(self.app.conversation, "refresh"):
                         self.app.conversation.refresh()
                     if hasattr(self.app, "record_assistant_message"):
                         self.app.record_assistant_message(msg.content)
                     if hasattr(self.app, "record_assistant_message"):
                         self.app.record_assistant_message(msg.content)
-                    
+
                     self.console_bridge.set_last_assistant_message(content)
                     self.console_bridge.set_suppress_duplicate(True)
                     assistant_text_rendered = True
@@ -578,8 +597,6 @@ Work through each implementation step in order. Mark each todo item as 'in_progr
 
         if buffer_started and hasattr(self.app, "stop_console_buffer"):
             self.app.stop_console_buffer()
-
-
 
     def run(self) -> None:
         """Launch the Textual application and background consumer."""
@@ -616,12 +633,10 @@ Work through each implementation step in order. Mark each todo item as 'in_progr
         """Called when the Textual app is fully mounted and ready."""
         # Schedule MCP auto-connect if enabled
         self.mcp_controller.start_autoconnect_thread(self._loop)
-        
+
         # If auto-connect isn't enabled, show tip
         if not self.mcp_controller._auto_connect_enabled:
-             self.mcp_controller.notify_manual_connect()
-
-
+            self.mcp_controller.notify_manual_connect()
 
 
 def launch_textual_cli(message=None, **kwargs) -> None:

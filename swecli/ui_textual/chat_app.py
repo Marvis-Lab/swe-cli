@@ -21,13 +21,13 @@ from swecli.ui_textual.controllers.autocomplete_popup_controller import Autocomp
 from swecli.ui_textual.controllers.command_router import CommandRouter
 from swecli.ui_textual.controllers.message_controller import MessageController
 from swecli.ui_textual.controllers.model_picker_controller import ModelPickerController
+from swecli.ui_textual.controllers.agent_creator_controller import AgentCreatorController
 from swecli.ui_textual.controllers.spinner_controller import SpinnerController
 from swecli.ui_textual.managers.console_buffer_manager import ConsoleBufferManager
 from swecli.ui_textual.managers.message_history import MessageHistory
 from swecli.ui_textual.managers.tool_summary_manager import ToolSummaryManager
 from swecli.ui_textual.managers.spinner_service import SpinnerService
 from swecli.ui_textual.renderers.welcome_panel import render_welcome_panel
-
 
 
 class SWECLIChatApp(App):
@@ -43,6 +43,7 @@ class SWECLIChatApp(App):
         Binding("ctrl+l", "clear_conversation", "", show=False),
         Binding("ctrl+t", "toggle_todo_panel", "Toggle Todos", show=False),
         Binding("ctrl+shift+t", "toggle_thinking", "Thinking", show=False),
+        Binding("ctrl+o", "toggle_parallel_expansion", "Expand/Collapse", show=False),
         Binding("escape", "interrupt", "", show=False),
         Binding("pageup", "scroll_up", "Scroll Up", show=False),
         Binding("pagedown", "scroll_down", "Scroll Down", show=False),
@@ -109,6 +110,7 @@ class SWECLIChatApp(App):
         self._ui_thread: threading.Thread | None = None
         self._tips_manager = TipsManager()
         self._model_picker: ModelPickerController = ModelPickerController(self)
+        self._agent_creator: AgentCreatorController = AgentCreatorController(self)
         self._approval_controller = ApprovalPromptController(self)
         self._spinner = SpinnerController(self, self._tips_manager, todo_handler=self.todo_handler)
         self.spinner_service = SpinnerService(self)
@@ -223,7 +225,6 @@ class SWECLIChatApp(App):
         if hasattr(self, "footer"):
             self.footer.set_normal_model(model)
 
-
     def update_autocomplete(
         self,
         entries: list[tuple[str, str]],
@@ -240,7 +241,6 @@ class SWECLIChatApp(App):
             return
 
         controller.render(entries, selected_index)
-
 
     def _start_local_spinner(self, message: str | None = None) -> None:
         """Begin local spinner animation while backend processes."""
@@ -314,7 +314,6 @@ class SWECLIChatApp(App):
         elif hasattr(self, "conversation"):
             self.conversation.write(renderable)
 
-
     def record_assistant_message(self, message: str) -> None:
         """Track assistant lines to suppress duplicate console echoes."""
 
@@ -349,8 +348,10 @@ class SWECLIChatApp(App):
         """
         handled = await self._command_router.handle(command)
         if not handled and not self.on_message:
-            cmd = command.lower().split()[0]
-            self.conversation.add_error(f"Unknown command: {cmd}")
+            self.conversation.add_command_result(
+                ["Unknown command", "Type /help for available commands"],
+                is_error=True,
+            )
         return handled
 
     async def _start_model_picker(self) -> None:
@@ -371,6 +372,23 @@ class SWECLIChatApp(App):
 
     async def _handle_model_picker_input(self, raw_value: str) -> bool:
         return await self._model_picker.handle_input(raw_value)
+
+    # Agent Creator Wizard Methods
+    def _agent_wizard_move(self, delta: int) -> None:
+        """Navigate selection in agent wizard."""
+        self._agent_creator.move(delta)
+
+    def _agent_wizard_back(self) -> None:
+        """Go back in agent wizard."""
+        self._agent_creator.back()
+
+    def _agent_wizard_cancel(self) -> None:
+        """Cancel the agent wizard."""
+        self._agent_creator.cancel()
+
+    async def _agent_wizard_confirm(self) -> None:
+        """Confirm current wizard step."""
+        await self._agent_creator.confirm()
 
     async def show_approval_modal(self, command: str, working_dir: str) -> tuple[bool, str, str]:
         """Display an inline approval prompt inside the conversation log."""
@@ -486,7 +504,9 @@ class SWECLIChatApp(App):
         """Cancel exit confirmation and restore normal state."""
         if self._exit_confirmation_mode:
             self._exit_confirmation_mode = False
-            self.input_label.update("› Type your message (Enter to send, Shift+Enter for new line):")
+            self.input_label.update(
+                "› Type your message (Enter to send, Shift+Enter for new line):"
+            )
 
     def update_queue_indicator(self, queue_size: int) -> None:
         """Update input label to show queue status.
@@ -502,7 +522,9 @@ class SWECLIChatApp(App):
             msg = "message" if queue_size == 1 else "messages"
             self.input_label.update(f"› {queue_size} {msg} queued")
         else:
-            self.input_label.update("› Type your message (Enter to send, Shift+Enter for new line):")
+            self.input_label.update(
+                "› Type your message (Enter to send, Shift+Enter for new line):"
+            )
 
     def show_selection_tip(self) -> None:
         """Show temporary tip for text selection."""
@@ -518,17 +540,26 @@ class SWECLIChatApp(App):
         self._selection_tip_timer = self.set_timer(4, self._revert_input_label)
 
     def _revert_input_label(self) -> None:
-        """Revert input label to default."""
+        """Revert input label to default or queue indicator."""
         if self._exit_confirmation_mode:
             return
 
-        self.input_label.update(self._default_label)
+        # Check if there are queued messages - show queue indicator instead
+        runner = getattr(self, "_runner", None)
+        queue_size = runner.get_queue_size() if runner else 0
+
+        if queue_size > 0:
+            msg = "message" if queue_size == 1 else "messages"
+            self.input_label.update(f"› {queue_size} {msg} queued")
+        else:
+            self.input_label.update(self._default_label)
+
         self._selection_tip_timer = None
 
     def action_quit(self) -> None:
         """Quit the application (Ctrl+C)."""
         # Stop all spinners before exiting
-        if hasattr(self, 'spinner_service'):
+        if hasattr(self, "spinner_service"):
             self.spinner_service.stop_all(immediate=True)
         self.exit()
 
@@ -572,7 +603,7 @@ class SWECLIChatApp(App):
     def action_history_up(self) -> None:
         """Navigate backward through previously submitted messages."""
 
-        if not hasattr(self, '_history'):
+        if not hasattr(self, "_history"):
             return
 
         result = self._history.navigate_up(self.input_field.text)
@@ -582,11 +613,10 @@ class SWECLIChatApp(App):
         self.input_field.load_text(result)
         self.input_field.move_cursor_to_end()
 
-
     def action_history_down(self) -> None:
         """Navigate forward through history or restore unsent input."""
 
-        if not hasattr(self, '_history'):
+        if not hasattr(self, "_history"):
             return
 
         result = self._history.navigate_down()
@@ -647,7 +677,7 @@ class SWECLIChatApp(App):
         self._thinking_visible = not self._thinking_visible
 
         # Sync with thinking handler (used by query_processor for prompt injection)
-        if hasattr(self, '_thinking_handler') and self._thinking_handler:
+        if hasattr(self, "_thinking_handler") and self._thinking_handler:
             self._thinking_handler._visible = self._thinking_visible
 
         # Update status bar
@@ -656,6 +686,16 @@ class SWECLIChatApp(App):
             status_bar.set_thinking_enabled(self._thinking_visible)
         except Exception:  # pragma: no cover - defensive
             pass
+
+    def action_toggle_parallel_expansion(self) -> None:
+        """Toggle parallel agent display expansion (Ctrl+O).
+
+        Toggles between expanded view (showing all agent tool calls)
+        and collapsed view (showing just the summary header).
+        """
+        if hasattr(self.conversation, "has_active_parallel_group"):
+            if self.conversation.has_active_parallel_group():
+                self.conversation.toggle_parallel_expansion()
 
 
 def create_chat_app(

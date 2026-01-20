@@ -34,14 +34,15 @@ class MessageProcessor:
         """
         self._app = app
         self._callbacks = callbacks
-        
+
         # Queue holds tuples of (message, needs_display)
         self._pending: queue.Queue[tuple[str, bool]] = queue.Queue()
 
         self._processor_thread: threading.Thread | None = None
         self._processor_stop = threading.Event()
         self._message_ready = threading.Event()  # Signal when message is enqueued
-        
+        self._paused = threading.Event()  # Set when paused
+
         # Callback to update UI queue indicator
         self._queue_update_callback: Callable[[int], None] | None = None
         if hasattr(app, "update_queue_indicator"):
@@ -53,10 +54,22 @@ class MessageProcessor:
         if hasattr(app, "update_queue_indicator"):
             self._queue_update_callback = app.update_queue_indicator
 
-
     def get_queue_size(self) -> int:
         """Get number of messages waiting in queue."""
         return self._pending.qsize()
+
+    def pause(self) -> None:
+        """Pause message processing. Messages stay queued."""
+        self._paused.set()
+
+    def resume(self) -> None:
+        """Resume message processing."""
+        self._paused.clear()
+        self._message_ready.set()  # Wake up to process any waiting messages
+
+    def is_paused(self) -> bool:
+        """Check if processor is paused."""
+        return self._paused.is_set()
 
     def enqueue_message(self, text: str, needs_display: bool = False) -> None:
         """Queue a message for processing.
@@ -77,9 +90,7 @@ class MessageProcessor:
 
         self._processor_stop.clear()
         self._processor_thread = threading.Thread(
-            target=self._run_loop,
-            daemon=True,
-            name="message-processor"
+            target=self._run_loop, daemon=True, name="message-processor"
         )
         self._processor_thread.start()
 
@@ -95,7 +106,7 @@ class MessageProcessor:
         """Notify UI of queue size change."""
         if not self._queue_update_callback:
             return
-            
+
         size = self.get_queue_size()
         if from_ui_thread:
             self._queue_update_callback(size)
@@ -115,6 +126,11 @@ class MessageProcessor:
                 except queue.Empty:
                     continue
 
+                # Check if paused - put message back and wait
+                if self._paused.is_set():
+                    self._pending.put((message, needs_display))
+                    continue
+
                 # Update indicator to show waiting count (excluding current)
                 self._notify_queue_update(from_ui_thread=False)
 
@@ -126,9 +142,7 @@ class MessageProcessor:
 
                 # Display user message if needed (queued while busy)
                 if needs_display and not is_command:
-                    self._app.call_from_thread(
-                        self._app.conversation.add_user_message, message
-                    )
+                    self._app.call_from_thread(self._app.conversation.add_user_message, message)
                     if hasattr(self._app.conversation, "refresh"):
                         self._app.call_from_thread(self._app.conversation.refresh)
 
@@ -148,19 +162,19 @@ class MessageProcessor:
                     if is_command:
                         err_handler = self._callbacks.get("on_command_error")
                         if err_handler:
-                             self._app.call_from_thread(err_handler, str(exc))
+                            self._app.call_from_thread(err_handler, str(exc))
                     else:
                         err_handler = self._callbacks.get("on_error")
                         if err_handler:
-                             self._app.call_from_thread(err_handler, str(exc))
+                            self._app.call_from_thread(err_handler, str(exc))
                 finally:
                     self._pending.task_done()
-                    
+
                     # Notify completion if queue empty (for both commands and messages)
                     if self._pending.empty():
                         if hasattr(self._app, "notify_processing_complete"):
                             self._app.call_from_thread(self._app.notify_processing_complete)
-                            
+
                     # Update indicator
                     self._notify_queue_update(from_ui_thread=False)
 
