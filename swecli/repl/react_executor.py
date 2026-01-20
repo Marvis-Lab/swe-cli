@@ -45,7 +45,6 @@ class IterationContext:
     iteration_count: int = 0
     consecutive_reads: int = 0
     consecutive_no_tool_calls: int = 0
-    had_non_think_tools: bool = False  # Track if last iteration had real (non-think) tool calls
 
 
 class ReactExecutor:
@@ -117,9 +116,67 @@ class ReactExecutor:
             
         return (self._last_operation_summary, self._last_error, self._last_latency_ms)
 
+    def _get_thinking_trace(
+        self,
+        messages: list,
+        agent,
+        ui_callback=None,
+    ) -> Optional[str]:
+        """Make a SEPARATE LLM call to get thinking trace.
+
+        This uses the thinking system prompt and NO tools to get pure reasoning.
+        The thinking trace is then injected into messages for the action phase.
+
+        Args:
+            messages: Current conversation messages
+            agent: The agent to use for the thinking call
+            ui_callback: Optional UI callback for displaying thinking
+
+        Returns:
+            Thinking trace string, or None on failure
+        """
+        try:
+            # Build thinking-specific system prompt
+            thinking_system_prompt = agent.build_system_prompt(thinking_visible=True)
+
+            # Build messages for thinking call - replace system prompt
+            thinking_messages = [{"role": "system", "content": thinking_system_prompt}]
+
+            # Add conversation history (excluding old system prompt)
+            for msg in messages:
+                if msg.get("role") != "system":
+                    thinking_messages.append(msg)
+
+            # Call LLM WITHOUT tools - just get reasoning
+            task_monitor = TaskMonitor()
+            response = agent.call_thinking_llm(thinking_messages, task_monitor)
+
+            if response.get("success"):
+                thinking_trace = response.get("content", "")
+
+                # Display in UI
+                if thinking_trace and ui_callback and hasattr(ui_callback, 'on_thinking'):
+                    ui_callback.on_thinking(thinking_trace)
+
+                return thinking_trace
+            else:
+                # Log the error for debugging
+                error = response.get("error", "Unknown error")
+                if ui_callback and hasattr(ui_callback, 'on_debug'):
+                    ui_callback.on_debug(f"Thinking phase error: {error}", "THINK")
+
+        except Exception as e:
+            # Log exceptions for debugging
+            if ui_callback and hasattr(ui_callback, 'on_debug'):
+                ui_callback.on_debug(f"Thinking phase exception: {str(e)}", "THINK")
+            import logging
+            logging.getLogger(__name__).exception("Error in thinking phase")
+
+        return None
+
     def _run_iteration(self, ctx: IterationContext) -> LoopAction:
         """Run a single ReAct iteration."""
-        
+
         # Debug logging
         if ctx.ui_callback and hasattr(ctx.ui_callback, 'on_debug'):
             ctx.ui_callback.on_debug(f"Calling LLM with {len(ctx.messages)} messages", "LLM")
@@ -129,18 +186,22 @@ class ReactExecutor:
         if ctx.tool_registry and hasattr(ctx.tool_registry, 'thinking_handler'):
             thinking_visible = ctx.tool_registry.thinking_handler.is_visible
 
-        # Determine if we should force think tool
-        # Force on iteration 1 OR after non-think tool calls completed
-        force_think = thinking_visible and ((ctx.iteration_count == 1) or ctx.had_non_think_tools)
+        # THINKING PHASE: Get thinking trace BEFORE action (when thinking mode is ON)
+        if thinking_visible:
+            thinking_trace = self._get_thinking_trace(
+                ctx.messages, ctx.agent, ctx.ui_callback
+            )
+            if thinking_trace:
+                # Inject trace as user message for the action phase
+                ctx.messages.append({
+                    "role": "user",
+                    "content": f"<thinking_trace>\n{thinking_trace}\n</thinking_trace>\n\nBased on this analysis, proceed with the appropriate action.",
+                })
 
-        # Reset the flag - it's been consumed
-        ctx.had_non_think_tools = False
-
-        # Call LLM
+        # ACTION PHASE: Call LLM with tools (no force_think)
         task_monitor = TaskMonitor()
         response, latency_ms = self._llm_caller.call_llm_with_progress(
-            ctx.agent, ctx.messages, task_monitor, thinking_visible=thinking_visible,
-            force_think=force_think
+            ctx.agent, ctx.messages, task_monitor, thinking_visible=thinking_visible
         )
         self._last_latency_ms = latency_ms
 
@@ -327,15 +388,10 @@ class ReactExecutor:
 
         # Persist and Learn
         self._persist_step(ctx, tool_calls, tool_results_by_id, content, raw_content)
-        
+
         # Check nudge for reads
         if self._should_nudge_agent(ctx.consecutive_reads, ctx.messages):
             ctx.consecutive_reads = 0
-
-        # Track if any non-think tools were called (for post-tool thinking)
-        non_think_tools = [tc for tc in tool_calls if tc["function"]["name"] != "think"]
-        if non_think_tools:
-            ctx.had_non_think_tools = True
 
         return LoopAction.CONTINUE
 
@@ -426,30 +482,8 @@ class ReactExecutor:
         return tool_results_by_id, operation_cancelled
 
     def _add_tool_result_to_history(self, messages: list, tool_call: dict, result: dict):
-        """Add tool execution result to message history.
-
-        For the think tool, adds a minimal tool result (to satisfy API requirements)
-        followed by a user message with the thinking trace in <thinking_trace> tags.
-        This allows the model to analyze its previous reasoning and take action.
-        """
+        """Add tool execution result to message history."""
         tool_name = tool_call["function"]["name"]
-
-        # Special handling for think tool: minimal tool result + user message with trace
-        if tool_name == "think":
-            thought_content = result.get("output", "")
-            # Add minimal tool result to satisfy API (must have tool message after tool_calls)
-            messages.append({
-                "role": "tool",
-                "tool_call_id": tool_call["id"],
-                "content": "ok",
-            })
-            # Then inject thinking trace as user message with tags
-            if thought_content:
-                messages.append({
-                    "role": "user",
-                    "content": f"<thinking_trace>\n{thought_content}\n</thinking_trace>\n\nBased on this analysis, proceed with the next action.",
-                })
-            return
 
         separate_response = result.get("separate_response")
         if result.get("success", False):

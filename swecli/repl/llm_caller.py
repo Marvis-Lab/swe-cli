@@ -170,7 +170,7 @@ class LLMCaller:
         self._current_task_monitor = None
 
     def call_llm_with_progress(
-        self, agent, messages, task_monitor, thinking_visible: bool = True, force_think: bool = False
+        self, agent, messages, task_monitor, thinking_visible: bool = True
     ) -> tuple:
         """Call LLM with progress display.
 
@@ -179,7 +179,6 @@ class LLMCaller:
             messages: Message history
             task_monitor: Task monitor for tracking
             thinking_visible: If False, exclude think tool from schemas
-            force_think: If True, force the model to call think tool
 
         Returns:
             Tuple of (response, latency_ms)
@@ -213,8 +212,7 @@ class LLMCaller:
             started = time.perf_counter()
             try:
                 response = agent.call_llm(
-                    messages, task_monitor=task_monitor, thinking_visible=thinking_visible,
-                    force_think=force_think
+                    messages, task_monitor=task_monitor, thinking_visible=thinking_visible
                 )
             except Exception as e:
                 logger.error(f"[LLM_CALLER] Exception in agent.call_llm: {type(e).__name__}: {e}")

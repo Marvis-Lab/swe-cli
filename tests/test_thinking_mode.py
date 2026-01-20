@@ -141,78 +141,40 @@ class TestThinkingHandler:
         assert handler.block_count == 0
 
 
-class TestThinkToolSchema:
-    """Tests for think tool schema in tool_schema_builder."""
+class TestThinkToolRemoved:
+    """Tests verifying think tool has been removed from schemas.
 
-    def test_think_schema_exists(self):
-        """Test that think tool schema is defined."""
+    Thinking is now a separate pre-processing phase, not a tool.
+    """
+
+    def test_think_schema_not_in_builtin(self):
+        """Test that think tool schema is NOT defined (removed)."""
         from swecli.core.agents.components.tool_schema_builder import _BUILTIN_TOOL_SCHEMAS
 
         names = [s["function"]["name"] for s in _BUILTIN_TOOL_SCHEMAS]
-        assert "think" in names
+        assert "think" not in names, "Think tool should be removed from schemas"
 
-    def test_think_schema_structure(self):
-        """Test think tool schema has correct structure."""
-        from swecli.core.agents.components.tool_schema_builder import _BUILTIN_TOOL_SCHEMAS
-
-        think_schema = next(
-            s for s in _BUILTIN_TOOL_SCHEMAS if s["function"]["name"] == "think"
-        )
-
-        assert think_schema["type"] == "function"
-        func = think_schema["function"]
-        assert "description" in func
-        assert "reasoning" in func["description"].lower() or "thought" in func["description"].lower()
-
-        params = func["parameters"]
-        assert params["type"] == "object"
-        assert "content" in params["properties"]
-        assert "content" in params["required"]
-
-    def test_think_in_planning_tools(self):
-        """Test that think is allowed in plan mode."""
+    def test_think_not_in_planning_tools(self):
+        """Test that think is NOT in plan mode tools (removed)."""
         from swecli.core.agents.components.tool_schema_builder import PLANNING_TOOLS
 
-        assert "think" in PLANNING_TOOLS
+        assert "think" not in PLANNING_TOOLS, "Think should be removed from PLANNING_TOOLS"
 
 
-class TestThinkToolExecution:
-    """Tests for think tool execution in ToolRegistry."""
+class TestThinkingHandlerStillExists:
+    """Tests verifying ThinkingHandler still exists for visibility tracking.
+
+    Even though think is no longer a tool, we still need the handler
+    for tracking thinking visibility state.
+    """
 
     def test_registry_has_thinking_handler(self):
-        """Test that ToolRegistry initializes thinking_handler."""
+        """Test that ToolRegistry still has thinking_handler for visibility."""
         from swecli.core.context_engineering.tools.registry import ToolRegistry
 
         registry = ToolRegistry()
         assert hasattr(registry, "thinking_handler")
         assert isinstance(registry.thinking_handler, ThinkingHandler)
-
-    def test_execute_think_success(self):
-        """Test executing think tool successfully."""
-        from swecli.core.context_engineering.tools.registry import ToolRegistry
-
-        registry = ToolRegistry()
-        result = registry.execute_tool("think", {"content": "Analyzing the problem..."})
-
-        assert result["success"] is True
-        assert result["_thinking_content"] == "Analyzing the problem..."
-        assert result["output"] == "Analyzing the problem..."  # Included in message history
-
-    def test_execute_think_empty_content_fails(self):
-        """Test executing think tool with empty content."""
-        from swecli.core.context_engineering.tools.registry import ToolRegistry
-
-        registry = ToolRegistry()
-        result = registry.execute_tool("think", {"content": ""})
-
-        assert result["success"] is False
-        assert "empty" in result["error"].lower()
-
-    def test_execute_think_allowed_in_plan_mode(self):
-        """Test that think is allowed in plan mode."""
-        from swecli.core.context_engineering.tools.registry import _PLAN_READ_ONLY_TOOLS
-
-        assert "think" in _PLAN_READ_ONLY_TOOLS
 
 
 class TestThinkingUICallback:
@@ -343,26 +305,23 @@ class TestThinkingUICallback:
         assert mock_app._thinking_visible is True
         assert callback._thinking_visible is True
 
-    def test_on_tool_result_handles_think_tool(self):
-        """Test that on_tool_result calls on_thinking for think tool."""
+    def test_on_thinking_called_directly(self):
+        """Test that on_thinking works when called directly (from thinking phase)."""
         from swecli.ui_textual.ui_callback import TextualUICallback
 
         mock_conversation = MagicMock()
         mock_conversation.add_thinking_block = MagicMock()
-        callback = TextualUICallback(mock_conversation)
+        mock_app = MagicMock()
+        mock_app._thinking_visible = True
+        callback = TextualUICallback(mock_conversation, chat_app=mock_app)
 
         # Mock _run_on_ui to call function directly
         callback._run_on_ui = lambda f, *args: f(*args)
 
-        result = {
-            "success": True,
-            "_thinking_content": "My reasoning here",
-            "output": "",
-        }
+        # Called directly from the thinking phase (not via tool result)
+        callback.on_thinking("My reasoning from thinking phase")
 
-        callback.on_tool_result("think", {"content": "My reasoning here"}, result)
-
-        mock_conversation.add_thinking_block.assert_called_once_with("My reasoning here")
+        mock_conversation.add_thinking_block.assert_called_once_with("My reasoning from thinking phase")
 
 
 class TestCallbackProtocol:
@@ -483,60 +442,11 @@ class TestStatusBar:
 
 
 class TestThinkingModeInjection:
-    """Tests for dynamic thinking instruction placeholder replacement."""
+    """Tests for thinking mode placeholder replacement.
 
-    def test_placeholder_replaced_when_thinking_on(self):
-        """Test that {thinking_instruction} is replaced with 'use think tool' when ON."""
-        from swecli.repl.query_enhancer import QueryEnhancer
-
-        file_ops = MagicMock()
-        session_manager = MagicMock()
-        session_manager.current_session = None
-        config = MagicMock()
-        config.playbook = None
-        console = MagicMock()
-
-        enhancer = QueryEnhancer(file_ops, session_manager, config, console)
-        mock_agent = MagicMock()
-        mock_agent.system_prompt = "1. **Think**: {thinking_instruction}"
-
-        messages = enhancer.prepare_messages(
-            query="Help me",
-            enhanced_query="Help me",
-            agent=mock_agent,
-            thinking_visible=True
-        )
-
-        system_content = messages[0]["content"]
-        assert "{thinking_instruction}" not in system_content
-        assert "thinking mode is on" in system_content.lower()
-        assert "must call the `think` tool first" in system_content.lower()
-
-    def test_placeholder_replaced_when_thinking_off(self):
-        """Test that {thinking_instruction} is replaced with 'explain briefly' when OFF."""
-        from swecli.repl.query_enhancer import QueryEnhancer
-
-        file_ops = MagicMock()
-        session_manager = MagicMock()
-        session_manager.current_session = None
-        config = MagicMock()
-        config.playbook = None
-        console = MagicMock()
-
-        enhancer = QueryEnhancer(file_ops, session_manager, config, console)
-        mock_agent = MagicMock()
-        mock_agent.system_prompt = "1. **Think**: {thinking_instruction}"
-
-        messages = enhancer.prepare_messages(
-            query="Help me",
-            enhanced_query="Help me",
-            agent=mock_agent,
-            thinking_visible=False
-        )
-
-        system_content = messages[0]["content"]
-        assert "{thinking_instruction}" not in system_content
-        assert "briefly explain" in system_content.lower()
+    Note: With the new architecture, thinking is a separate phase,
+    so these placeholders may need to be updated or removed.
+    """
 
     def test_no_placeholder_leaves_content_unchanged(self):
         """Test that prompts without placeholder are left unchanged."""
@@ -565,10 +475,14 @@ class TestThinkingModeInjection:
 
 
 class TestThinkingModeSchemaFiltering:
-    """Tests for think tool schema filtering based on thinking mode visibility."""
+    """Tests for tool schema building - think tool is now removed.
 
-    def test_think_tool_included_when_visible(self):
-        """Test that think tool is in schemas when thinking_visible=True."""
+    With the new architecture, thinking is a separate phase,
+    so the think tool is no longer in schemas at all.
+    """
+
+    def test_think_tool_never_in_schemas(self):
+        """Test that think tool is NEVER in schemas (removed from architecture)."""
         from swecli.core.agents.components.tool_schema_builder import ToolSchemaBuilder
 
         mock_registry = MagicMock()
@@ -576,45 +490,19 @@ class TestThinkingModeSchemaFiltering:
         mock_registry.get_all_mcp_tools.return_value = []
 
         builder = ToolSchemaBuilder(mock_registry)
-        schemas = builder.build(thinking_visible=True)
 
-        tool_names = [s.get("function", {}).get("name") for s in schemas]
-        assert "think" in tool_names
+        # Should not have think tool regardless of thinking_visible parameter
+        schemas_visible = builder.build(thinking_visible=True)
+        schemas_not_visible = builder.build(thinking_visible=False)
 
-    def test_think_tool_excluded_when_not_visible(self):
-        """Test that think tool is NOT in schemas when thinking_visible=False."""
-        from swecli.core.agents.components.tool_schema_builder import ToolSchemaBuilder
+        names_visible = [s.get("function", {}).get("name") for s in schemas_visible]
+        names_not_visible = [s.get("function", {}).get("name") for s in schemas_not_visible]
 
-        mock_registry = MagicMock()
-        mock_registry.subagent_manager = None
-        mock_registry.get_all_mcp_tools.return_value = []
+        assert "think" not in names_visible, "Think tool should be removed from schemas"
+        assert "think" not in names_not_visible, "Think tool should be removed from schemas"
 
-        builder = ToolSchemaBuilder(mock_registry)
-        schemas = builder.build(thinking_visible=False)
-
-        tool_names = [s.get("function", {}).get("name") for s in schemas]
-        assert "think" not in tool_names
-
-    def test_other_tools_preserved_when_think_filtered(self):
-        """Test that other tools are preserved when think tool is filtered out."""
-        from swecli.core.agents.components.tool_schema_builder import ToolSchemaBuilder
-
-        mock_registry = MagicMock()
-        mock_registry.subagent_manager = None
-        mock_registry.get_all_mcp_tools.return_value = []
-
-        builder = ToolSchemaBuilder(mock_registry)
-        schemas_with_think = builder.build(thinking_visible=True)
-        schemas_without_think = builder.build(thinking_visible=False)
-
-        # Should have exactly one less tool (think)
-        assert len(schemas_without_think) == len(schemas_with_think) - 1
-
-        # All other tools should still be present
-        names_with = {s.get("function", {}).get("name") for s in schemas_with_think}
-        names_without = {s.get("function", {}).get("name") for s in schemas_without_think}
-
-        assert names_with - names_without == {"think"}
+        # Both should have the same tools (thinking_visible is deprecated)
+        assert len(schemas_visible) == len(schemas_not_visible)
 
 
 class TestThinkingModelSelection:
@@ -958,64 +846,14 @@ class TestHTTPClientFactory:
 class TestToolChoiceBehavior:
     """Tests for tool_choice behavior.
 
-    When thinking mode is ON and force_think is True:
-    - Force specifically the 'think' tool (not any tool)
-
-    When thinking mode is OFF or force_think is False:
-    - Always 'auto'
+    With the new architecture:
+    - force_think parameter is removed
+    - tool_choice is always 'auto' for action phase
+    - Thinking happens in a separate LLM call (no tools)
     """
 
-    def test_tool_choice_forces_think_tool_when_force_think_true(self):
-        """tool_choice should force 'think' tool when force_think=True."""
-        from swecli.core.agents.swecli_agent import SwecliAgent
-
-        config = MagicMock()
-        config.model = "gpt-4"
-        config.model_thinking = "o1-preview"
-        config.model_thinking_provider = "openai"
-        config.model_provider = "openai"
-        config.temperature = 0.7
-        config.max_tokens = 4096
-        config.get_api_key.return_value = "test-key"
-
-        tool_registry = MagicMock()
-        tool_registry.subagent_manager = None
-        tool_registry.get_all_mcp_tools.return_value = []
-
-        mode_manager = MagicMock()
-
-        agent = SwecliAgent(config, tool_registry, mode_manager)
-
-        mock_result = MagicMock()
-        mock_result.success = True
-        mock_result.response = MagicMock()
-        mock_result.response.status_code = 200
-        mock_result.response.json.return_value = {
-            "choices": [{"message": {"content": "Hello!", "tool_calls": [
-                {"id": "1", "function": {"name": "think", "arguments": '{"content": "thinking..."}'}}
-            ]}}]
-        }
-
-        with patch.object(agent, "_SwecliAgent__http_client") as mock_client:
-            mock_client.post_json.return_value = mock_result
-            agent._SwecliAgent__thinking_http_client = None
-
-            # Call with force_think=True
-            agent.call_llm(
-                [{"role": "user", "content": "hello"}],
-                thinking_visible=True,
-                force_think=True
-            )
-
-            # Verify tool_choice forces specifically the 'think' tool
-            call_args = mock_client.post_json.call_args
-            payload = call_args[0][0]
-            expected = {"type": "function", "function": {"name": "think"}}
-            assert payload["tool_choice"] == expected, \
-                f"Expected tool_choice to force 'think', got '{payload['tool_choice']}'"
-
-    def test_tool_choice_auto_when_force_think_false(self):
-        """tool_choice should be 'auto' when force_think=False."""
+    def test_tool_choice_always_auto(self):
+        """tool_choice should always be 'auto' (no more force_think)."""
         from swecli.core.agents.swecli_agent import SwecliAgent
 
         config = MagicMock()
@@ -1047,13 +885,23 @@ class TestToolChoiceBehavior:
             mock_client.post_json.return_value = mock_result
             agent._SwecliAgent__thinking_http_client = None
 
-            # Call with force_think=False
+            # Call without force_think (parameter removed)
             agent.call_llm(
                 [{"role": "user", "content": "hello"}],
-                thinking_visible=True,
-                force_think=False
+                thinking_visible=True
             )
 
             call_args = mock_client.post_json.call_args
             payload = call_args[0][0]
-            assert payload["tool_choice"] == "auto"
+            assert payload["tool_choice"] == "auto", "tool_choice should always be auto"
+
+    def test_call_llm_no_force_think_parameter(self):
+        """Verify call_llm no longer accepts force_think parameter."""
+        from swecli.core.agents.swecli_agent import SwecliAgent
+        import inspect
+
+        # Get the signature of call_llm
+        sig = inspect.signature(SwecliAgent.call_llm)
+        param_names = list(sig.parameters.keys())
+
+        assert "force_think" not in param_names, "force_think parameter should be removed"

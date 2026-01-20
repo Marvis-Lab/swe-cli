@@ -1,10 +1,10 @@
-"""Test cases for Think Tool fix based on Anthropic's design.
+"""Test cases for the separate thinking phase architecture.
 
 These tests verify that:
-1. Simple commands go directly to tools without thinking first
-2. Think tool returns empty result (no history contamination)
-3. Greetings work correctly
-4. Complex tasks may use think AFTER gathering information
+1. Thinking is now a pre-processing phase, not a tool
+2. _get_thinking_trace() makes a separate LLM call for reasoning
+3. Thinking trace is injected as a user message before action phase
+4. Regular tools still work correctly
 """
 
 import json
@@ -18,11 +18,11 @@ import pytest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
-class TestThinkingTraceInjection:
-    """Test that think tool injects thinking trace as user message."""
+class TestThinkingPhaseArchitecture:
+    """Test the separate thinking phase approach."""
 
-    def test_think_tool_injects_tool_and_user_messages(self):
-        """Verify think tool adds minimal tool result + user message with trace."""
+    def test_get_thinking_trace_makes_separate_call(self):
+        """Verify _get_thinking_trace makes a separate LLM call without tools."""
         from swecli.repl.react_executor import ReactExecutor
 
         # Create a minimal executor
@@ -34,34 +34,48 @@ class TestThinkingTraceInjection:
             tool_executor=MagicMock(),
         )
 
-        messages = []
-        tool_call = {
-            "id": "call_123",
-            "function": {
-                "name": "think",
-                "arguments": '{"content": "Reasoning about the task..."}',
-            },
+        # Mock the agent
+        mock_agent = MagicMock()
+        mock_agent.build_system_prompt.return_value = "Thinking system prompt"
+        mock_agent.call_thinking_llm.return_value = {
+            "success": True,
+            "content": "Analysis: The user wants to list files. Next step: call list_files."
         }
-        result = {"success": True, "output": "Reasoning about the task..."}
 
-        executor._add_tool_result_to_history(messages, tool_call, result)
+        messages = [
+            {"role": "system", "content": "Main system prompt"},
+            {"role": "user", "content": "List files in this directory"},
+        ]
 
-        # Should have 2 messages: tool result + user message with trace
-        assert len(messages) == 2
+        # Mock UI callback
+        mock_ui_callback = MagicMock()
+        mock_ui_callback.on_thinking = MagicMock()
 
-        # First message: minimal tool result to satisfy API
-        assert messages[0]["role"] == "tool"
-        assert messages[0]["tool_call_id"] == "call_123"
-        assert messages[0]["content"] == "ok"
+        result = executor._get_thinking_trace(messages, mock_agent, mock_ui_callback)
 
-        # Second message: user message with thinking trace
-        assert messages[1]["role"] == "user", "Think tool should inject trace as user message"
-        assert "<thinking_trace>" in messages[1]["content"], "Should have thinking_trace tags"
-        assert "Reasoning about the task..." in messages[1]["content"], "Should contain the thinking content"
-        assert "Based on this analysis, proceed with the next action." in messages[1]["content"]
+        # Should call build_system_prompt with thinking_visible=True
+        mock_agent.build_system_prompt.assert_called_once_with(thinking_visible=True)
 
-    def test_think_tool_only_tool_message_for_empty_content(self):
-        """Verify think tool only adds tool message for empty content (no user message)."""
+        # Should call call_thinking_llm with modified messages
+        mock_agent.call_thinking_llm.assert_called_once()
+        call_args = mock_agent.call_thinking_llm.call_args[0][0]
+
+        # First message should be thinking system prompt
+        assert call_args[0]["role"] == "system"
+        assert call_args[0]["content"] == "Thinking system prompt"
+
+        # User message should be preserved
+        assert any(m.get("content") == "List files in this directory" for m in call_args)
+
+        # Should display thinking via UI callback
+        mock_ui_callback.on_thinking.assert_called_once()
+
+        # Should return the thinking trace
+        assert "Analysis" in result
+        assert "list_files" in result
+
+    def test_get_thinking_trace_returns_none_on_failure(self):
+        """Verify _get_thinking_trace returns None when LLM call fails."""
         from swecli.repl.react_executor import ReactExecutor
 
         executor = ReactExecutor(
@@ -72,24 +86,19 @@ class TestThinkingTraceInjection:
             tool_executor=MagicMock(),
         )
 
-        messages = []
-        tool_call = {
-            "id": "call_123",
-            "function": {
-                "name": "think",
-                "arguments": '{"content": ""}',
-            },
+        mock_agent = MagicMock()
+        mock_agent.build_system_prompt.return_value = "Thinking system prompt"
+        mock_agent.call_thinking_llm.return_value = {
+            "success": False,
+            "error": "API Error",
+            "content": ""
         }
-        result = {"success": True, "output": ""}
 
-        executor._add_tool_result_to_history(messages, tool_call, result)
+        result = executor._get_thinking_trace([], mock_agent, None)
 
-        # Should only have tool result (no user message for empty content)
-        assert len(messages) == 1
-        assert messages[0]["role"] == "tool"
-        assert messages[0]["content"] == "ok"
+        assert result is None
 
-    def test_regular_tool_still_adds_tool_message(self):
+    def test_regular_tool_adds_tool_message(self):
         """Verify regular tools still add tool role messages."""
         from swecli.repl.react_executor import ReactExecutor
 
@@ -119,32 +128,11 @@ class TestThinkingTraceInjection:
         assert messages[0]["content"] == "file contents here"
 
 
-class TestThinkToolSchema:
-    """Test think tool schema matches Anthropic's design."""
-
-    def test_think_tool_description(self):
-        """Verify think tool description emphasizes scratchpad nature."""
-        from swecli.core.agents.components.tool_schema_builder import _BUILTIN_TOOL_SCHEMAS
-
-        think_schema = next(
-            (s for s in _BUILTIN_TOOL_SCHEMAS if s["function"]["name"] == "think"),
-            None,
-        )
-
-        assert think_schema is not None, "Think tool schema should exist"
-
-        desc = think_schema["function"]["description"]
-        assert "append" in desc.lower() or "log" in desc.lower(), \
-            "Description should mention appending to log"
-        assert "AFTER" in desc, \
-            "Description should emphasize using AFTER gathering information"
-
-
 class TestThinkingSystemPrompt:
     """Test thinking system prompt has correct guidance."""
 
-    def test_prompt_has_when_to_use_guidance(self):
-        """Verify system prompt explains when to use think tool."""
+    def test_prompt_describes_thinking_phase(self):
+        """Verify system prompt explains the thinking phase."""
         prompt_path = os.path.join(
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
             "swecli/core/agents/prompts/thinking_system_prompt.txt"
@@ -153,14 +141,67 @@ class TestThinkingSystemPrompt:
         with open(prompt_path, "r") as f:
             content = f.read()
 
-        assert "When to Use Think Tool" in content, \
-            "Prompt should have 'When to Use Think Tool' section"
-        assert "AFTER gathering information" in content, \
-            "Prompt should mention using think AFTER gathering info"
-        assert "Do NOT use think tool" in content or "Do NOT use" in content, \
-            "Prompt should explain when NOT to use think tool"
-        assert "first action" in content.lower(), \
-            "Prompt should mention not using as first action"
+        assert "THINKING PHASE" in content, \
+            "Prompt should mention THINKING PHASE"
+        assert "pre-processing" in content.lower() or "separate" in content.lower(), \
+            "Prompt should mention pre-processing or separate"
+        assert "NO tools" in content or "reasoning trace" in content.lower(), \
+            "Prompt should mention no tools or reasoning trace"
+
+    def test_prompt_has_no_think_tool_reference(self):
+        """Verify system prompt does not reference think tool."""
+        prompt_path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            "swecli/core/agents/prompts/thinking_system_prompt.txt"
+        )
+
+        with open(prompt_path, "r") as f:
+            content = f.read()
+
+        # Should not reference think tool
+        assert "think tool" not in content.lower(), \
+            "Prompt should not reference think tool"
+        assert "When to Use Think Tool" not in content, \
+            "Prompt should not have 'When to Use Think Tool' section"
+
+
+class TestCallThinkingLLMSignature:
+    """Test the call_thinking_llm method signature and behavior.
+
+    Note: Full integration tests with SwecliAgent are complex due to
+    initialization requirements. These tests verify the method contract.
+    """
+
+    def test_call_thinking_llm_method_exists(self):
+        """Verify call_thinking_llm method exists on SwecliAgent."""
+        from swecli.core.agents.swecli_agent import SwecliAgent
+        import inspect
+
+        assert hasattr(SwecliAgent, "call_thinking_llm"), \
+            "SwecliAgent should have call_thinking_llm method"
+
+        # Check the signature
+        sig = inspect.signature(SwecliAgent.call_thinking_llm)
+        param_names = list(sig.parameters.keys())
+
+        # Should have self, messages, and optionally task_monitor
+        assert "self" in param_names
+        assert "messages" in param_names
+        # Should NOT have tools-related parameters
+        assert "tools" not in param_names
+        assert "tool_choice" not in param_names
+        assert "thinking_visible" not in param_names
+
+    def test_call_llm_method_no_force_think(self):
+        """Verify call_llm no longer accepts force_think parameter."""
+        from swecli.core.agents.swecli_agent import SwecliAgent
+        import inspect
+
+        sig = inspect.signature(SwecliAgent.call_llm)
+        param_names = list(sig.parameters.keys())
+
+        assert "force_think" not in param_names, \
+            "call_llm should not have force_think parameter anymore"
 
 
 if __name__ == "__main__":

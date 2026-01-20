@@ -27,8 +27,6 @@ PLANNING_TOOLS = {
     "spawn_subagent",
     # Task completion (always allowed - agents must signal completion)
     "task_complete",
-    # Think tool (always allowed - just captures reasoning)
-    "think",
 }
 
 
@@ -42,15 +40,11 @@ class ToolSchemaBuilder:
         """Return tool schema definitions including MCP and task tool extensions.
 
         Args:
-            thinking_visible: If False, exclude the think tool from schemas.
-                             When thinking mode is OFF, the model should not
-                             be able to call the think tool.
+            thinking_visible: Deprecated parameter (kept for API compatibility).
+                             Thinking is now a separate pre-processing phase,
+                             not a tool the model calls.
         """
         schemas: list[dict[str, Any]] = deepcopy(_BUILTIN_TOOL_SCHEMAS)
-
-        # Filter out think tool when thinking mode is OFF
-        if not thinking_visible:
-            schemas = [s for s in schemas if s.get("function", {}).get("name") != "think"]
 
         # Add task tool schema if subagent manager is configured
         task_schema = self._build_task_schema()
@@ -912,28 +906,6 @@ _BUILTIN_TOOL_SCHEMAS: list[dict[str, Any]] = [
                     },
                 },
                 "required": ["symbol_name", "file_path", "new_name"],
-            },
-        },
-    },
-    # ===== Think Tool (Reasoning Scratchpad) =====
-    {
-        "type": "function",
-        "function": {
-            "name": "think",
-            "description": "Use the tool to think about something. It will not obtain new information or change the database, but just append the thought to the log. Use this AFTER gathering information to reason through complex decisions, not as the first action.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "content": {
-                        "type": "string",
-                        "description": "A thought to think about.",
-                    },
-                    "response": {
-                        "type": "string",
-                        "description": "The ACTUAL response text to show the user (e.g., 'Hello! How can I help you?' for greetings). NOT a description of what you did. Only for pure greetings or acknowledgments.",
-                    },
-                },
-                "required": ["content"],
             },
         },
     },

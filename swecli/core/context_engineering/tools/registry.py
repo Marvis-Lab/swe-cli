@@ -158,8 +158,6 @@ class ToolRegistry:
             "search_tools": self._search_tools_handler.search_tools,
             # Task completion tool
             "task_complete": self._execute_task_complete,
-            # Thinking/reasoning tool
-            "think": lambda args, ctx=None: self.thinking_handler.add_thinking(args.get("content", "")),
             # Skills system tool
             "invoke_skill": self._handle_invoke_skill,
         }
