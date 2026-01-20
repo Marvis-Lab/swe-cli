@@ -227,11 +227,6 @@ class PlanningAgent(BaseAgent):
                     else f"Error: {result.get('error', 'Tool execution failed')}"
                 )
 
-                # For think tool, replace output with instruction to proceed naturally
-                # This prevents the model from treating its thinking as feedback
-                if tool_name == "think":
-                    tool_result = "[Thinking captured. Now respond directly to the user.]"
-
                 # Notify UI of tool result if callback provided
                 if ui_callback:
                     ui_callback("tool_result", {
