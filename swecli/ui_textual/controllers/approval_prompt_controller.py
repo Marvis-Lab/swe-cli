@@ -85,6 +85,10 @@ class ApprovalPromptController:
             conversation._spinner_active = False
             conversation._replace_tool_call_line("⏺")
 
+        # Clear tips from spinner service before showing approval modal
+        if hasattr(self.app, "spinner_service"):
+            self.app.spinner_service.clear_all_tips()
+
         self._render()
         self.app.input_field.focus()
 

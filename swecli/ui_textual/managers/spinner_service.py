@@ -545,6 +545,47 @@ class SpinnerService:
         with self._lock:
             return len(self._spinners)
 
+    def clear_all_tips(self) -> None:
+        """Clear all tip lines from active spinners.
+
+        This is called when the approval modal appears to prevent tips
+        from being displayed alongside the approval prompt.
+        """
+        conversation = self._conversation
+        if conversation is None:
+            return
+
+        def _clear_on_ui():
+            # Build list of (spinner_id, tip_line_num) sorted by line number descending
+            # so we can delete from bottom to top without index shifting issues
+            tips_to_delete = []
+            for spinner_id, tip_line_num in list(self._spinner_tip_lines.items()):
+                if tip_line_num < len(conversation.lines):
+                    tips_to_delete.append((spinner_id, tip_line_num))
+
+            # Sort by line number descending
+            tips_to_delete.sort(key=lambda x: x[1], reverse=True)
+
+            # Delete each tip line and adjust result/spacing lines
+            for spinner_id, tip_line_num in tips_to_delete:
+                del conversation.lines[tip_line_num]
+
+                # Adjust result and spacing line indices for this spinner
+                if spinner_id in self._result_lines:
+                    if self._result_lines[spinner_id] > tip_line_num:
+                        self._result_lines[spinner_id] -= 1
+                if spinner_id in self._spacing_lines:
+                    if self._spacing_lines[spinner_id] > tip_line_num:
+                        self._spacing_lines[spinner_id] -= 1
+
+            # Clear tip tracking
+            self._spinner_tips.clear()
+            self._spinner_tip_lines.clear()
+
+            conversation.refresh()
+
+        self._run_non_blocking(_clear_on_ui)
+
     # =========================================================================
     # THREAD HELPERS
     # =========================================================================
