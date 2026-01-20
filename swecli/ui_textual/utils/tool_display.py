@@ -15,9 +15,7 @@ _TOOL_DISPLAY_PARTS: dict[str, tuple[str, str]] = {
     "read_pdf": ("Read", "pdf"),
     "write_file": ("Write", "file"),
     "edit_file": ("Edit", "file"),
-    "delete_file": ("Delete", "file"),
     "list_files": ("List", "files"),
-    "list_directory": ("List", "directory"),
     "search": ("Search", "project"),
     "run_command": ("Bash", "command"),
     "get_process_output": ("Get Process Output", "process"),
@@ -38,6 +36,22 @@ _TOOL_DISPLAY_PARTS: dict[str, tuple[str, str]] = {
     "docker_copy": ("Copying", "file to Docker"),
     "docker_input_files": ("Checking", "input files"),
     "docker_setup": ("Setting up", "Docker environment"),
+    # LSP/Symbol tools
+    "find_symbol": ("Find", "symbol"),
+    "find_referencing_symbols": ("Find References", "symbol"),
+    "insert_before_symbol": ("Insert Before", "symbol"),
+    "insert_after_symbol": ("Insert After", "symbol"),
+    "replace_symbol_body": ("Replace", "symbol"),
+    "rename_symbol": ("Rename", "symbol"),
+    # Other tools
+    "notebook_edit": ("Edit", "notebook"),
+    "ask_user": ("Ask", "user"),
+    "web_search": ("Search", "web"),
+    "get_subagent_output": ("Get Output", "subagent"),
+    "configure_mcp_server": ("Configure", "MCP server"),
+    "list_mcp_presets": ("List", "MCP presets"),
+    "task_complete": ("Complete", "task"),
+    "invoke_skill": ("Invoke", "skill"),
 }
 
 _PATH_HINT_KEYS = {"file_path", "path", "directory", "dir", "image_path", "working_dir", "target"}
@@ -47,9 +61,7 @@ _PRIMARY_ARG_MAP: dict[str, tuple[str, ...]] = {
     "read_pdf": ("file_path",),
     "write_file": ("file_path", "path"),
     "edit_file": ("file_path", "path"),
-    "delete_file": ("file_path", "path"),
     "list_files": ("path", "directory"),
-    "list_directory": ("path", "directory"),
     "search": ("query",),
     "run_command": ("command",),
     "get_process_output": ("pid", "command"),
@@ -213,8 +225,8 @@ def build_tool_call_text(tool_name: str, tool_args: Mapping[str, Any]) -> Text:
     formatted = format_tool_call(tool_name, tool_args)
 
     # Parse the formatted string to add styling
-    if '(' in formatted and formatted.endswith(')'):
-        tool_part, params_part = formatted.split('(', 1)
+    if "(" in formatted and formatted.endswith(")"):
+        tool_part, params_part = formatted.split("(", 1)
         params_part = params_part[:-1]  # Remove closing parenthesis
 
         # Strip trailing space from tool_part to avoid double space
@@ -333,6 +345,7 @@ def format_tool_call(tool_name: str, tool_args: Mapping[str, Any]) -> str:
 
     # Enhanced formatting for update_todo tool - show todo-N format
     elif tool_name == "update_todo" and tool_args:
+        verb, _ = get_tool_display_parts(tool_name)
         todo_id = tool_args.get("id", "?")
         # Normalize ID to "todo-N" format
         if str(todo_id).isdigit():
@@ -340,19 +353,21 @@ def format_tool_call(tool_name: str, tool_args: Mapping[str, Any]) -> str:
             todo_id = f"todo-{int(todo_id) + 1}"
         elif not str(todo_id).startswith("todo-"):
             todo_id = f"todo-{todo_id}"
-        return f"Update ({todo_id})"
+        return f"{verb} ({todo_id})"
 
     # Enhanced formatting for complete_todo tool - show todo-N format
     elif tool_name == "complete_todo" and tool_args:
+        verb, _ = get_tool_display_parts(tool_name)
         todo_id = tool_args.get("id", "?")
         if str(todo_id).isdigit():
             todo_id = f"todo-{int(todo_id) + 1}"
         elif not str(todo_id).startswith("todo-"):
             todo_id = f"todo-{todo_id}"
-        return f"Complete ({todo_id})"
+        return f"{verb} ({todo_id})"
 
     # Enhanced formatting for bash/run commands - show working_dir for Docker
     elif tool_name == "run_command" and tool_args:
+        verb, _ = get_tool_display_parts(tool_name)
         command = tool_args.get("command", "")
         working_dir = tool_args.get("working_dir", "")
 
@@ -360,15 +375,16 @@ def format_tool_call(tool_name: str, tool_args: Mapping[str, Any]) -> str:
         max_cmd_len = 60
         cmd_display = command.replace("\n", " ").strip()
         if len(cmd_display) > max_cmd_len:
-            cmd_display = cmd_display[:max_cmd_len - 3] + "..."
+            cmd_display = cmd_display[: max_cmd_len - 3] + "..."
 
         # If working_dir has Docker prefix (e.g., [uv:abc123]:/workspace), show it
         if working_dir and working_dir.startswith("["):
-            return f"Run ({working_dir} {cmd_display})"
-        return f"Run ({cmd_display})"
+            return f"{verb} ({working_dir} {cmd_display})"
+        return f"{verb} ({cmd_display})"
 
     # Enhanced formatting for list_files tool - show pattern and other params
     elif tool_name == "list_files" and tool_args:
+        verb, _ = get_tool_display_parts(tool_name)
         path = tool_args.get("path", ".")
         pattern = tool_args.get("pattern", "")
         max_results = tool_args.get("max_results")
@@ -378,19 +394,20 @@ def format_tool_call(tool_name: str, tool_args: Mapping[str, Any]) -> str:
             params = f'path: "{path}", pattern: "{pattern}"'
             if max_results and max_results != 100:
                 params += f", max_results: {max_results}"
-            return f"List({params})"
+            return f"{verb}({params})"
         else:
             # Tree mode: just show path (default behavior)
-            return f"List({path})"
+            return f"{verb}({path})"
 
     # Enhanced formatting for list_directory tool - show depth
     elif tool_name == "list_directory" and tool_args:
+        verb, _ = get_tool_display_parts(tool_name)
         path = tool_args.get("path", ".")
         max_depth = tool_args.get("max_depth")
 
         if max_depth and max_depth != 2:
-            return f"List({path}, depth: {max_depth})"
-        return f"List({path})"
+            return f"{verb}({path}, depth: {max_depth})"
+        return f"{verb}({path})"
 
     # Default formatting for other tools
     verb, label = get_tool_display_parts(tool_name)
