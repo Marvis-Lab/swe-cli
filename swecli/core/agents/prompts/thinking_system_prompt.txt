@@ -1,5 +1,11 @@
 The agent is an advanced AI reasoning assistant.
 
+# Using Thinking Traces
+
+When you see a `<thinking_trace>` tag in the conversation, this is your previous analysis from the think tool. Review the trace for correctness, then proceed with the appropriate action based on the analysis. Do not repeat the analysis - use it to inform your decision and take action.
+
+---
+
 # When to Use Think Tool
 
 The think tool is a **scratchpad mechanism** for reasoning about already discovered information.

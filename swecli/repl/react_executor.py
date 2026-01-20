@@ -131,7 +131,7 @@ class ReactExecutor:
 
         # Determine if we should force think tool
         # Force on iteration 1 OR after non-think tool calls completed
-        force_think = (ctx.iteration_count == 1) or ctx.had_non_think_tools
+        force_think = thinking_visible and ((ctx.iteration_count == 1) or ctx.had_non_think_tools)
 
         # Reset the flag - it's been consumed
         ctx.had_non_think_tools = False
@@ -426,13 +426,37 @@ class ReactExecutor:
         return tool_results_by_id, operation_cancelled
 
     def _add_tool_result_to_history(self, messages: list, tool_call: dict, result: dict):
-        """Add tool execution result to message history."""
+        """Add tool execution result to message history.
+
+        For the think tool, adds a minimal tool result (to satisfy API requirements)
+        followed by a user message with the thinking trace in <thinking_trace> tags.
+        This allows the model to analyze its previous reasoning and take action.
+        """
+        tool_name = tool_call["function"]["name"]
+
+        # Special handling for think tool: minimal tool result + user message with trace
+        if tool_name == "think":
+            thought_content = result.get("output", "")
+            # Add minimal tool result to satisfy API (must have tool message after tool_calls)
+            messages.append({
+                "role": "tool",
+                "tool_call_id": tool_call["id"],
+                "content": "ok",
+            })
+            # Then inject thinking trace as user message with tags
+            if thought_content:
+                messages.append({
+                    "role": "user",
+                    "content": f"<thinking_trace>\n{thought_content}\n</thinking_trace>\n\nBased on this analysis, proceed with the next action.",
+                })
+            return
+
         separate_response = result.get("separate_response")
         if result.get("success", False):
             tool_result = separate_response if separate_response else result.get("output", "")
         else:
             tool_result = f"Error: {result.get('error', 'Tool execution failed')}"
-        
+
         messages.append({
             "role": "tool",
             "tool_call_id": tool_call["id"],

@@ -958,16 +958,15 @@ class TestHTTPClientFactory:
 class TestToolChoiceBehavior:
     """Tests for tool_choice behavior.
 
-    When thinking mode is ON:
-    - First iteration: Force specifically the 'think' tool (not any tool)
-    - Subsequent iterations: 'auto' (let model decide)
+    When thinking mode is ON and force_think is True:
+    - Force specifically the 'think' tool (not any tool)
 
-    When thinking mode is OFF:
+    When thinking mode is OFF or force_think is False:
     - Always 'auto'
     """
 
-    def test_tool_choice_forces_think_tool_on_first_iteration(self):
-        """tool_choice should force 'think' tool specifically on first iteration when thinking visible."""
+    def test_tool_choice_forces_think_tool_when_force_think_true(self):
+        """tool_choice should force 'think' tool when force_think=True."""
         from swecli.core.agents.swecli_agent import SwecliAgent
 
         config = MagicMock()
@@ -1001,7 +1000,7 @@ class TestToolChoiceBehavior:
             mock_client.post_json.return_value = mock_result
             agent._SwecliAgent__thinking_http_client = None
 
-            # Call with thinking_visible=True and force_think=True
+            # Call with force_think=True
             agent.call_llm(
                 [{"role": "user", "content": "hello"}],
                 thinking_visible=True,
@@ -1015,49 +1014,8 @@ class TestToolChoiceBehavior:
             assert payload["tool_choice"] == expected, \
                 f"Expected tool_choice to force 'think', got '{payload['tool_choice']}'"
 
-    def test_tool_choice_is_auto_when_thinking_hidden(self):
-        """tool_choice should be 'auto' when thinking is hidden."""
-        from swecli.core.agents.swecli_agent import SwecliAgent
-
-        config = MagicMock()
-        config.model = "gpt-4"
-        config.model_thinking = None
-        config.model_provider = "openai"
-        config.temperature = 0.7
-        config.max_tokens = 4096
-        config.get_api_key.return_value = "test-key"
-
-        tool_registry = MagicMock()
-        tool_registry.subagent_manager = None
-        tool_registry.get_all_mcp_tools.return_value = []
-
-        mode_manager = MagicMock()
-
-        agent = SwecliAgent(config, tool_registry, mode_manager)
-
-        mock_result = MagicMock()
-        mock_result.success = True
-        mock_result.response = MagicMock()
-        mock_result.response.status_code = 200
-        mock_result.response.json.return_value = {
-            "choices": [{"message": {"content": "Hello!"}}]
-        }
-
-        with patch.object(agent, "_SwecliAgent__http_client") as mock_client:
-            mock_client.post_json.return_value = mock_result
-
-            agent.call_llm(
-                [{"role": "user", "content": "hello"}],
-                thinking_visible=False,
-                force_think=True  # Even with force_think, if thinking_visible=False, should be auto
-            )
-
-            call_args = mock_client.post_json.call_args
-            payload = call_args[0][0]
-            assert payload["tool_choice"] == "auto"
-
     def test_tool_choice_auto_when_force_think_false(self):
-        """tool_choice should be 'auto' when force_think is False."""
+        """tool_choice should be 'auto' when force_think=False."""
         from swecli.core.agents.swecli_agent import SwecliAgent
 
         config = MagicMock()
@@ -1082,21 +1040,20 @@ class TestToolChoiceBehavior:
         mock_result.response = MagicMock()
         mock_result.response.status_code = 200
         mock_result.response.json.return_value = {
-            "choices": [{"message": {"content": "Result"}}]
+            "choices": [{"message": {"content": "Hello!"}}]
         }
 
         with patch.object(agent, "_SwecliAgent__http_client") as mock_client:
             mock_client.post_json.return_value = mock_result
             agent._SwecliAgent__thinking_http_client = None
 
-            # Test with force_think=False - should be 'auto'
+            # Call with force_think=False
             agent.call_llm(
-                [{"role": "user", "content": "test"}],
+                [{"role": "user", "content": "hello"}],
                 thinking_visible=True,
                 force_think=False
             )
 
             call_args = mock_client.post_json.call_args
             payload = call_args[0][0]
-            assert payload["tool_choice"] == "auto", \
-                f"Expected 'auto' when force_think=False, got '{payload['tool_choice']}'"
+            assert payload["tool_choice"] == "auto"

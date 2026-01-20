@@ -113,7 +113,7 @@ class SwecliAgent(BaseAgent):
 
         # Force think tool when requested (first iteration or after tool execution)
         # This ensures thinking trace is displayed before actions and after results
-        if thinking_visible and force_think:
+        if force_think:
             # Force specifically the think tool (not just any tool)
             tool_choice = {"type": "function", "function": {"name": "think"}}
         else:
