@@ -82,7 +82,7 @@ def create_method_panel(selected_index: int) -> RenderableType:
     items = [
         {
             "option": "1",
-            "label": "Generate with Claude",
+            "label": "Generate with AI",
             "summary": "AI creates the agent definition",
         },
         {
@@ -279,24 +279,43 @@ def create_description_input_panel(current_value: str = "") -> RenderableType:
     )
 
 
-def create_generating_panel(description: str = "") -> RenderableType:
-    """Create panel showing generation in progress using Rich components.
+def create_generating_panel(
+    description: str = "",
+    spinner_char: str = "⠋",
+    elapsed_seconds: int = 0,
+) -> RenderableType:
+    """Panel with description and animated spinner during generation.
 
     Args:
         description: The description being used for generation
+        spinner_char: Current spinner animation character
+        elapsed_seconds: Seconds since generation started
 
     Returns:
         Rich Panel renderable
     """
-    header = Text("Claude is creating your agent...", style="bold yellow")
+    elements = []
 
-    elements = [header]
+    # Header
+    header = Text("Creating agent based on your description:", style=BLUE_LIGHT)
+    elements.append(header)
 
+    # Show description preview (truncated)
     if description:
-        elements.append(Text("Based on:", style="dim"))
-        # Show first 80 chars of description
-        preview = description[:80] + "..." if len(description) > 80 else description
-        elements.append(Text(f"  {preview}", style="dim"))
+        preview = description[:60] + "..." if len(description) > 60 else description
+        desc_text = Text()
+        desc_text.append('  "', style="dim")
+        desc_text.append(preview, style="italic dim white")
+        desc_text.append('"', style="dim")
+        elements.append(desc_text)
+
+    elements.append(Text(""))  # Spacing
+
+    # Animated spinner row
+    spinner_row = Text()
+    spinner_row.append(spinner_char, style="bright_cyan")
+    spinner_row.append(f" Generating... ({elapsed_seconds}s)", style="dim")
+    elements.append(spinner_row)
 
     return Panel(
         Group(*elements),

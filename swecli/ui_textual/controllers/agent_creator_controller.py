@@ -14,8 +14,10 @@ from swecli.ui_textual.components.agent_creator_panels import (
     create_identifier_input_panel,
     create_prompt_input_panel,
     create_description_input_panel,
+    create_generating_panel,
     create_success_panel,
 )
+from swecli.ui_textual.managers.spinner_service import SpinnerType
 
 if TYPE_CHECKING:
     from swecli.ui_textual.chat_app import SWECLIChatApp
@@ -415,7 +417,7 @@ class AgentCreatorController:
             self.end(f"Failed to create agent: {e}", clear_panel=True)
 
     async def _create_agent_generate(self) -> None:
-        """Create agent using AI generation."""
+        """Create agent using AI generation with in-panel spinner."""
         import asyncio
 
         state = self.state
@@ -424,23 +426,34 @@ class AgentCreatorController:
 
         description = state.get("description", "")
 
-        # Clear the wizard panel before starting generation
-        start = state.get("panel_start")
-        if start is not None:
-            self.app.conversation._truncate_from(start)
-
         # Get spinner service from app
         spinner_service = getattr(self.app, "spinner_service", None)
         spinner_id = None
 
         try:
-            # Start spinner animation
             if spinner_service:
-                spinner_id = spinner_service.start(
-                    "Generating agent...",
-                    skip_placeholder=True,
+                # Callback to update panel with current spinner frame
+                def update_generating_panel(frame) -> None:
+                    panel = create_generating_panel(
+                        description=description,
+                        spinner_char=frame.char,
+                        elapsed_seconds=frame.elapsed_seconds,
+                    )
+                    self._post_panel(panel)
+
+                # Register with callback API for in-panel animation
+                spinner_id = spinner_service.register(
+                    spinner_type=SpinnerType.TOOL,
+                    render_callback=update_generating_panel,
                 )
-                self.app.refresh()
+
+                # Render initial panel immediately
+                panel = create_generating_panel(
+                    description=description,
+                    spinner_char="⠋",
+                    elapsed_seconds=0,
+                )
+                self._post_panel(panel)
 
             # Get config and create HTTP client
             if not self._config_manager:
@@ -497,13 +510,21 @@ class AgentCreatorController:
                 agent_file = agents_dir / f"{name}.md"
                 agent_file.write_text(agent_content, encoding="utf-8")
 
-                # Stop spinner with success result
+                # Stop spinner
                 if spinner_service and spinner_id:
-                    spinner_service.stop(
-                        spinner_id,
-                        success=True,
-                        result_message=f"Created agent: {name} at {agent_file}",
-                    )
+                    spinner_service.stop(spinner_id)
+
+                # Clear the panel
+                start = state.get("panel_start")
+                if start is not None:
+                    self.app.conversation._truncate_from(start)
+
+                # Show inline result with ⎿ format
+                result_text = Text()
+                result_text.append("  ⎿  ", style="dim")
+                result_text.append(f"Created agent: {name} at {agent_file}", style="dim")
+                self.app.conversation.write(result_text)
+                self.app.refresh()
 
                 # Clear state
                 self.state = None
@@ -514,12 +535,12 @@ class AgentCreatorController:
                 # LLM call failed
                 error_msg = result.error if result.error else "Unknown error"
                 if spinner_service and spinner_id:
-                    spinner_service.stop(spinner_id, success=False, result_message=error_msg)
+                    spinner_service.stop(spinner_id)
                 await self._create_agent_fallback(description, error_msg)
 
         except Exception as e:
             if spinner_service and spinner_id:
-                spinner_service.stop(spinner_id, success=False, result_message=str(e))
+                spinner_service.stop(spinner_id)
             self.end(f"Failed to create agent: {e}", clear_panel=True)
 
     def _parse_generated_agent(self, content: str, description: str) -> tuple[str, str]:
@@ -562,6 +583,10 @@ class AgentCreatorController:
 
     async def _create_agent_fallback(self, description: str, error_msg: str) -> None:
         """Create agent with basic template when LLM generation fails."""
+        state = self.state
+        if not state:
+            return
+
         # Extract a name from the description
         words = description.lower().split()
         name_candidates = []
@@ -608,10 +633,16 @@ class AgentCreatorController:
 
         agent_file.write_text(content, encoding="utf-8")
 
-        # Show inline system message about fallback creation
-        self.app.conversation.add_system_message(
-            f"  ⎿  Created agent with basic template: {name} at {agent_file}"
-        )
+        # Clear the panel
+        start = state.get("panel_start")
+        if start is not None:
+            self.app.conversation._truncate_from(start)
+
+        # Show inline result with ⎿ format (note: fallback template)
+        result_text = Text()
+        result_text.append("  ⎿  ", style="dim")
+        result_text.append(f"Created agent (fallback): {name} at {agent_file}", style="dim")
+        self.app.conversation.write(result_text)
         self.app.refresh()
 
         # Clear state
