@@ -3,7 +3,8 @@ from __future__ import annotations
 import re
 import threading
 import time
-from typing import Any, List, Tuple
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional, Tuple
 
 from rich.console import Group
 from rich.panel import Panel
@@ -15,6 +16,7 @@ from textual.timer import Timer
 from swecli.ui_textual.constants import TOOL_ERROR_SENTINEL
 from swecli.ui_textual.style_tokens import (
     BLUE_PATH,
+    CYAN,
     ERROR,
     GREEN_BRIGHT,
     GREEN_PROMPT,
@@ -28,6 +30,59 @@ from swecli.ui_textual.widgets.terminal_box_renderer import (
     TerminalBoxRenderer,
 )
 from swecli.ui_textual.widgets.conversation.protocols import RichLogInterface
+
+# Tree connector characters
+TREE_BRANCH = "├─"
+TREE_LAST = "└─"
+TREE_VERTICAL = "│"
+TREE_CONTINUATION = "⎿"
+
+
+@dataclass
+class NestedToolState:
+    """State tracking for a single nested tool call."""
+    line_number: int
+    tool_text: Text
+    depth: int
+    timer_start: float
+    color_index: int = 0
+    parent: str = ""
+    tool_id: str = ""
+
+
+@dataclass
+class AgentInfo:
+    """Info for a single parallel agent tracked by tool_call_id."""
+    agent_type: str
+    description: str
+    tool_call_id: str
+    line_number: int = 0    # Line for agent row
+    status_line: int = 0    # Line for status/current tool
+    tool_count: int = 0
+    current_tool: str = "Initializing...."
+    status: str = "running"  # running, completed, failed
+    is_last: bool = False   # For tree connector rendering
+
+
+@dataclass
+class ParallelAgentGroup:
+    """Tracks a group of parallel agents for collapsed display."""
+    agents: Dict[str, AgentInfo] = field(default_factory=dict)  # key = tool_call_id
+    header_line: int = 0
+    expanded: bool = False
+    start_time: float = field(default_factory=time.monotonic)
+    completed: bool = False
+
+
+@dataclass
+class AgentStats:
+    """Stats tracking for a single agent type in a parallel group (legacy)."""
+    tool_count: int = 0
+    token_count: int = 0
+    current_tool: str = ""
+    status: str = "running"  # running, completed, failed
+    agent_count: int = 1  # Number of agents of this type (for "Running 2 Explore agents")
+    completed_count: int = 0  # Number of agents that have completed
 
 
 class DefaultToolRenderer:
@@ -51,7 +106,7 @@ class DefaultToolRenderer:
         self._tool_thread_timer: threading.Timer | None = None
         self._nested_tool_thread_timer: threading.Timer | None = None
 
-        # Nested tool state
+        # Nested tool state - multi-tool tracking for parallel agents
         self._nested_spinner_char = "⏺"
         self._nested_color_gradient = [
             "#00ff00", "#00f500", "#00eb00", "#00e100", "#00d700", "#00cd00",
@@ -61,11 +116,20 @@ class DefaultToolRenderer:
             "#00cd00", "#00d700", "#00e100", "#00eb00", "#00f500",
             "#00ff00",  # Peak bright
         ]
+        # Multi-tool tracking: (parent, tool_id) -> NestedToolState
+        self._nested_tools: Dict[Tuple[str, str], NestedToolState] = {}
+        self._nested_tool_timer: Timer | None = None
+        self._nested_tool_thread_timer: threading.Timer | None = None
+
+        # Parallel agent group tracking
+        self._parallel_group: Optional[ParallelAgentGroup] = None
+        self._parallel_expanded: bool = False  # Default to collapsed view
+
+        # Legacy single-tool state (for backwards compatibility)
         self._nested_color_index = 0
         self._nested_tool_line: int | None = None
         self._nested_tool_text: Text | None = None
         self._nested_tool_depth: int = 1
-        self._nested_tool_timer: Timer | None = None
         self._nested_tool_timer_start: float | None = None
         
         # Streaming terminal box state
@@ -227,17 +291,64 @@ class DefaultToolRenderer:
 
     # --- Nested Tool Calls ---
 
-    def add_nested_tool_call(self, display: Text | str, depth: int, parent: str) -> None:
-        if self.log.lines and getattr(self.log.lines[-1], 'plain', '').strip():
-            self.log.write(Text(""))
+    def add_nested_tool_call(
+        self,
+        display: Text | str,
+        depth: int,
+        parent: str,
+        tool_id: str = "",
+        is_last: bool = False,
+    ) -> None:
+        """Add a nested tool call with multi-tool tracking support.
 
+        Args:
+            display: Tool display text
+            depth: Nesting depth (1 = direct child)
+            parent: Parent agent name
+            tool_id: Unique tool call ID for tracking parallel tools
+            is_last: Whether this is the last tool in its group (for tree connectors)
+
+        DEBUG: Parallel agent tracking
+        """
+        import sys
+        if self._parallel_group is not None:
+            print(f"[DEBUG PARALLEL] add_nested_tool_call: parent={parent!r}", file=sys.stderr)
+            print(f"[DEBUG PARALLEL] agents keys={list(self._parallel_group.agents.keys())}", file=sys.stderr)
+            agent = self._parallel_group.agents.get(parent)
+            print(f"[DEBUG PARALLEL] agent found={agent is not None}", file=sys.stderr)
+            if agent:
+                print(f"[DEBUG PARALLEL] agent.tool_call_id={agent.tool_call_id!r}", file=sys.stderr)
         if isinstance(display, Text):
             tool_text = display.copy()
         else:
             tool_text = Text(str(display), style=SUBTLE)
 
+        # If active parallel group: update agent stats and status line in-place
+        if self._parallel_group is not None:
+            # parent is now tool_call_id for parallel agents
+            agent = self._parallel_group.agents.get(parent)
+            if agent is not None:
+                # Update stats
+                agent.tool_count += 1
+                plain_text = tool_text.plain if hasattr(tool_text, 'plain') else str(tool_text)
+                agent.current_tool = plain_text[:50] if len(plain_text) <= 50 else plain_text[:47] + "..."
+
+                # Update agent row to show tool count
+                self._update_agent_row(agent)
+
+                # Update status line with current tool
+                self._update_status_line(agent)
+
+                if not self._parallel_expanded:
+                    return  # DON'T write individual tool line when collapsed
+
+        # Expanded mode: write the tool call line
+        if self.log.lines and getattr(self.log.lines[-1], 'plain', '').strip():
+            self.log.write(Text(""))
+
+        # Build tree-style indentation
         formatted = Text()
-        indent = "  " * depth
+        indent = self._build_tree_indent(depth, parent, is_last)
         formatted.append(indent)
         formatted.append(f"{self._nested_spinner_char} ", style=self._nested_color_gradient[0])
         formatted.append_text(tool_text)
@@ -245,6 +356,26 @@ class DefaultToolRenderer:
 
         self.log.write(formatted, scroll_end=True, animate=False)
 
+        # Generate tool_id if not provided
+        if not tool_id:
+            tool_id = f"{parent}_{len(self._nested_tools)}_{time.monotonic()}"
+
+        # Store state in multi-tool tracking dict
+        key = (parent, tool_id)
+        self._nested_tools[key] = NestedToolState(
+            line_number=len(self.log.lines) - 1,
+            tool_text=tool_text.copy(),
+            depth=depth,
+            timer_start=time.monotonic(),
+            color_index=0,
+            parent=parent,
+            tool_id=tool_id,
+        )
+
+        # Note: parallel group stats are already updated at the top of this method
+        # when we found the agent by tool_call_id
+
+        # Maintain legacy single-tool state for backwards compat
         self._nested_tool_line = len(self.log.lines) - 1
         self._nested_tool_text = tool_text.copy()
         self._nested_tool_depth = depth
@@ -253,30 +384,92 @@ class DefaultToolRenderer:
 
         self._start_nested_tool_timer()
 
-    def complete_nested_tool_call(self, tool_name: str, depth: int, parent: str, success: bool) -> None:
-        if self._nested_tool_timer:
-            self._nested_tool_timer.stop()
-            self._nested_tool_timer = None
-        if self._nested_tool_thread_timer:
-            self._nested_tool_thread_timer.cancel()
-            self._nested_tool_thread_timer = None
+    def _build_tree_indent(self, depth: int, parent: str, is_last: bool) -> str:
+        """Build tree connector prefix for nested tool display.
 
-        if self._nested_tool_line is None or self._nested_tool_text is None:
-            return
+        Args:
+            depth: Nesting depth
+            parent: Parent agent name
+            is_last: Whether this is the last tool in its group
 
+        Returns:
+            String like "   ├─ " or "   └─ " or "   │  ├─ "
+        """
+        if depth == 1:
+            # First level: simple tree connector
+            connector = TREE_LAST if is_last else TREE_BRANCH
+            return f"   {connector} "
+        else:
+            # Deeper nesting: add vertical lines for continuation
+            return "   " + f"{TREE_VERTICAL}  " * (depth - 1) + (f"{TREE_LAST} " if is_last else f"{TREE_BRANCH} ")
+
+    def complete_nested_tool_call(
+        self,
+        tool_name: str,
+        depth: int,
+        parent: str,
+        success: bool,
+        tool_id: str = "",
+    ) -> None:
+        """Complete a nested tool call, updating the display.
+
+        Args:
+            tool_name: Name of the tool
+            depth: Nesting depth
+            parent: Parent agent name
+            success: Whether the tool succeeded
+            tool_id: Unique tool call ID for tracking
+        """
+        # Try to find the tool in multi-tool tracking dict
+        state: Optional[NestedToolState] = None
+
+        if tool_id:
+            key = (parent, tool_id)
+            state = self._nested_tools.pop(key, None)
+
+        # Fallback: find most recent tool for this parent
+        if state is None:
+            for key in list(self._nested_tools.keys()):
+                if key[0] == parent:
+                    state = self._nested_tools.pop(key)
+                    break
+
+        # Final fallback: use legacy single-tool state
+        if state is None:
+            if self._nested_tool_line is None or self._nested_tool_text is None:
+                return
+            state = NestedToolState(
+                line_number=self._nested_tool_line,
+                tool_text=self._nested_tool_text,
+                depth=self._nested_tool_depth,
+                timer_start=self._nested_tool_timer_start or time.monotonic(),
+                parent=parent,
+            )
+            self._nested_tool_line = None
+            self._nested_tool_text = None
+            self._nested_tool_timer_start = None
+
+        # Stop timers only if no more active tools
+        if not self._nested_tools:
+            if self._nested_tool_timer:
+                self._nested_tool_timer.stop()
+                self._nested_tool_timer = None
+            if self._nested_tool_thread_timer:
+                self._nested_tool_thread_timer.cancel()
+                self._nested_tool_thread_timer = None
+
+        # Build completed tool display
         formatted = Text()
-        indent = "  " * depth
+        indent = self._build_tree_indent(state.depth, state.parent, is_last=False)
         formatted.append(indent)
-        
+
         status_char = "✓" if success else "✗"
         status_color = SUCCESS if success else ERROR
-        
+
         formatted.append(f"{status_char} ", style=status_color)
-        formatted.append_text(self._nested_tool_text)
-        
-        elapsed = 0
-        if self._nested_tool_timer_start:
-            elapsed = round(time.monotonic() - self._nested_tool_timer_start)
+        formatted.append_text(state.tool_text)
+
+        elapsed = round(time.monotonic() - state.timer_start)
         formatted.append(f" ({elapsed}s)", style=GREY)
 
         # In-place update
@@ -284,33 +477,39 @@ class DefaultToolRenderer:
         console = Console(width=1000, force_terminal=True, no_color=False)
         segments = list(formatted.render(console))
         strip = Strip(segments)
-        
-        if self._nested_tool_line < len(self.log.lines):
-            self.log.lines[self._nested_tool_line] = strip
-            self.log.refresh_line(self._nested_tool_line)
-        
-        self._nested_tool_line = None
-        self._nested_tool_text = None
-        self._nested_tool_timer_start = None
+
+        if state.line_number < len(self.log.lines):
+            self.log.lines[state.line_number] = strip
+            self.log.refresh_line(state.line_number)
 
     def _start_nested_tool_timer(self) -> None:
-        if self._nested_tool_timer:
-            self._nested_tool_timer.stop()
-        if self._nested_tool_thread_timer:
-            self._nested_tool_thread_timer.cancel()
-        self._animate_nested_tool_spinner()
+        """Start or continue the nested tool animation timer."""
+        # Only start timer if not already running
+        if self._nested_tool_timer is None:
+            self._animate_nested_tool_spinner()
 
     def _animate_nested_tool_spinner(self) -> None:
+        """Animate ALL active nested tool spinners."""
         if self._nested_tool_thread_timer:
             self._nested_tool_thread_timer.cancel()
             self._nested_tool_thread_timer = None
 
-        if self._nested_tool_line is None or self._nested_tool_text is None:
+        # Check if there are any active tools to animate
+        if not self._nested_tools and (self._nested_tool_line is None or self._nested_tool_text is None):
+            self._nested_tool_timer = None
             return
 
-        self._nested_color_index = (self._nested_color_index + 1) % len(self._nested_color_gradient)
-        self._render_nested_tool_line()
+        # Animate all tools in the multi-tool tracking dict
+        for key, state in self._nested_tools.items():
+            state.color_index = (state.color_index + 1) % len(self._nested_color_gradient)
+            self._render_nested_tool_line_for_state(state)
 
+        # Also animate legacy single-tool state if present
+        if self._nested_tool_line is not None and self._nested_tool_text is not None:
+            self._nested_color_index = (self._nested_color_index + 1) % len(self._nested_color_gradient)
+            self._render_nested_tool_line()
+
+        # Schedule next animation frame
         interval = 0.15
         self._nested_tool_timer = self.log.set_timer(interval, self._animate_nested_tool_spinner)
         self._nested_tool_thread_timer = threading.Timer(interval, self._on_nested_tool_thread_tick)
@@ -318,7 +517,9 @@ class DefaultToolRenderer:
         self._nested_tool_thread_timer.start()
 
     def _on_nested_tool_thread_tick(self) -> None:
-        if self._nested_tool_line is None:
+        """Thread timer callback for nested tool animation."""
+        # Check if there are any active tools
+        if not self._nested_tools and self._nested_tool_line is None:
             return
         try:
             if self.app:
@@ -326,10 +527,38 @@ class DefaultToolRenderer:
         except Exception:
             pass
 
+    def _render_nested_tool_line_for_state(self, state: NestedToolState) -> None:
+        """Render a specific nested tool line from its state.
+
+        Args:
+            state: The NestedToolState to render
+        """
+        if state.line_number >= len(self.log.lines):
+            return
+
+        elapsed = round(time.monotonic() - state.timer_start)
+
+        formatted = Text()
+        indent = self._build_tree_indent(state.depth, state.parent, is_last=False)
+        formatted.append(indent)
+        color = self._nested_color_gradient[state.color_index]
+        formatted.append(f"{self._nested_spinner_char} ", style=color)
+        formatted.append_text(state.tool_text.copy())
+        formatted.append(f" ({elapsed}s)", style=GREY)
+
+        from rich.console import Console
+        console = Console(width=1000, force_terminal=True, no_color=False)
+        segments = list(formatted.render(console))
+        strip = Strip(segments)
+
+        self.log.lines[state.line_number] = strip
+        self.log.refresh_line(state.line_number)
+
     def _render_nested_tool_line(self) -> None:
+        """Render the legacy single nested tool line."""
         if self._nested_tool_line is None or self._nested_tool_text is None:
             return
-        
+
         if self._nested_tool_line >= len(self.log.lines):
             return
 
@@ -354,6 +583,311 @@ class DefaultToolRenderer:
         self.log.refresh_line(self._nested_tool_line)
         if self.app and hasattr(self.app, 'refresh'):
             self.app.refresh()
+
+    # --- Parallel Agent Group Management ---
+
+    def on_parallel_agents_start(self, agent_infos: List[dict]) -> None:
+        """Called when parallel agents start executing.
+
+        Creates a parallel group and renders header + individual agent lines with status.
+
+        Args:
+            agent_infos: List of agent info dicts with keys:
+                - agent_type: Type of agent (e.g., "Explore")
+                - description: Short description of agent's task
+                - tool_call_id: Unique ID for tracking this agent
+        """
+        if self.log.lines and getattr(self.log.lines[-1], 'plain', '').strip():
+            self.log.write(Text(""))
+
+        # Write header line
+        header = Text()
+        header.append("⏺ ", style=CYAN)
+        header.append(f"Running {len(agent_infos)} agents… ")
+        self.log.write(header, scroll_end=True, animate=False)
+        header_line = len(self.log.lines) - 1
+
+        # Create agents dict keyed by tool_call_id
+        agents: Dict[str, AgentInfo] = {}
+        for i, info in enumerate(agent_infos):
+            is_last = (i == len(agent_infos) - 1)
+            tool_call_id = info.get("tool_call_id", f"agent_{i}")
+            description = info.get("description") or info.get("agent_type", "Agent")
+            agent_type = info.get("agent_type", "Agent")
+
+            # Agent row: "   ├─ Description ·"
+            connector = TREE_LAST if is_last else TREE_BRANCH
+            agent_row = Text()
+            agent_row.append(f"   {connector} ", style=GREY)
+            agent_row.append(description)
+            agent_row.append(" ·", style=GREY)
+            self.log.write(agent_row, scroll_end=True, animate=False)
+            agent_line = len(self.log.lines) - 1
+
+            # Status row: "   │  ⎿  Initializing...."
+            continuation = "   " if is_last else f"   {TREE_VERTICAL}"
+            status_row = Text()
+            status_row.append(f"{continuation}  {TREE_CONTINUATION}  ", style=GREY)
+            status_row.append("Initializing....", style=SUBTLE)
+            self.log.write(status_row, scroll_end=True, animate=False)
+            status_line_num = len(self.log.lines) - 1
+
+            agents[tool_call_id] = AgentInfo(
+                agent_type=agent_type,
+                description=description,
+                tool_call_id=tool_call_id,
+                line_number=agent_line,
+                status_line=status_line_num,
+                is_last=is_last,
+            )
+
+        self._parallel_group = ParallelAgentGroup(
+            agents=agents,
+            header_line=header_line,
+            expanded=self._parallel_expanded,
+            start_time=time.monotonic(),
+        )
+
+    def _render_parallel_header(self) -> Text:
+        """Render the parallel agents header line.
+
+        Returns:
+            Text object for the header line
+        """
+        if self._parallel_group is None:
+            return Text("")
+
+        group = self._parallel_group
+        total_agents = len(group.agents)
+        total_tools = sum(a.tool_count for a in group.agents.values())
+        all_completed = all(a.status in ("completed", "failed") for a in group.agents.values())
+        any_failed = any(a.status == "failed" for a in group.agents.values())
+
+        # Count agents by type for description
+        type_counts: Dict[str, int] = {}
+        for agent in group.agents.values():
+            type_counts[agent.agent_type] = type_counts.get(agent.agent_type, 0) + 1
+
+        # Build agent type description (e.g., "2 Explore agents" or "1 Explore + 1 Bash agents")
+        type_descriptions = []
+        for agent_type, count in type_counts.items():
+            type_descriptions.append(f"{count} {agent_type}")
+        agent_desc = " + ".join(type_descriptions) if len(type_descriptions) > 1 else type_descriptions[0] if type_descriptions else "0"
+        agent_word = "agent" if total_agents == 1 else "agents"
+
+        text = Text()
+
+        if all_completed:
+            if any_failed:
+                text.append("✗ ", style=ERROR)
+            else:
+                text.append("✓ ", style=SUCCESS)
+            elapsed = round(time.monotonic() - group.start_time)
+            text.append(f"Completed {agent_desc} {agent_word} ")
+            text.append(f"({total_tools} tools · {elapsed}s)", style=GREY)
+        else:
+            text.append("⏺ ", style=CYAN)
+            text.append(f"Running {agent_desc} {agent_word}… ")
+
+        return text
+
+    def _update_parallel_header(self) -> None:
+        """Update the parallel header line in-place."""
+        if self._parallel_group is None:
+            return
+
+        header_text = self._render_parallel_header()
+
+        from rich.console import Console
+        console = Console(width=1000, force_terminal=True, no_color=False)
+        segments = list(header_text.render(console))
+        strip = Strip(segments)
+
+        if self._parallel_group.header_line < len(self.log.lines):
+            self.log.lines[self._parallel_group.header_line] = strip
+            self.log.refresh_line(self._parallel_group.header_line)
+
+    def _update_agent_row(self, agent: AgentInfo) -> None:
+        """Update an agent's row line to show tool count.
+
+        Args:
+            agent: AgentInfo for the agent to update
+        """
+        if agent.line_number >= len(self.log.lines):
+            return
+
+        # Build agent row: "   ├─ Description · N tools"
+        connector = TREE_LAST if agent.is_last else TREE_BRANCH
+        row = Text()
+        row.append(f"   {connector} ", style=GREY)
+        row.append(agent.description)
+        row.append(f" · {agent.tool_count} tool" + ("s" if agent.tool_count != 1 else ""), style=GREY)
+
+        strip = self._text_to_strip(row)
+        self.log.lines[agent.line_number] = strip
+        self.log.refresh_line(agent.line_number)
+
+    def _update_status_line(self, agent: AgentInfo) -> None:
+        """Update an agent's status line with current tool.
+
+        Args:
+            agent: AgentInfo for the agent to update
+        """
+        if agent.status_line >= len(self.log.lines):
+            return
+
+        # Build status row: "   │  ⎿  Current tool name"
+        continuation = "   " if agent.is_last else f"   {TREE_VERTICAL}"
+        status = Text()
+        status.append(f"{continuation}  {TREE_CONTINUATION}  ", style=GREY)
+        status.append(agent.current_tool, style=SUBTLE)
+
+        strip = self._text_to_strip(status)
+        self.log.lines[agent.status_line] = strip
+        self.log.refresh_line(agent.status_line)
+
+    def _text_to_strip(self, text: Text) -> Strip:
+        """Convert Text to Strip for line replacement.
+
+        Args:
+            text: Rich Text object to convert
+
+        Returns:
+            Strip object for use in log.lines
+        """
+        from rich.console import Console
+        console = Console(width=1000, force_terminal=True, no_color=False)
+        segments = list(text.render(console))
+        return Strip(segments)
+
+    def on_parallel_agent_complete(self, tool_call_id: str, success: bool) -> None:
+        """Called when a parallel agent completes.
+
+        Args:
+            tool_call_id: Unique tool call ID of the agent that completed
+            success: Whether the agent succeeded
+        """
+        if self._parallel_group is None:
+            return
+
+        agent = self._parallel_group.agents.get(tool_call_id)
+        if agent is not None:
+            # Update status
+            agent.status = "completed" if success else "failed"
+
+            # Update agent row with final status
+            self._update_agent_row_completed(agent, success)
+
+            # Update status line to show completion
+            self._update_status_line_completed(agent, success)
+
+            # Update header
+            self._update_parallel_header()
+
+    def _update_agent_row_completed(self, agent: AgentInfo, success: bool) -> None:
+        """Update an agent's row line to show completion status.
+
+        Args:
+            agent: AgentInfo for the agent to update
+            success: Whether the agent succeeded
+        """
+        if agent.line_number >= len(self.log.lines):
+            return
+
+        # Build completed agent row: "   ├─ ✓ Description · N tools"
+        connector = TREE_LAST if agent.is_last else TREE_BRANCH
+        status_char = "✓" if success else "✗"
+        status_style = SUCCESS if success else ERROR
+
+        row = Text()
+        row.append(f"   {connector} ", style=GREY)
+        row.append(f"{status_char} ", style=status_style)
+        row.append(agent.description)
+        row.append(f" · {agent.tool_count} tool" + ("s" if agent.tool_count != 1 else ""), style=GREY)
+
+        strip = self._text_to_strip(row)
+        self.log.lines[agent.line_number] = strip
+        self.log.refresh_line(agent.line_number)
+
+    def _update_status_line_completed(self, agent: AgentInfo, success: bool) -> None:
+        """Update an agent's status line to show completion.
+
+        Args:
+            agent: AgentInfo for the agent to update
+            success: Whether the agent succeeded
+        """
+        if agent.status_line >= len(self.log.lines):
+            return
+
+        # Build completed status row: "   │  ⎿  Done" or "   │  ⎿  Failed"
+        continuation = "   " if agent.is_last else f"   {TREE_VERTICAL}"
+        status_text = "Done" if success else "Failed"
+
+        status = Text()
+        status.append(f"{continuation}  {TREE_CONTINUATION}  ", style=GREY)
+        status.append(status_text, style=SUBTLE if success else ERROR)
+
+        strip = self._text_to_strip(status)
+        self.log.lines[agent.status_line] = strip
+        self.log.refresh_line(agent.status_line)
+
+    def on_parallel_agents_done(self) -> None:
+        """Called when all parallel agents have completed."""
+        if self._parallel_group is None:
+            return
+
+        # Mark all agents as completed (in case some weren't explicitly marked)
+        for agent in self._parallel_group.agents.values():
+            if agent.status == "running":
+                agent.status = "completed"
+                self._update_agent_row_completed(agent, success=True)
+                self._update_status_line_completed(agent, success=True)
+
+        self._parallel_group.completed = True
+        self._update_parallel_header()
+
+        # Clear parallel group
+        self._parallel_group = None
+
+    def _write_parallel_agent_summaries(self) -> None:
+        """Write summary lines for each agent in the parallel group."""
+        if self._parallel_group is None:
+            return
+
+        agents = list(self._parallel_group.agents.items())
+        for i, (name, stats) in enumerate(agents):
+            is_last = i == len(agents) - 1
+            connector = TREE_LAST if is_last else TREE_BRANCH
+
+            text = Text()
+            text.append(f"   {connector} ", style=GREY)
+            text.append(f"{name}", style=PRIMARY)
+            text.append(f" · {stats.tool_count} tool uses", style=GREY)
+
+            if stats.current_tool:
+                text.append("\n")
+                continuation = "      " if is_last else f"   {TREE_VERTICAL}  "
+                text.append(f"{continuation}{TREE_CONTINUATION}  ", style=GREY)
+                text.append(stats.current_tool, style=SUBTLE)
+
+            self.log.write(text, scroll_end=True, animate=False)
+
+    def toggle_parallel_expansion(self) -> bool:
+        """Toggle the expand/collapse state of parallel agent display.
+
+        Returns:
+            New expansion state (True = expanded)
+        """
+        self._parallel_expanded = not self._parallel_expanded
+        return self._parallel_expanded
+
+    def has_active_parallel_group(self) -> bool:
+        """Check if there's an active parallel agent group.
+
+        Returns:
+            True if a parallel group is currently active
+        """
+        return self._parallel_group is not None and not self._parallel_group.completed
 
     def _rebuild_streaming_box_with_truncation(
         self,

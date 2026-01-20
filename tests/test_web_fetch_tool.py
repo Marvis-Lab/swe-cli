@@ -3,7 +3,7 @@
 from pathlib import Path
 
 import pytest
-from crawl4ai.deep_crawling import BFSDeepCrawlStrategy, BestFirstCrawlingStrategy
+from crawl4ai.deep_crawling import BFSDeepCrawlStrategy, BestFirstCrawlingStrategy, DFSDeepCrawlStrategy
 from crawl4ai.deep_crawling.filters import DomainFilter, FilterChain, URLPatternFilter
 
 from swecli.models.config import AppConfig
@@ -24,6 +24,9 @@ def test_build_deep_strategy_defaults_to_best_first(web_fetch_tool: WebFetchTool
         include_external=False,
         max_pages=None,
         filter_chain=None,
+        BFSDeepCrawlStrategy=BFSDeepCrawlStrategy,
+        DFSDeepCrawlStrategy=DFSDeepCrawlStrategy,
+        BestFirstCrawlingStrategy=BestFirstCrawlingStrategy,
     )
 
     assert isinstance(strategy, BestFirstCrawlingStrategy)
@@ -37,6 +40,9 @@ def test_build_deep_strategy_respects_explicit_bfs(web_fetch_tool: WebFetchTool)
         allowed_domains=["docs.example.com"],
         blocked_domains=["old.docs.example.com"],
         url_patterns=["*guide*"],
+        FilterChain=FilterChain,
+        DomainFilter=DomainFilter,
+        URLPatternFilter=URLPatternFilter,
     )
 
     strategy = web_fetch_tool._build_deep_strategy(
@@ -45,6 +51,9 @@ def test_build_deep_strategy_respects_explicit_bfs(web_fetch_tool: WebFetchTool)
         include_external=True,
         max_pages=5,
         filter_chain=filter_chain,
+        BFSDeepCrawlStrategy=BFSDeepCrawlStrategy,
+        DFSDeepCrawlStrategy=DFSDeepCrawlStrategy,
+        BestFirstCrawlingStrategy=BestFirstCrawlingStrategy,
     )
 
     assert isinstance(strategy, BFSDeepCrawlStrategy)
@@ -60,6 +69,9 @@ def test_build_filter_chain_combines_filters(web_fetch_tool: WebFetchTool) -> No
         allowed_domains=["docs.example.com"],
         blocked_domains=["old.docs.example.com"],
         url_patterns=["*guide*"],
+        FilterChain=FilterChain,
+        DomainFilter=DomainFilter,
+        URLPatternFilter=URLPatternFilter,
     )
 
     assert isinstance(filter_chain, FilterChain)
@@ -68,4 +80,9 @@ def test_build_filter_chain_combines_filters(web_fetch_tool: WebFetchTool) -> No
 
 def test_build_filter_chain_returns_none_without_constraints(web_fetch_tool: WebFetchTool) -> None:
     """No constraints => no filter chain."""
-    assert web_fetch_tool._build_filter_chain(None, None, None) is None
+    assert web_fetch_tool._build_filter_chain(
+        None, None, None,
+        FilterChain=FilterChain,
+        DomainFilter=DomainFilter,
+        URLPatternFilter=URLPatternFilter,
+    ) is None

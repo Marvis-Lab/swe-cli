@@ -146,19 +146,21 @@ class TodoHandler:
                 created_ids.append(todo_id)
                 # Format with correct color and styling based on status
                 if todo_status == "done":
-                    results.append(f"  [dim]✓ [strike]{str(todo_text).strip()}[/strike][/dim]")
+                    results.append(f"  [green]✓ ~~{str(todo_text).strip()}~~[/green]")
                 elif todo_status == "doing":
                     results.append(f"  [yellow]▶ {str(todo_text).strip()}[/yellow]")
                 else:
-                    results.append(f"  [dim]○ {str(todo_text).strip()}[/dim]")
+                    results.append(f"  [cyan]○ {str(todo_text).strip()}[/cyan]")
                 created_count += 1
             else:
                 error = result.get("error", "Unknown error")
                 results.append(f"  [red]✗ {error}[/red]")
                 failed_count += 1
 
-        # Build summary
+        # Build summary with instructive message for continuation
         summary_lines = [
+            "Todos updated. Now proceed with the next action.",
+            "",
             f"Created {created_count} todo(s) from {len(todos)} item(s):",
             "",
         ]
@@ -250,22 +252,26 @@ class TodoHandler:
         # Convert to string first (handle both int and str inputs)
         id = str(id)
 
+        # Empty string should return None
+        if not id or not id.strip():
+            return None, None
+
         # Try exact match first (no warning needed)
         if id in self._todos:
             return id, self._todos[id]
 
-        # If numeric ID provided, try both 1-based and 0-based indexing
+        # If numeric ID provided, try both 0-based and 1-based indexing
         if id.isdigit():
             numeric_id = int(id)
 
-            # Try 1-based indexing first (Claude uses 1-based): "1" → "todo-1"
-            todo_id = f"todo-{numeric_id}"
+            # Try 0-based indexing first (Deep Agent format): "0" → "todo-1", "2" → "todo-3"
+            one_based_id = numeric_id + 1
+            todo_id = f"todo-{one_based_id}"
             if todo_id in self._todos:
                 return todo_id, self._todos[todo_id]
 
-            # Fallback to 0-based indexing: "0" → "todo-1"
-            one_based_id = numeric_id + 1
-            todo_id = f"todo-{one_based_id}"
+            # Fallback to 1-based indexing (Claude uses 1-based): "1" → "todo-1"
+            todo_id = f"todo-{numeric_id}"
             if todo_id in self._todos:
                 return todo_id, self._todos[todo_id]
 
@@ -502,14 +508,14 @@ class TodoHandler:
 
         for todo in sorted_todos:
             if todo.status == "done":
-                # Completed: gray with strikethrough
-                lines.append(f"  [dim]✓ [strike]{todo.title}[/strike][/dim]")
+                # Completed: green with strikethrough
+                lines.append(f"  [green]✓ ~~{todo.title}~~[/green]")
             elif todo.status == "doing":
                 # In progress: yellow
                 lines.append(f"  [yellow]▶ {todo.title}[/yellow]")
             else:
-                # Pending: gray
-                lines.append(f"  [dim]○ {todo.title}[/dim]")
+                # Pending: cyan
+                lines.append(f"  [cyan]○ {todo.title}[/cyan]")
 
         return lines
 

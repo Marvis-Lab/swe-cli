@@ -55,7 +55,7 @@ def summarize_tool_result(tool_name: str, result: Any, error: str | None = None)
         return f"✓ Listed directory ({file_count} items)"
 
     # Bash/command execution
-    if tool_name in ("run_command", "Run"):
+    if tool_name in ("run_command", "Run", "bash_execute", "Bash"):
         lines = result_str.count("\n") + 1 if result_str else 0
         if lines > 10:
             return f"✓ Command executed ({lines} lines of output)"
@@ -72,10 +72,10 @@ def summarize_tool_result(tool_name: str, result: Any, error: str | None = None)
     if tool_name in ("analyze_image", "Analyze", "capture_screenshot"):
         return f"✓ Image processed successfully"
 
-    # Thinking tool - preserve full content (it's the model's reasoning)
-    # This ensures thinking traces are included in conversation context
+    # Thinking tool - return directive, not content (content would contaminate LLM response)
+    # The actual thinking is displayed in UI via _thinking_content key
     if tool_name == "think":
-        return result_str  # Return full thinking content, no summarization
+        return "[Thinking captured. Now respond directly to the user.]"
 
     # Generic fallback
     if len(result_str) < 100:
