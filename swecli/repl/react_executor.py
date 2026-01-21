@@ -180,6 +180,26 @@ class ReactExecutor:
 
         return None
 
+    def _should_skip_thinking_after_subagent(self, messages: list) -> bool:
+        """Check if we should skip thinking phase after subagent completion.
+
+        After spawn_subagent completes successfully, the results are already
+        visible. Skip thinking phase to let main agent directly decide.
+        """
+        # Find the last tool result in messages
+        for msg in reversed(messages):
+            if msg.get("role") == "tool":
+                content = msg.get("content", "")
+                # Check for spawn_subagent completion marker
+                if "[completion_status=success]" in content or "[SYNC COMPLETE]" in content:
+                    return True
+                # If we find a tool result that's not a subagent completion, don't skip
+                return False
+            # Stop searching if we hit a user message (new turn)
+            if msg.get("role") == "user" and "<thinking_trace>" not in msg.get("content", ""):
+                return False
+        return False
+
     def _run_iteration(self, ctx: IterationContext) -> LoopAction:
         """Run a single ReAct iteration."""
 
@@ -193,7 +213,8 @@ class ReactExecutor:
             thinking_visible = ctx.tool_registry.thinking_handler.is_visible
 
         # THINKING PHASE: Get thinking trace BEFORE action (when thinking mode is ON)
-        if thinking_visible:
+        # Skip thinking phase after subagent completion - main agent decides directly
+        if thinking_visible and not self._should_skip_thinking_after_subagent(ctx.messages):
             thinking_trace = self._get_thinking_trace(ctx.messages, ctx.agent, ctx.ui_callback)
             if thinking_trace:
                 # Inject trace as user message for the action phase
@@ -388,15 +409,23 @@ class ReactExecutor:
             self._add_assistant_message(summary, raw_content)
             return LoopAction.BREAK
 
-        # Execute tools (parallel for multiple, direct for single)
-        if len(tool_calls) == 1:
-            # Single tool - execute directly (no thread pool overhead)
-            result = self._execute_single_tool(tool_calls[0], ctx)
-            tool_results_by_id = {tool_calls[0]["id"]: result}
-            operation_cancelled = result.get("interrupted", False)
-        else:
-            # Multiple tools - execute in parallel
+        # Execute tools (parallel ONLY for spawn_subagent, sequential for others)
+        spawn_calls = [tc for tc in tool_calls if tc["function"]["name"] == "spawn_subagent"]
+        is_all_spawn_agents = len(spawn_calls) == len(tool_calls) and len(spawn_calls) > 1
+
+        if is_all_spawn_agents:
+            # All spawn_subagent - execute in parallel with special UI handling
             tool_results_by_id, operation_cancelled = self._execute_tools_parallel(tool_calls, ctx)
+        else:
+            # Sequential execution for all other tool calls
+            tool_results_by_id = {}
+            operation_cancelled = False
+            for tool_call in tool_calls:
+                result = self._execute_single_tool(tool_call, ctx)
+                tool_results_by_id[tool_call["id"]] = result
+                if result.get("interrupted", False):
+                    operation_cancelled = True
+                    break
 
         # Batch add all results after completion (maintains message order)
         for tool_call in tool_calls:
@@ -565,8 +594,13 @@ class ReactExecutor:
         tool_name = tool_call["function"]["name"]
 
         separate_response = result.get("separate_response")
+        completion_status = result.get("completion_status")
+
         if result.get("success", False):
             tool_result = separate_response if separate_response else result.get("output", "")
+            # Prepend completion status so LLM can see it (critical for subagent results)
+            if completion_status:
+                tool_result = f"[completion_status={completion_status}]\n{tool_result}"
         else:
             tool_result = f"Error: {result.get('error', 'Tool execution failed')}"
 
