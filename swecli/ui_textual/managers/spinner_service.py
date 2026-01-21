@@ -240,9 +240,17 @@ class SpinnerService:
         # Delegate to ConversationLog (BLOCKING to ensure line is added)
         # Track line number for this specific spinner
         def _start_on_ui():
-            # Add blank line for spacing if there are other active spinners
-            if self._spinner_lines:
-                conversation.write(Text(""))
+            # IMPORTANT: Always add blank line for visual separation from command input.
+            # This blank line appears BEFORE the spinner header (e.g., "⏺ MCP (github)").
+            # Without this, the spinner header appears immediately after the command input
+            # with no visual separation, making the output harder to read.
+            #
+            # Previously this was conditional: `if self._spinner_lines:` which only added
+            # a blank line when there were OTHER active spinners. This caused the first
+            # spinner (like /mcp connect) to have no blank line before its header.
+            # DO NOT revert this to a conditional check.
+            # Use Text(" ") to ensure visible blank line (Text("") may not render)
+            conversation.write(Text(" "))
 
             if hasattr(conversation, "add_tool_call"):
                 conversation.add_tool_call(display_text)
@@ -276,16 +284,23 @@ class SpinnerService:
             # Write placeholders only for non-bash tools
             # Bash commands don't need placeholders - their output is rendered separately
             if not skip_placeholder:
-                # Write TWO placeholders:
-                # 1. Result placeholder - updated with result in stop()
-                # 2. Spacing placeholder - stays as blank line between tool blocks
+                # Write result placeholder - updated with result message in stop()
+                #
+                # IMPORTANT: We do NOT write a spacing placeholder after the result.
+                # Previously, we wrote TWO placeholders:
+                #   1. Result placeholder (updated with result in stop())
+                #   2. Spacing placeholder (blank line after result)
+                #
+                # This caused DOUBLE blank lines because:
+                #   - Spacing placeholder added a blank line AFTER the result
+                #   - message_renderer.add_user_message() adds a blank line BEFORE next prompt
+                #
+                # Now spacing is handled ONLY by add_user_message(), which adds a blank
+                # line before each user prompt (see message_renderer.py:33-34).
+                # DO NOT add a spacing placeholder here - it will cause double spacing.
                 result_line_num = len(conversation.lines)
                 conversation.write(Text(""))  # Result placeholder
                 self._result_lines[spinner_id] = result_line_num
-
-                spacing_line_num = len(conversation.lines)
-                conversation.write(Text(""))  # Spacing placeholder
-                self._spacing_lines[spinner_id] = spacing_line_num
 
         self._run_blocking(_start_on_ui)
 
@@ -371,7 +386,11 @@ class SpinnerService:
         line_num = self._spinner_lines.pop(spinner_id, None)
         display_text = self._spinner_displays.pop(spinner_id, None)
         result_line_num = self._result_lines.pop(spinner_id, None)
-        spacing_line_num = self._spacing_lines.pop(spinner_id, None)
+        # NOTE: spacing_line_num is no longer used.
+        # Spacing after results is now handled by message_renderer.add_user_message()
+        # which adds a blank line BEFORE each user prompt. This prevents double spacing.
+        # See start() method comments for full explanation.
+        self._spacing_lines.pop(spinner_id, None)  # Clean up if any old entries exist
         # Get tip line number BEFORE popping (needed for deletion in _stop_on_ui)
         tip_line_num = self._spinner_tip_lines.pop(spinner_id, None)
         self._spinner_tips.pop(spinner_id, None)
@@ -381,7 +400,7 @@ class SpinnerService:
             return
 
         def _stop_on_ui():
-            nonlocal result_line_num, spacing_line_num
+            nonlocal result_line_num
 
             # Call stop_tool_execution for animation timer cleanup
             if hasattr(conversation, "stop_tool_execution"):
@@ -416,8 +435,6 @@ class SpinnerService:
                 # Adjust indices for lines that came after the deleted tip line
                 if result_line_num is not None:
                     result_line_num -= 1
-                if spacing_line_num is not None:
-                    spacing_line_num -= 1
 
             # Update result placeholder if it exists (non-bash tools only)
             # Bash commands don't have placeholders - they render output separately
@@ -427,9 +444,8 @@ class SpinnerService:
                     result_line.append(result_message, style=GREY)
                     conversation.lines[result_line_num] = text_to_strip(result_line)
 
-            # Store spacing line number for add_tool_result_continuation to use
-            # It will overwrite this line with the first diff line (no gap)
-            conversation._pending_spacing_line = spacing_line_num
+            # Clear any pending spacing line since we no longer use spacing placeholders
+            conversation._pending_spacing_line = None
 
             conversation.refresh()
 

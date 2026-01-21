@@ -59,13 +59,29 @@ class MCPCommands(CommandHandler):
         subcommand_map = {
             "list": self.list_servers,
             "status": self.status,
-            "view": lambda: self.view_server(subcmd_args.strip()) if subcmd_args else self._error_no_server_name(),
-            "connect": lambda: self.connect(subcmd_args.strip()) if subcmd_args else self._error_no_server_name(),
-            "disconnect": lambda: self.disconnect(subcmd_args.strip()) if subcmd_args else self._error_no_server_name(),
-            "enable": lambda: self.enable(subcmd_args.strip()) if subcmd_args else self._error_no_server_name(),
-            "disable": lambda: self.disable(subcmd_args.strip()) if subcmd_args else self._error_no_server_name(),
+            "view": lambda: (
+                self.view_server(subcmd_args.strip())
+                if subcmd_args
+                else self._error_no_server_name()
+            ),
+            "connect": lambda: (
+                self.connect(subcmd_args.strip()) if subcmd_args else self._error_no_server_name()
+            ),
+            "disconnect": lambda: (
+                self.disconnect(subcmd_args.strip())
+                if subcmd_args
+                else self._error_no_server_name()
+            ),
+            "enable": lambda: (
+                self.enable(subcmd_args.strip()) if subcmd_args else self._error_no_server_name()
+            ),
+            "disable": lambda: (
+                self.disable(subcmd_args.strip()) if subcmd_args else self._error_no_server_name()
+            ),
             "tools": lambda: self.show_tools(subcmd_args.strip() if subcmd_args else None),
-            "test": lambda: self.test(subcmd_args.strip()) if subcmd_args else self._error_no_server_name(),
+            "test": lambda: (
+                self.test(subcmd_args.strip()) if subcmd_args else self._error_no_server_name()
+            ),
             "reload": self.reload,
             "debug": self.debug,
         }
@@ -81,7 +97,7 @@ class MCPCommands(CommandHandler):
         self.print_line("[cyan]/mcp list[/cyan]       List configured MCP servers")
         self.print_continuation("[cyan]/mcp connect[/cyan]    Connect to a server")
         self.print_continuation("[cyan]/mcp tools[/cyan]      Show available tools")
-        self.console.print()
+        self.console.print("")  # Empty line for visual separation
 
     def _error_no_server_name(self) -> CommandResult:
         """Return error for missing server name."""
@@ -104,10 +120,16 @@ class MCPCommands(CommandHandler):
         table.add_column("Auto-start", justify="center")
 
         for name, config in servers.items():
-            status = "[green]✓ Connected[/green]" if self.mcp_manager.is_connected(name) else "[dim]Disconnected[/dim]"
+            status = (
+                "[green]✓ Connected[/green]"
+                if self.mcp_manager.is_connected(name)
+                else "[dim]Disconnected[/dim]"
+            )
             enabled = "[green]✓[/green]" if config.enabled else "[red]✗[/red]"
             auto_start = "[green]✓[/green]" if config.auto_start else "[dim]-[/dim]"
-            command = f"{config.command} {' '.join(config.args[:2])}" if config.args else config.command
+            command = (
+                f"{config.command} {' '.join(config.args[:2])}" if config.args else config.command
+            )
             if len(command) > 50:
                 command = command[:47] + "..."
 
@@ -119,6 +141,7 @@ class MCPCommands(CommandHandler):
     def connect(self, server_name: str) -> CommandResult:
         """Connect to a specific MCP server."""
         if self.mcp_manager.is_connected(server_name):
+            self.console.print("")  # Empty line for visual separation
             self.console.print(f"[cyan]⏺[/cyan] MCP ({server_name})")
             self.console.print(f"  ⎿  [yellow]Already connected[/yellow]")
             return CommandResult(success=True, message="Already connected")
@@ -138,11 +161,13 @@ class MCPCommands(CommandHandler):
             progress.stop()
             task_monitor.stop()
             elapsed = task_monitor.get_elapsed_seconds()
+            self.console.print("")  # Empty line for visual separation
             self.console.print(f"[red]⏺[/red] MCP ({server_name}) ({elapsed}s)")
             self.console.print(f"  ⎿  [red]Error: {e}[/red]")
             return CommandResult(success=False, message=str(e))
 
         progress.stop()
+        self.console.print("")  # Empty line for visual separation
         stats = task_monitor.stop()
         elapsed = stats["elapsed_seconds"]
 
@@ -163,6 +188,7 @@ class MCPCommands(CommandHandler):
 
     def disconnect(self, server_name: str) -> CommandResult:
         """Disconnect from a specific MCP server."""
+        self.console.print("")  # Empty line for visual separation
         self.console.print(f"[cyan]⏺[/cyan] MCP ({server_name})")
         if not self.mcp_manager.is_connected(server_name):
             self.console.print(f"  ⎿  [yellow]Not connected[/yellow]")
@@ -208,7 +234,7 @@ class MCPCommands(CommandHandler):
             # Group by server
             by_server = {}
             for tool in all_tools:
-                server = tool.get('mcp_server', 'unknown')
+                server = tool.get("mcp_server", "unknown")
                 if server not in by_server:
                     by_server[server] = []
                 by_server[server].append(tool)
@@ -218,7 +244,7 @@ class MCPCommands(CommandHandler):
                 self.console.print(f"[bold cyan]{server}[/bold cyan] ({len(tools)} tools)")
                 for tool in tools:
                     self.console.print(f"  [cyan]{tool['name']}[/cyan] - {tool['description']}")
-                self.console.print()
+                self.console.print("")
 
         return CommandResult(success=True)
 
@@ -229,6 +255,7 @@ class MCPCommands(CommandHandler):
             self.print_error(f"Server '{server_name}' not found in configuration")
             return CommandResult(success=False, message="Server not found")
 
+        self.console.print("")  # Empty line for visual separation
         self.console.print(f"[cyan]⏺[/cyan] MCP test ({server_name})")
         self.console.print("  ⎿  Testing connection...")
 
@@ -255,6 +282,7 @@ class MCPCommands(CommandHandler):
         except Exception as e:
             self.console.print(f"  ⎿  [red]Test failed: {e}[/red]")
             import traceback
+
             self.console.print(f"  ⎿  [dim]{traceback.format_exc()}[/dim]")
             return CommandResult(success=False, message=str(e))
 
@@ -273,17 +301,21 @@ class MCPCommands(CommandHandler):
         # Show agent tool count
         if self.agent:
             self.console.print(f"\nCurrent agent: {self.agent.__class__.__name__}")
-            if hasattr(self.agent, 'tool_schemas'):
+            if hasattr(self.agent, "tool_schemas"):
                 total_tools = len(self.agent.tool_schemas)
-                mcp_tools = sum(1 for t in self.agent.tool_schemas if 'mcp__' in t.get('function', {}).get('name', ''))
+                mcp_tools = sum(
+                    1
+                    for t in self.agent.tool_schemas
+                    if "mcp__" in t.get("function", {}).get("name", "")
+                )
                 self.console.print(f"Agent tools: {total_tools} total ({mcp_tools} MCP tools)")
 
                 if mcp_tools > 0:
                     self.console.print("\nMCP tools in agent:")
                     shown = 0
                     for tool in self.agent.tool_schemas:
-                        tool_name = tool.get('function', {}).get('name', '')
-                        if 'mcp__' in tool_name:
+                        tool_name = tool.get("function", {}).get("name", "")
+                        if "mcp__" in tool_name:
                             self.console.print(f"  - {tool_name}")
                             shown += 1
                             if shown >= 5:
@@ -295,13 +327,15 @@ class MCPCommands(CommandHandler):
                 self.console.print("Agent has no tool_schemas attribute")
 
             # Check system prompt
-            if hasattr(self.agent, 'system_prompt'):
+            if hasattr(self.agent, "system_prompt"):
                 has_mcp_section = "MCP Tools" in self.agent.system_prompt
-                self.console.print(f"\nSystem prompt has MCP section: {'[green]Yes[/green]' if has_mcp_section else '[red]No[/red]'}")
+                self.console.print(
+                    f"\nSystem prompt has MCP section: {'[green]Yes[/green]' if has_mcp_section else '[red]No[/red]'}"
+                )
             else:
                 self.console.print("\nAgent has no system_prompt attribute")
 
-        self.console.print()
+        self.console.print("")
         return CommandResult(success=True)
 
     def status(self) -> CommandResult:
@@ -316,19 +350,25 @@ class MCPCommands(CommandHandler):
         enabled = [name for name, cfg in servers.items() if cfg.enabled]
 
         self.console.print(f"\n[bold cyan]MCP Status[/bold cyan]")
-        self.console.print(f"  Servers: {len(servers)} configured, {len(connected)} connected, {len(enabled)} enabled")
+        self.console.print(
+            f"  Servers: {len(servers)} configured, {len(connected)} connected, {len(enabled)} enabled"
+        )
 
         if connected:
             total_tools = sum(len(self.mcp_manager.get_server_tools(name)) for name in connected)
             self.console.print(f"  Tools: {total_tools} available")
-            self.console.print(f"\n  Connected: {', '.join(f'[cyan]{name}[/cyan]' for name in connected)}")
+            self.console.print(
+                f"\n  Connected: {', '.join(f'[cyan]{name}[/cyan]' for name in connected)}"
+            )
 
         if enabled and not connected:
             disconnected_enabled = [name for name in enabled if name not in connected]
             if disconnected_enabled:
-                self.console.print(f"  Enabled but disconnected: {', '.join(f'[yellow]{name}[/yellow]' for name in disconnected_enabled)}")
+                self.console.print(
+                    f"  Enabled but disconnected: {', '.join(f'[yellow]{name}[/yellow]' for name in disconnected_enabled)}"
+                )
 
-        self.console.print()
+        self.console.print("")
         return CommandResult(success=True)
 
     def enable(self, server_name: str) -> CommandResult:
@@ -347,7 +387,9 @@ class MCPCommands(CommandHandler):
             success = self.mcp_manager.enable_server(server_name)
             if success:
                 self.print_success(f"Enabled auto-start for '{server_name}'")
-                self.console.print("  ⎿  [dim]Server will connect automatically on next startup[/dim]")
+                self.console.print(
+                    "  ⎿  [dim]Server will connect automatically on next startup[/dim]"
+                )
                 return CommandResult(success=True, message=f"Enabled {server_name}")
             else:
                 self.print_error(f"Failed to enable '{server_name}'")
@@ -372,7 +414,9 @@ class MCPCommands(CommandHandler):
             success = self.mcp_manager.disable_server(server_name)
             if success:
                 self.print_success(f"Disabled auto-start for '{server_name}'")
-                self.console.print("  ⎿  [dim]Server will not connect automatically on next startup[/dim]")
+                self.console.print(
+                    "  ⎿  [dim]Server will not connect automatically on next startup[/dim]"
+                )
                 return CommandResult(success=True, message=f"Disabled {server_name}")
             else:
                 self.print_error(f"Failed to disable '{server_name}'")
@@ -410,7 +454,11 @@ class MCPCommands(CommandHandler):
             # For now, just show tools if they exist
 
         # Get config location
-        from swecli.core.context_engineering.mcp.config import get_config_path, get_project_config_path
+        from swecli.core.context_engineering.mcp.config import (
+            get_config_path,
+            get_project_config_path,
+        )
+
         global_config = get_config_path()
         project_config = get_project_config_path(self.mcp_manager.working_dir)
 
@@ -444,6 +492,7 @@ class MCPCommands(CommandHandler):
     def reload(self) -> CommandResult:
         """Reload MCP configuration from files."""
         try:
+            self.console.print("")  # Empty line for visual separation
             self.console.print("[cyan]⏺[/cyan] MCP reload")
             self.console.print("  ⎿  Reloading configuration...")
 

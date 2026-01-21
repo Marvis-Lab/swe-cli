@@ -332,7 +332,8 @@ class DefaultToolRenderer:
         self.log._pending_spacing_line = None
 
         # Add blank line at end for spacing before next tool
-        self.log.write(Text(""))
+        # Use Text(" ") to ensure visible blank line (Text("") may not render)
+        self.log.write(Text(" "))
 
     # --- Nested Tool Calls ---
 

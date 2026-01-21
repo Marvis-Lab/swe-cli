@@ -23,6 +23,7 @@ class CommandResult:
         message: Optional message to display
         data: Optional data returned by the command
     """
+
     success: bool
     message: Optional[str] = None
     data: Optional[Any] = None
@@ -33,7 +34,7 @@ class CommandHandler(ABC):
 
     Each command handler is responsible for executing a specific
     command or group of related commands.
-    
+
     Output Formatting:
         All output methods (print_success, print_error, etc.) use
         ToolResultFormatter to ensure consistent `⎿` prefixed display.
@@ -63,10 +64,13 @@ class CommandHandler(ABC):
     def print_command_header(self, command_name: str, params: str = "") -> None:
         """Print command header with ⏺ symbol.
 
+        Adds a blank line before the header for visual separation from command input.
+
         Args:
             command_name: Name of the command
             params: Optional parameters to display
         """
+        self.console.print("")  # Empty line for visual separation
         if params:
             self.console.print(f"[cyan]⏺[/cyan] {command_name} ({params})")
         else:
@@ -120,3 +124,13 @@ class CommandHandler(ABC):
         """
         self.console.print(f"{RESULT_CONTINUATION}{message}")
 
+    def print_result_only(self, message: str) -> None:
+        """Print result line without header (for status/info display).
+
+        Use this for commands that show status/info without performing actions.
+        Outputs with ⎿ prefix but no preceding ⏺ header.
+
+        Args:
+            message: Message to display
+        """
+        self.console.print(f"{RESULT_PREFIX}{message}")
