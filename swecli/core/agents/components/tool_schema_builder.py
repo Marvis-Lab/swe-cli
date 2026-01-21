@@ -25,6 +25,8 @@ PLANNING_TOOLS = {
     "invoke_skill",
     # Subagent spawning (subagents handle their own restrictions)
     "spawn_subagent",
+    # User interaction (allows asking clarifying questions)
+    "ask_user",
     # Task completion (always allowed - agents must signal completion)
     "task_complete",
 }
@@ -132,18 +134,39 @@ class PlanningToolSchemaBuilder:
     """Assemble read-only tool schemas for PLAN mode agents.
 
     Planning agents can explore the codebase but cannot make changes.
+    Includes spawn_subagent for asking user questions and other subagent tasks.
     """
 
     def __init__(self, tool_registry: Union[Any, None] = None) -> None:
         self._tool_registry = tool_registry
 
     def build(self) -> list[dict[str, Any]]:
-        """Return only read-only tool schemas for planning mode."""
-        return [
+        """Return read-only tool schemas including spawn_subagent for planning mode."""
+        schemas = [
             deepcopy(schema)
             for schema in _BUILTIN_TOOL_SCHEMAS
             if schema["function"]["name"] in PLANNING_TOOLS
         ]
+
+        # Add spawn_subagent schema (for ask-user and other subagents)
+        task_schema = self._build_task_schema()
+        if task_schema:
+            schemas.append(task_schema)
+
+        return schemas
+
+    def _build_task_schema(self) -> dict[str, Any] | None:
+        """Build task tool schema with available subagent types."""
+        if not self._tool_registry:
+            return None
+
+        subagent_manager = getattr(self._tool_registry, "_subagent_manager", None)
+        if not subagent_manager:
+            return None
+
+        from swecli.core.agents.subagents.task_tool import create_task_tool_schema
+
+        return create_task_tool_schema(subagent_manager)
 
 
 _BUILTIN_TOOL_SCHEMAS: list[dict[str, Any]] = [

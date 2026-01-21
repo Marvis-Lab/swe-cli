@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import sys
-from datetime import date
 from typing import Any, TYPE_CHECKING
 
 from swecli.core.agents.prompts import load_prompt
@@ -18,10 +16,12 @@ class SystemPromptBuilder:
 
     Uses a component-based architecture for assembling the system prompt:
     - Core identity (from main_system_prompt.txt)
-    - Environment context (working directory, platform, date)
-    - Agent index (available subagents for spawn_subagent tool)
+    - Environment context (working directory)
     - Skills index (available skills for invoke_skill tool)
     - MCP section (connected servers)
+
+    Note: Subagent information is included in the spawn_subagent tool schema,
+    not in the system prompt.
     """
 
     def __init__(
@@ -41,21 +41,14 @@ class SystemPromptBuilder:
         sections = [
             self._build_core_identity(),
             self._build_environment(),
-            self._build_agent_index(),
             self._build_skills_index(),
             self._build_mcp_section() or self._build_mcp_config_section(),
         ]
         return "\n\n".join(filter(None, sections))
 
     def _build_core_identity(self) -> str:
-        """Load and return core identity from main_system_prompt.txt.
-
-        Handles the {available_agents} placeholder for backwards compatibility.
-        """
-        prompt = load_prompt("main_system_prompt")
-        # Replace placeholder with actual agent list
-        prompt = self._inject_available_agents(prompt)
-        return prompt
+        """Load and return core identity from main_system_prompt.txt."""
+        return load_prompt("main_system_prompt")
 
     def _build_environment(self) -> str:
         """Build environment context section."""
@@ -66,26 +59,6 @@ class SystemPromptBuilder:
 You are currently working in the directory: `{self._working_dir}`
 
 When processing file paths without explicit directories (like `app.py` or `README.md`), assume they are located in the current working directory unless the user provides a specific path. Use relative paths from the working directory for file operations."""
-
-    def _build_agent_index(self) -> str:
-        """Build available agents section from SubAgentManager.
-
-        Uses the new build_task_tool_description() method if available.
-        """
-        # Try to get subagent_manager from multiple sources
-        manager = self._subagent_manager
-        if not manager and self._tool_registry:
-            manager = getattr(self._tool_registry, "_subagent_manager", None)
-
-        if not manager:
-            return ""
-
-        # Use the new method if available
-        if hasattr(manager, "build_task_tool_description"):
-            desc = manager.build_task_tool_description()
-            return f"## Subagent System\n\n{desc}"
-
-        return ""
 
     def _build_skills_index(self) -> str:
         """Build available skills section from SkillLoader."""
@@ -98,36 +71,6 @@ When processing file paths without explicit directories (like `app.py` or `READM
             return ""
 
         return loader.build_skills_index()
-
-    def _inject_available_agents(self, prompt: str) -> str:
-        """Replace {available_agents} placeholder with actual subagent descriptions.
-
-        This maintains backwards compatibility with the template placeholder.
-        """
-        if "{available_agents}" not in prompt:
-            return prompt
-
-        # Try to get subagent_manager
-        manager = self._subagent_manager
-        if not manager and self._tool_registry:
-            manager = getattr(self._tool_registry, "_subagent_manager", None)
-
-        if not manager:
-            return prompt.replace("{available_agents}", "(No subagents available)")
-
-        available_types = manager.get_available_types()
-        if not available_types:
-            return prompt.replace("{available_agents}", "(No subagents available)")
-
-        # Build the available agents list
-        descriptions = manager.get_descriptions()
-        agent_lines = []
-        for name in available_types:
-            desc = descriptions.get(name, "No description")
-            agent_lines.append(f"- **{name}**: {desc}")
-
-        available_agents_str = "\n".join(agent_lines)
-        return prompt.replace("{available_agents}", available_agents_str)
 
     def _build_mcp_section(self) -> str:
         """Render MCP section - shows connected servers, not individual tools.
@@ -206,9 +149,8 @@ class ThinkingPromptBuilder:
         return "\n\n".join(filter(None, sections))
 
     def _build_core_identity(self) -> str:
-        """Load thinking system prompt and inject agents."""
-        prompt = load_prompt("thinking_system_prompt")
-        return self._inject_available_agents(prompt)
+        """Load thinking system prompt."""
+        return load_prompt("thinking_system_prompt")
 
     def _build_environment(self) -> str:
         """Build environment context section."""
@@ -245,37 +187,6 @@ class ThinkingPromptBuilder:
             lines.append(f"- {name}: {len(tools)} tools (use search_tools to discover)")
 
         return "\n".join(lines)
-
-    def _inject_available_agents(self, prompt: str) -> str:
-        """Replace {available_agents} placeholder with actual subagent descriptions.
-
-        This ensures the thinking model has the same subagent information as the
-        main agent, enabling correct decisions about when to spawn vs use tools.
-        """
-        if "{available_agents}" not in prompt:
-            return prompt
-
-        # Try to get subagent_manager from multiple sources
-        manager = self._subagent_manager
-        if not manager and self._tool_registry:
-            manager = getattr(self._tool_registry, "_subagent_manager", None)
-
-        if not manager:
-            return prompt.replace("{available_agents}", "(No subagents available)")
-
-        available_types = manager.get_available_types()
-        if not available_types:
-            return prompt.replace("{available_agents}", "(No subagents available)")
-
-        # Build the available agents list
-        descriptions = manager.get_descriptions()
-        agent_lines = []
-        for name in available_types:
-            desc = descriptions.get(name, "No description")
-            agent_lines.append(f"- **{name}**: {desc}")
-
-        available_agents_str = "\n".join(agent_lines)
-        return prompt.replace("{available_agents}", available_agents_str)
 
 
 class PlanningPromptBuilder:

@@ -44,14 +44,15 @@ def create_task_tool_schema(manager: "SubAgentManager") -> dict[str, Any]:
     Returns:
         OpenAI-compatible tool schema dict
     """
-    available_types = manager.get_available_types()
-    descriptions = manager.get_descriptions()
+    # Use get_agent_configs() which reads from ALL_SUBAGENTS directly
+    # instead of get_available_types() which requires register_defaults() to be called first
+    agent_configs = manager.get_agent_configs()
+    available_types = [c.name for c in agent_configs]
 
     # Build subagent descriptions for tool description
     subagent_lines = []
-    for name in available_types:
-        desc = descriptions.get(name, "No description")
-        subagent_lines.append(f"- **{name}**: {desc}")
+    for config in agent_configs:
+        subagent_lines.append(f"- **{config.name}**: {config.description}")
 
     subagent_descriptions = "\n".join(subagent_lines)
 
