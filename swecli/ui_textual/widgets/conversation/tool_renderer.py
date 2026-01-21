@@ -1194,10 +1194,19 @@ class DefaultToolRenderer:
         agent = self._single_agent
         agent.status = "completed" if success else "failed"
 
-        # Keep header as-is with current spinner frame (don't change to ✓)
-        # Header stays: "⠋ Explore(description)" - spinner just stops rotating
+        # Update header from spinner to green bullet on completion
+        header_row = Text()
+        header_row.append("⏺ ", style=GREEN_BRIGHT if success else ERROR)
+        header_row.append(f"{agent.agent_type}(", style=CYAN)
+        header_row.append(agent.description, style=PRIMARY)
+        header_row.append(")", style=CYAN)
 
-        # Keep status line with ⏺ bullet (not changing to ✓)
+        strip = self._text_to_strip(header_row)
+        if agent.header_line < len(self.log.lines):
+            self.log.lines[agent.header_line] = strip
+            self.log.refresh_line(agent.header_line)
+
+        # Update status line with ⏺ bullet
         status_row = Text()
         status_row.append("   ⏺ ", style=GREEN_BRIGHT)  # Keep bullet style
         status_row.append(
@@ -1218,6 +1227,9 @@ class DefaultToolRenderer:
         if agent.tool_line < len(self.log.lines):
             self.log.lines[agent.tool_line] = strip
             self.log.refresh_line(agent.tool_line)
+
+        # Add blank line for spacing before next content
+        self.log.write(Text(""))
 
         self._single_agent = None
 
