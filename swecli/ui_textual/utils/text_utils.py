@@ -127,8 +127,6 @@ def is_spinner_tip(plain: str) -> bool:
         "tip:",
         "hint:",
         "note:",
-        "💡",
-        "ℹ️",
     ]
 
     return any(stripped.startswith(pattern) for pattern in tip_patterns)

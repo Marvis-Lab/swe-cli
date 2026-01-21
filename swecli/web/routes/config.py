@@ -133,7 +133,7 @@ async def list_providers() -> List[Dict[str, Any]]:
             for model_info in provider_info.list_models():
                 description = f"{model_info.context_length//1000}k context"
                 if model_info.recommended:
-                    description = "⭐ Recommended • " + description
+                    description = "Recommended • " + description
 
                 models.append({
                     "id": model_info.id,

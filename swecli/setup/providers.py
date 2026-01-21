@@ -39,7 +39,7 @@ def get_provider_models(provider_id: str) -> List[Dict[str, str]]:
             f"{model_info.context_length//1000}k context"
         )
         if model_info.recommended:
-            description = "⭐ Recommended - " + description
+            description = "Recommended - " + description
 
         models.append({
             "id": model_info.id,

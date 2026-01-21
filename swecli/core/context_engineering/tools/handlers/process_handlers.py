@@ -113,11 +113,10 @@ class ProcessToolHandler:
             if not processes:
                 output = "No background processes running"
             else:
-                lines = ["Background processes:"]
+                lines = []
                 for proc in processes:
-                    status_emoji = "🟢" if proc["status"] == "running" else "⚫"
                     line = (
-                        f"  {status_emoji} PID {proc['pid']}: {proc['command'][:60]} "
+                        f"PID {proc['pid']}: {proc['command'][:60]} "
                         f"({proc['status']}, {proc['runtime']:.1f}s)"
                     )
                     if proc["exit_code"] is not None:

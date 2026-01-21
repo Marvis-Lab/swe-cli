@@ -578,7 +578,7 @@ class SWECLIChatApp(App):
         if self._selection_tip_timer:
             self._selection_tip_timer.stop()
 
-        self.input_label.update("› 💡 Shift+drag (or Option+drag on Mac) to select text")
+        self.input_label.update("› Tip: Shift+drag (or Option+drag on Mac) to select text")
         self._selection_tip_timer = self.set_timer(4, self._revert_input_label)
 
     def _revert_input_label(self) -> None:

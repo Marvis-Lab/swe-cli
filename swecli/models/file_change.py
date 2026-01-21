@@ -74,14 +74,14 @@ class FileChange(BaseModel):
     def get_file_icon(self) -> str:
         """Get file icon based on type and extension."""
         if self.type == FileChangeType.CREATED:
-            return "📝"
+            return "+"
         elif self.type == FileChangeType.MODIFIED:
-            return "📄"
+            return "~"
         elif self.type == FileChangeType.DELETED:
-            return "🗑️"
+            return "-"
         elif self.type == FileChangeType.RENAMED:
-            return "🔄"
-        return "📄"
+            return ">"
+        return "~"
 
     def get_status_color(self) -> str:
         """Get status color for UI display."""

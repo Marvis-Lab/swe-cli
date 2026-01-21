@@ -137,7 +137,7 @@ def create_app() -> FastAPI:
 </head>
 <body>
     <div class="container">
-        <h1>🚀 SWE-CLI Web UI</h1>
+        <h1>SWE-CLI Web UI</h1>
 
         <div class="status">
             ✅ Server is running

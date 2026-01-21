@@ -24,7 +24,7 @@ def get_file_icon(file_path: Path) -> tuple[str, str]:
         Tuple of (icon_text, color_class) for display
     """
     if file_path.is_dir():
-        return "📁", ""
+        return "/", ""
 
     suffix = file_path.suffix.lower()
 

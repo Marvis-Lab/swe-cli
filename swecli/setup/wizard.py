@@ -29,7 +29,7 @@ def run_setup_wizard() -> bool:
     console.print()
     console.print(
         Panel(
-            "[bold cyan]Welcome to SWE-CLI! 🚀[/bold cyan]\n\n"
+            "[bold cyan]Welcome to SWE-CLI! [/bold cyan]\n\n"
             "First-time setup detected.\n"
             "Let's configure your AI provider.",
             title="Setup Wizard",

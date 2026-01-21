@@ -128,13 +128,13 @@ class FileTypeColors:
         """Get Rich color style for a file path.
 
         Args:
-            path_str: Path string (can include folder icon like 📁)
+            path_str: Path string
             is_dir: Whether this is a directory
 
         Returns:
             Rich color style string
         """
-        if is_dir or "📁" in path_str:
+        if is_dir:
             return cls.DIRECTORY_COLOR
 
         # Try to extract path from the string

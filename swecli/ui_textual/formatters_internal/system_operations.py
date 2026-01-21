@@ -76,10 +76,10 @@ class ListDirectoryFormatter(BaseToolFormatter):
                         if isinstance(item, dict):
                             name = item.get("name", "")
                             is_dir = item.get("is_dir", False)
-                            icon_display = "📁" if is_dir else "📄"
-                            tree.add(f"{icon_display} {name}")
+                            prefix = "/" if is_dir else ""
+                            tree.add(f"{prefix}{name}")
                         else:
-                            tree.add(f"📄 {item}")
+                            tree.add(f"{item}")
 
                     if len(files) > 20:
                         tree.add(f"[{SUBTLE}]... ({len(files) - 20} more items)[/{SUBTLE}]")

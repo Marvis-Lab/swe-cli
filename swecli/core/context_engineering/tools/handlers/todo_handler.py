@@ -425,7 +425,7 @@ class TodoHandler:
         if todo.status == "doing":
             output_lines = [f"▶ Now working on: {todo.title}"]
         elif todo.status == "done":
-            output_lines = [f"✅ Completed: {todo.title}"]
+            output_lines = [f"Completed: {todo.title}"]
         else:
             output_lines = [f"⏸ Paused: {todo.title}"]
 
@@ -475,7 +475,7 @@ class TodoHandler:
         todo.updated_at = datetime.now().isoformat()
 
         # Generate minimal completion output
-        output_lines = [f"✅ Completed: {todo.title}"]
+        output_lines = [f"Completed: {todo.title}"]
 
         return {
             "success": True,
@@ -563,11 +563,11 @@ class TodoHandler:
             next_todo.status = "doing"
 
         # Generate output
-        output_lines = [f"✅ Completed: {todo.title}"]
+        output_lines = [f"Completed: {todo.title}"]
         if next_todo:
             output_lines.append(f"▶ Now working on: {next_todo.title}")
         else:
-            output_lines.append("🎉 All todos completed!")
+            output_lines.append("All todos completed!")
 
         return {
             "success": True,
