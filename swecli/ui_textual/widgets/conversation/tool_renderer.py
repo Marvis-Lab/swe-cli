@@ -41,6 +41,7 @@ TREE_CONTINUATION = "⎿"
 @dataclass
 class NestedToolState:
     """State tracking for a single nested tool call."""
+
     line_number: int
     tool_text: Text
     depth: int
@@ -53,27 +54,29 @@ class NestedToolState:
 @dataclass
 class AgentInfo:
     """Info for a single parallel agent tracked by tool_call_id."""
+
     agent_type: str
     description: str
     tool_call_id: str
-    line_number: int = 0    # Line for agent row
-    status_line: int = 0    # Line for status/current tool
-    tool_count: int = 0     # Unique tool count
+    line_number: int = 0  # Line for agent row
+    status_line: int = 0  # Line for status/current tool
+    tool_count: int = 0  # Unique tool count
     current_tool: str = "Initializing...."
     status: str = "running"  # running, completed, failed
-    is_last: bool = False   # For tree connector rendering
+    is_last: bool = False  # For tree connector rendering
     called_tools: set = field(default_factory=set)  # Track unique tool names
 
 
 @dataclass
 class SingleAgentInfo:
     """Info for a single (non-parallel) agent execution."""
+
     agent_type: str
     description: str
     tool_call_id: str
-    header_line: int = 0     # Line for header "⠋ Explore(description)"
-    status_line: int = 0     # Line for "   ⏺ N tools" or "      ⎿  current_tool"
-    tool_line: int = 0       # Line for "      ⎿  current_tool"
+    header_line: int = 0  # Line for header "⠋ Explore(description)"
+    status_line: int = 0  # Line for "   ⏺ N tools" or "      ⎿  current_tool"
+    tool_line: int = 0  # Line for "      ⎿  current_tool"
     tool_count: int = 0
     current_tool: str = "Initializing..."
     status: str = "running"
@@ -83,6 +86,7 @@ class SingleAgentInfo:
 @dataclass
 class ParallelAgentGroup:
     """Tracks a group of parallel agents for collapsed display."""
+
     agents: Dict[str, AgentInfo] = field(default_factory=dict)  # key = tool_call_id
     header_line: int = 0
     expanded: bool = False
@@ -93,6 +97,7 @@ class ParallelAgentGroup:
 @dataclass
 class AgentStats:
     """Stats tracking for a single agent type in a parallel group (legacy)."""
+
     tool_count: int = 0
     token_count: int = 0
     current_tool: str = ""
@@ -107,7 +112,7 @@ class DefaultToolRenderer:
     def __init__(self, log: RichLogInterface, app_callback_interface: Any = None):
         self.log = log
         self.app = app_callback_interface
-        
+
         # Tool execution state
         self._tool_display: Text | None = None
         self._tool_spinner_timer: Timer | None = None
@@ -117,7 +122,7 @@ class DefaultToolRenderer:
         self._tool_call_start: int | None = None
         self._tool_timer_start: float | None = None
         self._tool_last_elapsed: int | None = None
-        
+
         # Thread timers for blocking operations
         self._tool_thread_timer: threading.Timer | None = None
         self._nested_tool_thread_timer: threading.Timer | None = None
@@ -125,11 +130,28 @@ class DefaultToolRenderer:
         # Nested tool state - multi-tool tracking for parallel agents
         self._nested_spinner_char = "⏺"
         self._nested_color_gradient = [
-            "#00ff00", "#00f500", "#00eb00", "#00e100", "#00d700", "#00cd00",
-            "#00c300", "#00b900", "#00af00", "#00a500", "#009b00",
+            "#00ff00",
+            "#00f500",
+            "#00eb00",
+            "#00e100",
+            "#00d700",
+            "#00cd00",
+            "#00c300",
+            "#00b900",
+            "#00af00",
+            "#00a500",
+            "#009b00",
             "#009100",  # Dimmest
-            "#009b00", "#00a500", "#00af00", "#00b900", "#00c300",
-            "#00cd00", "#00d700", "#00e100", "#00eb00", "#00f500",
+            "#009b00",
+            "#00a500",
+            "#00af00",
+            "#00b900",
+            "#00c300",
+            "#00cd00",
+            "#00d700",
+            "#00e100",
+            "#00eb00",
+            "#00f500",
             "#00ff00",  # Peak bright
         ]
         # Multi-tool tracking: (parent, tool_id) -> NestedToolState
@@ -146,8 +168,8 @@ class DefaultToolRenderer:
         self._single_agent: Optional[SingleAgentInfo] = None
 
         # Animation indices for single agent
-        self._header_spinner_index = 0      # For ⠋⠙⠹... rotation
-        self._bullet_gradient_index = 0     # For ⏺ gradient pulse
+        self._header_spinner_index = 0  # For ⠋⠙⠹... rotation
+        self._bullet_gradient_index = 0  # For ⏺ gradient pulse
 
         # Legacy single-tool state (for backwards compatibility)
         self._nested_color_index = 0
@@ -155,7 +177,7 @@ class DefaultToolRenderer:
         self._nested_tool_text: Text | None = None
         self._nested_tool_depth: int = 1
         self._nested_tool_timer_start: float | None = None
-        
+
         # Streaming terminal box state
         self._streaming_box_header_line: int | None = None
         self._streaming_box_width: int = 60
@@ -164,7 +186,7 @@ class DefaultToolRenderer:
         self._streaming_box_working_dir: str = "."
         self._streaming_box_content_lines: list[tuple[str, bool]] = []
         self._streaming_box_config: TerminalBoxConfig | None = None
-        
+
         # Helper renderer
         self._box_renderer = TerminalBoxRenderer(self._get_box_width)
 
@@ -192,15 +214,15 @@ class DefaultToolRenderer:
     # --- Standard Tool Calls ---
 
     def add_tool_call(self, display: Text | str, *_: Any) -> None:
-        # Add blank line if needed (check logic from ConversationLog, 
+        # Add blank line if needed (check logic from ConversationLog,
         # but simpler to just enforce spacing standards or assume Log handles it?
         # ConversationLog checked _last_line_has_content. We might need access to that or pass it in.
         # For now, we'll blindly assume some spacing management or access via log lines if robust.
         # But log lines access is expensive if large. Let's just write and rely on log to space?
         # The prompt says 'slowly', so let's try to be faithful.)
-        
-        if self.log.lines and getattr(self.log.lines[-1], 'plain', '').strip():
-             self.log.write(Text(""))
+
+        if self.log.lines and getattr(self.log.lines[-1], "plain", "").strip():
+            self.log.write(Text(""))
 
         if isinstance(display, Text):
             self._tool_display = display.copy()
@@ -232,7 +254,7 @@ class DefaultToolRenderer:
         else:
             self._tool_last_elapsed = None
         self._tool_timer_start = None
-        
+
         if self._tool_call_start is not None and self._tool_display is not None:
             self._replace_tool_call_line("⏺", success=success)
 
@@ -290,12 +312,13 @@ class DefaultToolRenderer:
         def text_to_strip(text: Text) -> "Strip":
             from rich.console import Console
             from textual.strip import Strip
+
             console = Console(width=1000, force_terminal=True, no_color=False)
             segments = list(text.render(console))
             return Strip(segments)
 
         # Check if we have a pending spacing line to overwrite
-        spacing_line = getattr(self.log, '_pending_spacing_line', None)
+        spacing_line = getattr(self.log, "_pending_spacing_line", None)
 
         for i, line in enumerate(lines):
             formatted = Text("       ", style=GREY)  # 7 spaces to align with ⎿ content
@@ -335,13 +358,19 @@ class DefaultToolRenderer:
         DEBUG: Parallel agent tracking
         """
         import sys
+
         if self._parallel_group is not None:
             print(f"[DEBUG PARALLEL] add_nested_tool_call: parent={parent!r}", file=sys.stderr)
-            print(f"[DEBUG PARALLEL] agents keys={list(self._parallel_group.agents.keys())}", file=sys.stderr)
+            print(
+                f"[DEBUG PARALLEL] agents keys={list(self._parallel_group.agents.keys())}",
+                file=sys.stderr,
+            )
             agent = self._parallel_group.agents.get(parent)
             print(f"[DEBUG PARALLEL] agent found={agent is not None}", file=sys.stderr)
             if agent:
-                print(f"[DEBUG PARALLEL] agent.tool_call_id={agent.tool_call_id!r}", file=sys.stderr)
+                print(
+                    f"[DEBUG PARALLEL] agent.tool_call_id={agent.tool_call_id!r}", file=sys.stderr
+                )
         if isinstance(display, Text):
             tool_text = display.copy()
         else:
@@ -350,7 +379,7 @@ class DefaultToolRenderer:
         # NEW: If single agent is active, track its tools and update display
         if self._single_agent is not None and self._single_agent.status == "running":
             # Extract tool name
-            plain_text = tool_text.plain if hasattr(tool_text, 'plain') else str(tool_text)
+            plain_text = tool_text.plain if hasattr(tool_text, "plain") else str(tool_text)
             if ":" in plain_text:
                 tool_name = plain_text.split(":")[0].strip()
             elif "(" in plain_text:
@@ -361,7 +390,9 @@ class DefaultToolRenderer:
             # Track unique tools
             self._single_agent.called_tools.add(tool_name)
             self._single_agent.tool_count = len(self._single_agent.called_tools)
-            self._single_agent.current_tool = plain_text[:50] if len(plain_text) <= 50 else plain_text[:47] + "..."
+            self._single_agent.current_tool = (
+                plain_text[:50] if len(plain_text) <= 50 else plain_text[:47] + "..."
+            )
 
             # Update header with rotating spinner
             self._update_header_spinner()
@@ -381,7 +412,7 @@ class DefaultToolRenderer:
             agent = self._parallel_group.agents.get(parent)
             if agent is not None:
                 # Track unique tools: extract tool name from display text
-                plain_text = tool_text.plain if hasattr(tool_text, 'plain') else str(tool_text)
+                plain_text = tool_text.plain if hasattr(tool_text, "plain") else str(tool_text)
                 # Extract tool name (e.g., "Read (file.py)" -> "Read", or "list_files: src" -> "list_files")
                 if ":" in plain_text:
                     tool_name = plain_text.split(":")[0].strip()
@@ -395,7 +426,9 @@ class DefaultToolRenderer:
                 agent.tool_count = len(agent.called_tools)
 
                 # Update display text
-                agent.current_tool = plain_text[:50] if len(plain_text) <= 50 else plain_text[:47] + "..."
+                agent.current_tool = (
+                    plain_text[:50] if len(plain_text) <= 50 else plain_text[:47] + "..."
+                )
 
                 # Update agent row to show unique tool count
                 self._update_agent_row(agent)
@@ -407,7 +440,7 @@ class DefaultToolRenderer:
                     return  # DON'T write individual tool line when collapsed
 
         # Expanded mode: write the tool call line
-        if self.log.lines and getattr(self.log.lines[-1], 'plain', '').strip():
+        if self.log.lines and getattr(self.log.lines[-1], "plain", "").strip():
             self.log.write(Text(""))
 
         # Build tree-style indentation
@@ -465,7 +498,11 @@ class DefaultToolRenderer:
             return f"   {connector} "
         else:
             # Deeper nesting: add vertical lines for continuation
-            return "   " + f"{TREE_VERTICAL}  " * (depth - 1) + (f"{TREE_LAST} " if is_last else f"{TREE_BRANCH} ")
+            return (
+                "   "
+                + f"{TREE_VERTICAL}  " * (depth - 1)
+                + (f"{TREE_LAST} " if is_last else f"{TREE_BRANCH} ")
+            )
 
     def complete_nested_tool_call(
         self,
@@ -538,6 +575,7 @@ class DefaultToolRenderer:
 
         # In-place update
         from rich.console import Console
+
         console = Console(width=1000, force_terminal=True, no_color=False)
         segments = list(formatted.render(console))
         strip = Strip(segments)
@@ -559,7 +597,9 @@ class DefaultToolRenderer:
             self._nested_tool_thread_timer = None
 
         # Check if there are any active tools, parallel agents, or single agent to animate
-        has_active_tools = self._nested_tools or (self._nested_tool_line is not None or self._nested_tool_text is not None)
+        has_active_tools = self._nested_tools or (
+            self._nested_tool_line is not None or self._nested_tool_text is not None
+        )
         has_active_agents = self._parallel_group is not None and any(
             a.status == "running" for a in self._parallel_group.agents.values()
         )
@@ -576,13 +616,16 @@ class DefaultToolRenderer:
 
         # Also animate legacy single-tool state if present
         if self._nested_tool_line is not None and self._nested_tool_text is not None:
-            self._nested_color_index = (self._nested_color_index + 1) % len(self._nested_color_gradient)
+            self._nested_color_index = (self._nested_color_index + 1) % len(
+                self._nested_color_gradient
+            )
             self._render_nested_tool_line()
 
         # Animate parallel agents: header spinner and agent row gradient bullets
         if self._parallel_group is not None:
             # Animate header with rotating spinner
             if any(a.status == "running" for a in self._parallel_group.agents.values()):
+                self._header_spinner_index += 1  # Increment spinner frame for animation
                 self._update_parallel_header()
 
             # Animate agent rows with gradient bullets
@@ -602,7 +645,9 @@ class DefaultToolRenderer:
             self._update_header_spinner()
 
             # Update status line with gradient bullet
-            self._bullet_gradient_index = (self._bullet_gradient_index + 1) % len(self._nested_color_gradient)
+            self._bullet_gradient_index = (self._bullet_gradient_index + 1) % len(
+                self._nested_color_gradient
+            )
             self._update_single_agent_status_line()
 
         # Schedule next animation frame
@@ -643,6 +688,7 @@ class DefaultToolRenderer:
         formatted.append(f" ({elapsed}s)", style=GREY)
 
         from rich.console import Console
+
         console = Console(width=1000, force_terminal=True, no_color=False)
         segments = list(formatted.render(console))
         strip = Strip(segments)
@@ -671,13 +717,14 @@ class DefaultToolRenderer:
         formatted.append(f" ({elapsed}s)", style=GREY)
 
         from rich.console import Console
+
         console = Console(width=1000, force_terminal=True, no_color=False)
         segments = list(formatted.render(console))
         strip = Strip(segments)
 
         self.log.lines[self._nested_tool_line] = strip
         self.log.refresh_line(self._nested_tool_line)
-        if self.app and hasattr(self.app, 'refresh'):
+        if self.app and hasattr(self.app, "refresh"):
             self.app.refresh()
 
     # --- Parallel Agent Group Management ---
@@ -693,7 +740,7 @@ class DefaultToolRenderer:
                 - description: Short description of agent's task
                 - tool_call_id: Unique ID for tracking this agent
         """
-        if self.log.lines and getattr(self.log.lines[-1], 'plain', '').strip():
+        if self.log.lines and getattr(self.log.lines[-1], "plain", "").strip():
             self.log.write(Text(""))
 
         # Write header line
@@ -706,7 +753,7 @@ class DefaultToolRenderer:
         # Create agents dict keyed by tool_call_id
         agents: Dict[str, AgentInfo] = {}
         for i, info in enumerate(agent_infos):
-            is_last = (i == len(agent_infos) - 1)
+            is_last = i == len(agent_infos) - 1
             tool_call_id = info.get("tool_call_id", f"agent_{i}")
             description = info.get("description") or info.get("agent_type", "Agent")
             agent_type = info.get("agent_type", "Agent")
@@ -742,6 +789,10 @@ class DefaultToolRenderer:
             start_time=time.monotonic(),
         )
 
+        # Reset animation indices for parallel agents
+        self._header_spinner_index = 0
+        self._agent_spinner_states.clear()
+
         # Start animation timer for spinner and gradient effects
         self._start_nested_tool_timer()
 
@@ -769,21 +820,29 @@ class DefaultToolRenderer:
         type_descriptions = []
         for agent_type, count in type_counts.items():
             type_descriptions.append(f"{count} {agent_type}")
-        agent_desc = " + ".join(type_descriptions) if len(type_descriptions) > 1 else type_descriptions[0] if type_descriptions else "0"
+        agent_desc = (
+            " + ".join(type_descriptions)
+            if len(type_descriptions) > 1
+            else type_descriptions[0] if type_descriptions else "0"
+        )
         agent_word = "agent" if total_agents == 1 else "agents"
 
         text = Text()
 
         if all_completed:
             if any_failed:
-                text.append("✗ ", style=ERROR)
+                text.append("⏺ ", style=ERROR)
             else:
-                text.append("✓ ", style=SUCCESS)
+                text.append("⏺ ", style=SUCCESS)
             elapsed = round(time.monotonic() - group.start_time)
             text.append(f"Completed {agent_desc} {agent_word} ")
             text.append(f"({total_tools} tools · {elapsed}s)", style=GREY)
         else:
-            text.append("⠋ ", style=CYAN)  # Rotating spinner for header
+            # Use rotating spinner character from _header_spinner_index
+            spinner_char = self._spinner_chars[
+                self._header_spinner_index % len(self._spinner_chars)
+            ]
+            text.append(f"{spinner_char} ", style=CYAN)
             text.append(f"Running {agent_desc} {agent_word}… ")
 
         return text
@@ -796,6 +855,7 @@ class DefaultToolRenderer:
         header_text = self._render_parallel_header()
 
         from rich.console import Console
+
         console = Console(width=1000, force_terminal=True, no_color=False)
         segments = list(header_text.render(console))
         strip = Strip(segments)
@@ -889,6 +949,7 @@ class DefaultToolRenderer:
             Strip object for use in log.lines
         """
         from rich.console import Console
+
         console = Console(width=1000, force_terminal=True, no_color=False)
         segments = list(text.render(console))
         return Strip(segments)
@@ -1022,7 +1083,7 @@ class DefaultToolRenderer:
             description: Task description
             tool_call_id: Unique ID for tracking
         """
-        if self.log.lines and getattr(self.log.lines[-1], 'plain', '').strip():
+        if self.log.lines and getattr(self.log.lines[-1], "plain", "").strip():
             self.log.write(Text(""))
 
         # Header line: "⠋ Explore(description)" - Rotating spinner
@@ -1144,7 +1205,9 @@ class DefaultToolRenderer:
         # Keep status line with ⏺ bullet (not changing to ✓)
         status_row = Text()
         status_row.append("   ⏺ ", style=GREEN_BRIGHT)  # Keep bullet style
-        status_row.append(f"{agent.tool_count} tool" + ("s" if agent.tool_count != 1 else ""), style=GREY)
+        status_row.append(
+            f"{agent.tool_count} tool" + ("s" if agent.tool_count != 1 else ""), style=GREY
+        )
 
         strip = self._text_to_strip(status_row)
         if agent.status_line < len(self.log.lines):
@@ -1197,7 +1260,9 @@ class DefaultToolRenderer:
             is_first = False
 
         if hidden_count > 0:
-            hidden_text = Text(f"       ... {hidden_count} lines hidden ...", style=f"{SUBTLE} italic")
+            hidden_text = Text(
+                f"       ... {hidden_count} lines hidden ...", style=f"{SUBTLE} italic"
+            )
             self.log.write(hidden_text)
 
         for line in tail_lines:
@@ -1210,17 +1275,19 @@ class DefaultToolRenderer:
 
         # Access protected lines from log if available
         protected_lines = getattr(self.log, "_protected_lines", set())
-        
+
         # Check if any protected lines would be affected
         protected_in_range = [i for i in protected_lines if i >= index]
-        
+
         if protected_in_range:
-            non_protected = [i for i in range(index, len(self.log.lines)) if i not in protected_lines]
+            non_protected = [
+                i for i in range(index, len(self.log.lines)) if i not in protected_lines
+            ]
             if not non_protected:
                 return
             for i in sorted(non_protected, reverse=True):
-                 if i < len(self.log.lines):
-                     del self.log.lines[i]
+                if i < len(self.log.lines):
+                    del self.log.lines[i]
         else:
             del self.log.lines[index:]
 
@@ -1230,26 +1297,26 @@ class DefaultToolRenderer:
 
         # Update protected line indices
         if protected_lines:
-             new_protected = set()
-             for p in protected_lines:
-                 if p < index:
-                     new_protected.add(p)
-                 elif p in protected_in_range:
-                     deleted_before = len([i for i in range(index, p) if i not in protected_lines])
-                     new_protected.add(p - deleted_before)
-             
-             # Update the set in place if possible, or verify how to update
-             if hasattr(self.log, "_protected_lines"):
-                  self.log._protected_lines.clear()
-                  self.log._protected_lines.update(new_protected)
+            new_protected = set()
+            for p in protected_lines:
+                if p < index:
+                    new_protected.add(p)
+                elif p in protected_in_range:
+                    deleted_before = len([i for i in range(index, p) if i not in protected_lines])
+                    new_protected.add(p - deleted_before)
+
+            # Update the set in place if possible, or verify how to update
+            if hasattr(self.log, "_protected_lines"):
+                self.log._protected_lines.clear()
+                self.log._protected_lines.update(new_protected)
 
         # Trigger refresh logic similar to ConversationLog
         if hasattr(self.log, "virtual_size"):
-             # RichLog usually recalculates virtual size on write. 
-             # Manual deletion might desync it.
-             # We can't easily call internal _calculate_virtual_size
-             # But self.log.refresh() usually handles repainting.
-             pass
+            # RichLog usually recalculates virtual size on write.
+            # Manual deletion might desync it.
+            # We can't easily call internal _calculate_virtual_size
+            # But self.log.refresh() usually handles repainting.
+            pass
         self.log.refresh()
 
     def _schedule_tool_spinner(self) -> None:
@@ -1259,7 +1326,7 @@ class DefaultToolRenderer:
             self._tool_thread_timer.cancel()
 
         self._tool_spinner_timer = self.log.set_timer(0.12, self._animate_tool_spinner)
-        
+
         self._tool_thread_timer = threading.Timer(0.12, self._thread_animate_tool)
         self._tool_thread_timer.daemon = True
         self._tool_thread_timer.start()
@@ -1300,13 +1367,13 @@ class DefaultToolRenderer:
 
         elapsed_str = ""
         if self._tool_timer_start is not None:
-             elapsed = int(time.monotonic() - self._tool_timer_start)
-             elapsed_str = f" ({elapsed}s)"
+            elapsed = int(time.monotonic() - self._tool_timer_start)
+            elapsed_str = f" ({elapsed}s)"
         elif self._tool_last_elapsed is not None:
-             elapsed_str = f" ({self._tool_last_elapsed}s)"
+            elapsed_str = f" ({self._tool_last_elapsed}s)"
 
         formatted = Text()
-        
+
         if len(prefix) == 1 and prefix in self._spinner_chars:
             style = GREEN_BRIGHT
         elif not success:
@@ -1321,33 +1388,34 @@ class DefaultToolRenderer:
         formatted.append(elapsed_str, style=GREY)
 
         from rich.console import Console
+
         console = Console(width=1000, force_terminal=True, no_color=False)
         segments = list(formatted.render(console))
         strip = Strip(segments)
 
         self.log.lines[self._tool_call_start] = strip
         self.log.refresh_line(self._tool_call_start)
-        if self.app and hasattr(self.app, 'refresh'):
+        if self.app and hasattr(self.app, "refresh"):
             self.app.refresh()
-            
+
     def _write_tool_call_line(self, prefix: str) -> None:
-         # Initial write, just delegates to _replace mostly or simple write?
-         # ConversationLog wrote "⏺" initially.
-         # But standard log write appends. We need to append.
-         # So we can fabricate it and write.
-         
-         # Logic from ConversationLog:
-         # self._write_tool_call_line("⏺") -> calls _replace logic? No.
-         # It constructs Text and calls self.write().
-         
+        # Initial write, just delegates to _replace mostly or simple write?
+        # ConversationLog wrote "⏺" initially.
+        # But standard log write appends. We need to append.
+        # So we can fabricate it and write.
+
+        # Logic from ConversationLog:
+        # self._write_tool_call_line("⏺") -> calls _replace logic? No.
+        # It constructs Text and calls self.write().
+
         formatted = Text()
         formatted.append(f"{prefix} ", style=GREEN_BRIGHT)
         if self._tool_display:
             formatted.append_text(self._tool_display)
         formatted.append(" (0s)", style=GREY)
-        
+
         self.log.write(formatted)
-         
+
     # --- Tool Result Parsing Helpers ---
 
     def _extract_edit_payload(self, text: str) -> Tuple[str, List[str]]:
@@ -1357,22 +1425,22 @@ class DefaultToolRenderer:
 
         # Simple heuristic to detect diff/edit output
         if lines[0].startswith("<<<<") or lines[0].startswith("Replaced lines"):
-             # This is weak parsing, but matching ConversationLog's assumed logic
-             # Actually ConversationLog had specific logic.
-             # Let's inspect ConversationLog's _extract_edit_payload to be exact.
-             # I should have read it more carefully. I'll copy it from previous context if possible.
-             # Or just implement generic logic for now.
-             pass
-             
+            # This is weak parsing, but matching ConversationLog's assumed logic
+            # Actually ConversationLog had specific logic.
+            # Let's inspect ConversationLog's _extract_edit_payload to be exact.
+            # I should have read it more carefully. I'll copy it from previous context if possible.
+            # Or just implement generic logic for now.
+            pass
+
         # Re-implementing based on typical diff formats
         header = ""
         diff_lines = []
-        
+
         if "Editing file" in lines[0] or "Applied edit" in lines[0] or "Updated " in lines[0]:
             header = lines[0]
             diff_lines = lines[1:]
             return header, diff_lines
-            
+
         return "", []
 
     def _write_edit_result(self, header: str, diff_lines: list[str]) -> None:
@@ -1407,14 +1475,14 @@ class DefaultToolRenderer:
             message = raw_line.rstrip("\n")
             is_error = False
             is_interrupted = False
-            
+
             # Use constant if imported, else literal check
             if message.startswith(TOOL_ERROR_SENTINEL):
                 is_error = True
-                message = message[len(TOOL_ERROR_SENTINEL):].lstrip()
+                message = message[len(TOOL_ERROR_SENTINEL) :].lstrip()
             elif message.startswith("::interrupted::"):
                 is_interrupted = True
-                message = message[len("::interrupted::"):].lstrip()
+                message = message[len("::interrupted::") :].lstrip()
 
             if is_interrupted:
                 line.append(message, style=f"bold {ERROR}")
@@ -1457,7 +1525,9 @@ class DefaultToolRenderer:
             is_first = False
 
         if hidden_count > 0:
-            hidden_text = Text(f"{indent}       ... {hidden_count} lines hidden ...", style=f"{SUBTLE} italic")
+            hidden_text = Text(
+                f"{indent}       ... {hidden_count} lines hidden ...", style=f"{SUBTLE} italic"
+            )
             self.log.write(hidden_text)
 
         for line in tail_lines:
@@ -1467,7 +1537,9 @@ class DefaultToolRenderer:
         # Add blank line for spacing after output
         self.log.write(Text(""))
 
-    def _write_bash_output_line(self, line: str, indent: str, is_error: bool, is_first: bool = False) -> None:
+    def _write_bash_output_line(
+        self, line: str, indent: str, is_error: bool, is_first: bool = False
+    ) -> None:
         """Write a single bash output line with proper indentation."""
         normalized = self._box_renderer.normalize_line(line)
         # Use ⎿ prefix for first line, spaces for rest
@@ -1571,7 +1643,9 @@ class DefaultToolRenderer:
             formatted.append(f"{symbol} {title}", style=SUBTLE)
             self.log.write(formatted, scroll_end=True, animate=False)
 
-    def add_nested_tool_sub_results(self, lines: List[str], depth: int, is_last_parent: bool = True) -> None:
+    def add_nested_tool_sub_results(
+        self, lines: List[str], depth: int, is_last_parent: bool = True
+    ) -> None:
         """Add tool result lines with proper nesting indentation.
 
         This is the unified method for displaying subagent tool results,
@@ -1587,8 +1661,8 @@ class DefaultToolRenderer:
         # Flatten any multi-line strings into individual lines
         all_lines = []
         for line in lines:
-            if '\n' in line:
-                all_lines.extend(line.split('\n'))
+            if "\n" in line:
+                all_lines.extend(line.split("\n"))
             else:
                 all_lines.append(line)
 
@@ -1612,7 +1686,9 @@ class DefaultToolRenderer:
             formatted.append(prefix, style=GREY)
 
             # Strip markers from content
-            clean_line = line.replace(TOOL_ERROR_SENTINEL, "").replace("::interrupted::", "").strip()
+            clean_line = (
+                line.replace(TOOL_ERROR_SENTINEL, "").replace("::interrupted::", "").strip()
+            )
             # Strip ANSI codes for nested display (they don't render well)
             clean_line = re.sub(r"\x1b\[[0-9;]*m", "", clean_line)
 
@@ -1689,4 +1765,3 @@ class DefaultToolRenderer:
                 formatted.append(content.replace("\t", "    "), style=SUBTLE)
 
             self.log.write(formatted, scroll_end=True, animate=False)
-

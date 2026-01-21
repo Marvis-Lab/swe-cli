@@ -28,6 +28,7 @@ if TYPE_CHECKING:
 
 class LoopAction(Enum):
     """Action to take after an iteration."""
+
     CONTINUE = auto()
     BREAK = auto()
 
@@ -35,6 +36,7 @@ class LoopAction(Enum):
 @dataclass
 class IterationContext:
     """Context for a single ReAct iteration."""
+
     query: str
     messages: list
     agent: Any
@@ -49,7 +51,7 @@ class IterationContext:
 
 class ReactExecutor:
     """Executes ReAct loop (Reasoning → Acting → Observing)."""
-    
+
     READ_OPERATIONS = {"read_file", "list_files", "search"}
     MAX_NUDGE_ATTEMPTS = 3
 
@@ -82,7 +84,7 @@ class ReactExecutor:
         ui_callback=None,
     ) -> tuple:
         """Execute ReAct loop."""
-        
+
         # Initialize context
         ctx = IterationContext(
             query=query,
@@ -91,16 +93,18 @@ class ReactExecutor:
             tool_registry=tool_registry,
             approval_manager=approval_manager,
             undo_manager=undo_manager,
-            ui_callback=ui_callback
+            ui_callback=ui_callback,
         )
 
         # Notify UI start
-        if ui_callback and hasattr(ui_callback, 'on_thinking_start'):
+        if ui_callback and hasattr(ui_callback, "on_thinking_start"):
             ui_callback.on_thinking_start()
 
         # Debug: Query processing started
-        if ui_callback and hasattr(ui_callback, 'on_debug'):
-            ui_callback.on_debug(f"Processing query: {query[:50]}{'...' if len(query) > 50 else ''}", "QUERY")
+        if ui_callback and hasattr(ui_callback, "on_debug"):
+            ui_callback.on_debug(
+                f"Processing query: {query[:50]}{'...' if len(query) > 50 else ''}", "QUERY"
+            )
 
         try:
             while True:
@@ -111,9 +115,10 @@ class ReactExecutor:
         except Exception as e:
             self.console.print(f"[red]Error: {str(e)}[/red]")
             import traceback
+
             traceback.print_exc()
             self._last_error = str(e)
-            
+
         return (self._last_operation_summary, self._last_error, self._last_latency_ms)
 
     def _get_thinking_trace(
@@ -155,21 +160,22 @@ class ReactExecutor:
                 thinking_trace = response.get("content", "")
 
                 # Display in UI
-                if thinking_trace and ui_callback and hasattr(ui_callback, 'on_thinking'):
+                if thinking_trace and ui_callback and hasattr(ui_callback, "on_thinking"):
                     ui_callback.on_thinking(thinking_trace)
 
                 return thinking_trace
             else:
                 # Log the error for debugging
                 error = response.get("error", "Unknown error")
-                if ui_callback and hasattr(ui_callback, 'on_debug'):
+                if ui_callback and hasattr(ui_callback, "on_debug"):
                     ui_callback.on_debug(f"Thinking phase error: {error}", "THINK")
 
         except Exception as e:
             # Log exceptions for debugging
-            if ui_callback and hasattr(ui_callback, 'on_debug'):
+            if ui_callback and hasattr(ui_callback, "on_debug"):
                 ui_callback.on_debug(f"Thinking phase exception: {str(e)}", "THINK")
             import logging
+
             logging.getLogger(__name__).exception("Error in thinking phase")
 
         return None
@@ -178,25 +184,25 @@ class ReactExecutor:
         """Run a single ReAct iteration."""
 
         # Debug logging
-        if ctx.ui_callback and hasattr(ctx.ui_callback, 'on_debug'):
+        if ctx.ui_callback and hasattr(ctx.ui_callback, "on_debug"):
             ctx.ui_callback.on_debug(f"Calling LLM with {len(ctx.messages)} messages", "LLM")
 
         # Get thinking visibility from tool registry
         thinking_visible = False
-        if ctx.tool_registry and hasattr(ctx.tool_registry, 'thinking_handler'):
+        if ctx.tool_registry and hasattr(ctx.tool_registry, "thinking_handler"):
             thinking_visible = ctx.tool_registry.thinking_handler.is_visible
 
         # THINKING PHASE: Get thinking trace BEFORE action (when thinking mode is ON)
         if thinking_visible:
-            thinking_trace = self._get_thinking_trace(
-                ctx.messages, ctx.agent, ctx.ui_callback
-            )
+            thinking_trace = self._get_thinking_trace(ctx.messages, ctx.agent, ctx.ui_callback)
             if thinking_trace:
                 # Inject trace as user message for the action phase
-                ctx.messages.append({
-                    "role": "user",
-                    "content": f"<thinking_trace>\n{thinking_trace}\n</thinking_trace>\n\nBased on this analysis, proceed with the appropriate action.",
-                })
+                ctx.messages.append(
+                    {
+                        "role": "user",
+                        "content": f"<thinking_trace>\n{thinking_trace}\n</thinking_trace>\n\nBased on this analysis, proceed with the appropriate action.",
+                    }
+                )
 
         # ACTION PHASE: Call LLM with tools (no force_think)
         task_monitor = TaskMonitor()
@@ -206,9 +212,11 @@ class ReactExecutor:
         self._last_latency_ms = latency_ms
 
         # Debug logging
-        if ctx.ui_callback and hasattr(ctx.ui_callback, 'on_debug'):
+        if ctx.ui_callback and hasattr(ctx.ui_callback, "on_debug"):
             success = response.get("success", False)
-            ctx.ui_callback.on_debug(f"LLM response (success={success}, latency={latency_ms}ms)", "LLM")
+            ctx.ui_callback.on_debug(
+                f"LLM response (success={success}, latency={latency_ms}ms)", "LLM"
+            )
 
         # Handle errors
         if not response["success"]:
@@ -220,11 +228,11 @@ class ReactExecutor:
         # Display reasoning content via UI callback if thinking mode is ON
         # The visibility check is done inside on_thinking() which checks chat_app._thinking_visible
         if reasoning_content and ctx.ui_callback:
-            if hasattr(ctx.ui_callback, 'on_thinking'):
+            if hasattr(ctx.ui_callback, "on_thinking"):
                 ctx.ui_callback.on_thinking(reasoning_content)
 
         # Notify thinking complete
-        if ctx.ui_callback and hasattr(ctx.ui_callback, 'on_thinking_complete'):
+        if ctx.ui_callback and hasattr(ctx.ui_callback, "on_thinking_complete"):
             ctx.ui_callback.on_thinking_complete()
 
         # Record agent response
@@ -232,29 +240,35 @@ class ReactExecutor:
 
         # Dispatch based on tool calls presence
         if not tool_calls:
-            return self._handle_no_tool_calls(ctx, content, response.get("message", {}).get("content"))
-        
+            return self._handle_no_tool_calls(
+                ctx, content, response.get("message", {}).get("content")
+            )
+
         # Process tool calls
-        return self._process_tool_calls(ctx, tool_calls, content, response.get("message", {}).get("content"))
+        return self._process_tool_calls(
+            ctx, tool_calls, content, response.get("message", {}).get("content")
+        )
 
     def _handle_llm_error(self, response: dict, ctx: IterationContext) -> LoopAction:
         """Handle LLM errors."""
         error_text = response.get("error", "Unknown error")
-        
+
         if "interrupted" in error_text.lower():
             self._last_error = error_text
-            if ctx.ui_callback and hasattr(ctx.ui_callback, 'on_interrupt'):
+            if ctx.ui_callback and hasattr(ctx.ui_callback, "on_interrupt"):
                 ctx.ui_callback.on_interrupt()
             elif not ctx.ui_callback:
-                 self.console.print(f"  ⎿  [bold red]Interrupted · What should I do instead?[/bold red]")
+                self.console.print(
+                    f"  ⎿  [bold red]Interrupted · What should I do instead?[/bold red]"
+                )
         else:
             self.console.print(f"[red]Error: {error_text}[/red]")
             fallback = ChatMessage(role=Role.ASSISTANT, content=f"{error_text}")
             self._last_error = error_text
             self.session_manager.add_message(fallback, self.config.auto_save_interval)
-            if ctx.ui_callback and hasattr(ctx.ui_callback, 'on_assistant_message'):
+            if ctx.ui_callback and hasattr(ctx.ui_callback, "on_assistant_message"):
                 ctx.ui_callback.on_assistant_message(fallback.content)
-                
+
         return LoopAction.BREAK
 
     def _parse_llm_response(self, response: dict) -> tuple[str, list, Optional[str]]:
@@ -281,13 +295,14 @@ class ReactExecutor:
 
     def _record_agent_response(self, content: str, tool_calls: Optional[list]):
         """Record agent response for ACE learning."""
-        if hasattr(self._tool_executor, 'set_last_agent_response'):
-            self._tool_executor.set_last_agent_response(str(AgentResponse(
-                content=content,
-                tool_calls=tool_calls or []
-            )))
+        if hasattr(self._tool_executor, "set_last_agent_response"):
+            self._tool_executor.set_last_agent_response(
+                str(AgentResponse(content=content, tool_calls=tool_calls or []))
+            )
 
-    def _handle_no_tool_calls(self, ctx: IterationContext, content: str, raw_content: Optional[str]) -> LoopAction:
+    def _handle_no_tool_calls(
+        self, ctx: IterationContext, content: str, raw_content: Optional[str]
+    ) -> LoopAction:
         """Handle case where agent made no tool calls."""
         # Check if last tool failed
         last_tool_failed = False
@@ -299,24 +314,26 @@ class ReactExecutor:
                 break
 
         if last_tool_failed:
-             return self._handle_failed_tool_nudge(ctx, content, raw_content)
+            return self._handle_failed_tool_nudge(ctx, content, raw_content)
 
         # Accept implicit completion
         if not content:
             content = "Warning: model returned no reply."
-        
+
         self._display_message(content, ctx.ui_callback, dim=True)
         self._add_assistant_message(content, raw_content)
         return LoopAction.BREAK
 
-    def _handle_failed_tool_nudge(self, ctx: IterationContext, content: str, raw_content: Optional[str]) -> LoopAction:
+    def _handle_failed_tool_nudge(
+        self, ctx: IterationContext, content: str, raw_content: Optional[str]
+    ) -> LoopAction:
         """Nudge agent to retry after failure."""
         ctx.consecutive_no_tool_calls += 1
 
         if ctx.consecutive_no_tool_calls >= self.MAX_NUDGE_ATTEMPTS:
             if not content:
                 content = "Warning: could not complete after multiple attempts."
-            
+
             self._display_message(content, ctx.ui_callback, dim=True)
             self._add_assistant_message(content, raw_content)
             return LoopAction.BREAK
@@ -326,48 +343,50 @@ class ReactExecutor:
             ctx.messages.append({"role": "assistant", "content": raw_content or content})
             self._display_message(content, ctx.ui_callback)
 
-        ctx.messages.append({
-            "role": "user",
-            "content": "The previous operation failed. Please fix the issue and try again, or call task_complete with status='failed' if you cannot proceed.",
-        })
+        ctx.messages.append(
+            {
+                "role": "user",
+                "content": "The previous operation failed. Please fix the issue and try again, or call task_complete with status='failed' if you cannot proceed.",
+            }
+        )
         return LoopAction.CONTINUE
 
     def _process_tool_calls(
-        self, 
-        ctx: IterationContext, 
-        tool_calls: list, 
-        content: str, 
-        raw_content: Optional[str]
+        self, ctx: IterationContext, tool_calls: list, content: str, raw_content: Optional[str]
     ) -> LoopAction:
         """Process a list of tool calls."""
         import json
-        
+
         # Reset no-tool-call counter
         ctx.consecutive_no_tool_calls = 0
 
         # Display thinking
         if content:
-             self._display_message(content, ctx.ui_callback)
+            self._display_message(content, ctx.ui_callback)
 
         # Add assistant message to history
-        ctx.messages.append({
-            "role": "assistant",
-            "content": raw_content,
-            "tool_calls": tool_calls,
-        })
-        
+        ctx.messages.append(
+            {
+                "role": "assistant",
+                "content": raw_content,
+                "tool_calls": tool_calls,
+            }
+        )
+
         # Track reads for nudging
         all_reads = all(tc["function"]["name"] in self.READ_OPERATIONS for tc in tool_calls)
         ctx.consecutive_reads = ctx.consecutive_reads + 1 if all_reads else 0
 
         # Check for task completion
-        task_complete_call = next((tc for tc in tool_calls if tc["function"]["name"] == "task_complete"), None)
+        task_complete_call = next(
+            (tc for tc in tool_calls if tc["function"]["name"] == "task_complete"), None
+        )
         if task_complete_call:
-             args = json.loads(task_complete_call["function"]["arguments"])
-             summary = args.get("summary", "Task completed")
-             self._display_message(summary, ctx.ui_callback, dim=True)
-             self._add_assistant_message(summary, raw_content)
-             return LoopAction.BREAK
+            args = json.loads(task_complete_call["function"]["arguments"])
+            summary = args.get("summary", "Task completed")
+            self._display_message(summary, ctx.ui_callback, dim=True)
+            self._add_assistant_message(summary, raw_content)
+            return LoopAction.BREAK
 
         # Execute tools (parallel for multiple, direct for single)
         if len(tool_calls) == 1:
@@ -381,7 +400,9 @@ class ReactExecutor:
 
         # Batch add all results after completion (maintains message order)
         for tool_call in tool_calls:
-            self._add_tool_result_to_history(ctx.messages, tool_call, tool_results_by_id[tool_call["id"]])
+            self._add_tool_result_to_history(
+                ctx.messages, tool_call, tool_results_by_id[tool_call["id"]]
+            )
 
         if operation_cancelled:
             return LoopAction.BREAK
@@ -395,21 +416,30 @@ class ReactExecutor:
 
         return LoopAction.CONTINUE
 
-    def _execute_single_tool(self, tool_call: dict, ctx: IterationContext) -> dict:
-        """Execute a single tool and handle UI updates."""
+    def _execute_single_tool(
+        self, tool_call: dict, ctx: IterationContext, suppress_separate_response: bool = False
+    ) -> dict:
+        """Execute a single tool and handle UI updates.
+
+        Args:
+            tool_call: The tool call dict from LLM response
+            ctx: Iteration context with registry, callbacks, etc.
+            suppress_separate_response: If True, don't display separate_response immediately.
+                Used in parallel mode to aggregate responses later.
+        """
         tool_name = tool_call["function"]["name"]
-        
+
         if tool_name == "task_complete":
             return {}
 
         # Debug
-        if ctx.ui_callback and hasattr(ctx.ui_callback, 'on_debug'):
+        if ctx.ui_callback and hasattr(ctx.ui_callback, "on_debug"):
             ctx.ui_callback.on_debug(f"Executing tool: {tool_name}", "TOOL")
 
         # Notify UI call
-        if ctx.ui_callback and hasattr(ctx.ui_callback, 'on_tool_call'):
+        if ctx.ui_callback and hasattr(ctx.ui_callback, "on_tool_call"):
             ctx.ui_callback.on_tool_call(tool_name, tool_call["function"]["arguments"])
-        
+
         # Execute
         result = self._execute_tool_call(
             tool_call,
@@ -418,32 +448,25 @@ class ReactExecutor:
             ctx.undo_manager,
             ui_callback=ctx.ui_callback,
         )
-        
+
         # Store summary
         self._last_operation_summary = format_tool_call(
-            tool_name, 
-            json.loads(tool_call["function"]["arguments"])
+            tool_name, json.loads(tool_call["function"]["arguments"])
         )
 
         # Notify UI result
-        if ctx.ui_callback and hasattr(ctx.ui_callback, 'on_tool_result'):
-            ctx.ui_callback.on_tool_result(
-                tool_name,
-                tool_call["function"]["arguments"],
-                result
-            )
-            
-        # Handle subagent display
+        if ctx.ui_callback and hasattr(ctx.ui_callback, "on_tool_result"):
+            ctx.ui_callback.on_tool_result(tool_name, tool_call["function"]["arguments"], result)
+
+        # Handle subagent display (suppress in parallel mode for aggregation)
         separate_response = result.get("separate_response")
-        if separate_response:
+        if separate_response and not suppress_separate_response:
             self._display_message(separate_response, ctx.ui_callback)
 
         return result
 
     def _execute_tools_parallel(
-        self,
-        tool_calls: list,
-        ctx: IterationContext
+        self, tool_calls: list, ctx: IterationContext
     ) -> tuple[Dict[str, dict], bool]:
         """Execute tools in parallel using managed thread pool.
 
@@ -479,20 +502,32 @@ class ReactExecutor:
                 # Map tool_call_id to base type (for completion tracking)
                 agent_name_map[tool_call_id] = agent_type
                 # Collect full info for UI display
-                agent_infos.append({
-                    "agent_type": agent_type,
-                    "description": description,
-                    "tool_call_id": tool_call_id,
-                })
-            if hasattr(ui_callback, 'on_parallel_agents_start'):
+                agent_infos.append(
+                    {
+                        "agent_type": agent_type,
+                        "description": description,
+                        "tool_call_id": tool_call_id,
+                    }
+                )
+            if hasattr(ui_callback, "on_parallel_agents_start"):
                 import sys
-                print(f"[DEBUG] on_parallel_agents_start with agent_infos={agent_infos}", file=sys.stderr)
+
+                print(
+                    f"[DEBUG] on_parallel_agents_start with agent_infos={agent_infos}",
+                    file=sys.stderr,
+                )
                 ui_callback.on_parallel_agents_start(agent_infos)
 
         with ThreadPoolExecutor(max_workers=MAX_CONCURRENT_TOOLS) as executor:
             # Submit all tasks
+            # For parallel agents, suppress individual separate_response display for aggregation
             future_to_call = {
-                executor.submit(self._execute_single_tool, tc, ctx): tc
+                executor.submit(
+                    self._execute_single_tool,
+                    tc,
+                    ctx,
+                    suppress_separate_response=is_parallel_agents,
+                ): tc
                 for tc in tool_calls
             }
 
@@ -515,12 +550,12 @@ class ReactExecutor:
                         # Pass tool_call_id for individual agent tracking
                         tool_call_id = tool_call["id"]
                         success = result.get("success", True) if isinstance(result, dict) else True
-                        if hasattr(ui_callback, 'on_parallel_agent_complete'):
+                        if hasattr(ui_callback, "on_parallel_agent_complete"):
                             ui_callback.on_parallel_agent_complete(tool_call_id, success)
 
         # Notify UI that all parallel agents are done
         if is_parallel_agents and ui_callback:
-            if hasattr(ui_callback, 'on_parallel_agents_done'):
+            if hasattr(ui_callback, "on_parallel_agents_done"):
                 ui_callback.on_parallel_agents_done()
 
         return tool_results_by_id, operation_cancelled
@@ -535,23 +570,25 @@ class ReactExecutor:
         else:
             tool_result = f"Error: {result.get('error', 'Tool execution failed')}"
 
-        messages.append({
-            "role": "tool",
-            "tool_call_id": tool_call["id"],
-            "content": tool_result,
-        })
+        messages.append(
+            {
+                "role": "tool",
+                "tool_call_id": tool_call["id"],
+                "content": tool_result,
+            }
+        )
 
     def _persist_step(
-        self, 
-        ctx: IterationContext, 
-        tool_calls: list, 
-        results: Dict[str, dict], 
-        content: str, 
-        raw_content: Optional[str]
+        self,
+        ctx: IterationContext,
+        tool_calls: list,
+        results: Dict[str, dict],
+        content: str,
+        raw_content: Optional[str],
     ):
         """Persist the step to session manager and record learnings."""
         tool_call_objects = []
-        
+
         for tc in tool_calls:
             tool_name = tc["function"]["name"]
             if tool_name == "task_complete":
@@ -559,11 +596,17 @@ class ReactExecutor:
 
             full_result = results.get(tc["id"], {})
             tool_error = full_result.get("error") if not full_result.get("success", True) else None
-            tool_result_str = full_result.get("output", "") if full_result.get("success", True) else None
+            tool_result_str = (
+                full_result.get("output", "") if full_result.get("success", True) else None
+            )
             result_summary = summarize_tool_result(tool_name, tool_result_str, tool_error)
-            
+
             nested_calls = []
-            if tool_name == "spawn_subagent" and ctx.ui_callback and hasattr(ctx.ui_callback, 'get_and_clear_nested_calls'):
+            if (
+                tool_name == "spawn_subagent"
+                and ctx.ui_callback
+                and hasattr(ctx.ui_callback, "get_and_clear_nested_calls")
+            ):
                 nested_calls = ctx.ui_callback.get_and_clear_nested_calls()
 
             tool_call_objects.append(
@@ -591,14 +634,16 @@ class ReactExecutor:
 
         if tool_call_objects:
             outcome = "error" if any(tc.error for tc in tool_call_objects) else "success"
-            self._tool_executor.record_tool_learnings(ctx.query, tool_call_objects, outcome, ctx.agent)
+            self._tool_executor.record_tool_learnings(
+                ctx.query, tool_call_objects, outcome, ctx.agent
+            )
 
     def _display_message(self, message: str, ui_callback, dim: bool = False):
         """Display a message via UI callback or console."""
         if not message:
             return
-            
-        if ui_callback and hasattr(ui_callback, 'on_assistant_message'):
+
+        if ui_callback and hasattr(ui_callback, "on_assistant_message"):
             ui_callback.on_assistant_message(message)
         else:
             style = "[dim]" if dim else ""
@@ -619,13 +664,15 @@ class ReactExecutor:
         """Check if agent should be nudged to conclude."""
         if consecutive_reads >= 5:
             # Silently nudge the agent
-            messages.append({
-                "role": "user",
-                "content": "Based on what you've seen, please summarize your findings and explain what needs to be done next."
-            })
+            messages.append(
+                {
+                    "role": "user",
+                    "content": "Based on what you've seen, please summarize your findings and explain what needs to be done next.",
+                }
+            )
             return True
         return False
-        
+
     def _execute_tool_call(
         self,
         tool_call: dict,
@@ -645,7 +692,7 @@ class ReactExecutor:
         tool_monitor.start(tool_call_display, initial_tokens=0)
 
         if self._tool_executor:
-             self._tool_executor._current_task_monitor = tool_monitor
+            self._tool_executor._current_task_monitor = tool_monitor
 
         progress = TaskProgressDisplay(self.console, tool_monitor)
         progress.start()
@@ -666,4 +713,4 @@ class ReactExecutor:
         finally:
             progress.stop()
             if self._tool_executor:
-                 self._tool_executor._current_task_monitor = None
+                self._tool_executor._current_task_monitor = None
