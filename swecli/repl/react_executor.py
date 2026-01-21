@@ -140,8 +140,8 @@ class ReactExecutor:
     ) -> Optional[str]:
         """Make a SEPARATE LLM call to get thinking trace.
 
-        This uses the thinking system prompt and NO tools to get pure reasoning.
-        The thinking trace is then injected into messages for the action phase.
+        This uses the thinking system prompt with dynamic context injection.
+        The context is formatted from conversation history and injected into {context} placeholder.
 
         Args:
             messages: Current conversation messages
@@ -152,16 +152,43 @@ class ReactExecutor:
             Thinking trace string, or None on failure
         """
         try:
-            # Build thinking-specific system prompt
-            thinking_system_prompt = agent.build_system_prompt(thinking_visible=True)
+            # Build thinking-specific system prompt template
+            thinking_system_prompt_template = agent.build_system_prompt(thinking_visible=True)
 
-            # Build messages for thinking call - replace system prompt
-            thinking_messages = [{"role": "system", "content": thinking_system_prompt}]
-
-            # Add conversation history (excluding old system prompt)
+            # Format context from message history
+            context_parts = []
             for msg in messages:
-                if msg.get("role") != "system":
-                    thinking_messages.append(msg)
+                role = msg.get("role")
+                content = msg.get("content", "")
+                
+                if role == "system":
+                    continue  # Skip system messages
+                elif role == "user":
+                    context_parts.append(f"USER REQUEST:\n{content}\n")
+                elif role == "assistant":
+                    tool_calls = msg.get("tool_calls", [])
+                    if tool_calls:
+                        tool_names = [tc["function"]["name"] for tc in tool_calls]
+                        context_parts.append(f"ASSISTANT CALLED TOOLS: {', '.join(tool_names)}\n")
+                    if content:
+                        context_parts.append(f"ASSISTANT REASONING:\n{content}\n")
+                elif role == "tool":
+                    # Format tool results concisely
+                    tool_content = content[:500] + "..." if len(content) > 500 else content
+                    context_parts.append(f"TOOL RESULT:\n{tool_content}\n")
+
+            formatted_context = "\n".join(context_parts)
+
+            # Inject context into system prompt
+            thinking_system_prompt = thinking_system_prompt_template.replace(
+                "{context}", formatted_context
+            )
+
+            # Build minimal message list - just system prompt + empty user message
+            thinking_messages = [
+                {"role": "system", "content": thinking_system_prompt},
+                {"role": "user", "content": "Analyze the context and provide your reasoning for the next step."}
+            ]
 
             # Call LLM WITHOUT tools - just get reasoning
             task_monitor = TaskMonitor()

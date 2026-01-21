@@ -1038,7 +1038,8 @@ class DefaultToolRenderer:
                 text.append(f"{continuation}{TREE_CONTINUATION}  ", style=GREY)
                 text.append(stats.current_tool, style=SUBTLE)
 
-            self.log.write(text, scroll_end=True, animate=False)
+            # Parallel agent summaries have tree structure, don't re-wrap
+            self.log.write(text, scroll_end=True, animate=False, wrap=False)
 
     def toggle_parallel_expansion(self) -> bool:
         """Toggle the expand/collapse state of parallel agent display.
@@ -1819,7 +1820,8 @@ class DefaultToolRenderer:
             prefix = "    ⎿  " if i == 0 else "       "
             formatted.append(prefix, style=GREY)
             formatted.append(f"{symbol} {title}", style=SUBTLE)
-            self.log.write(formatted, scroll_end=True, animate=False)
+            # Todo sub-results have tree indentation structure, don't re-wrap
+            self.log.write(formatted, scroll_end=True, animate=False, wrap=False)
 
     def add_nested_tool_sub_results(
         self, lines: List[str], depth: int, is_last_parent: bool = True
@@ -1878,7 +1880,8 @@ class DefaultToolRenderer:
             else:
                 formatted.append(clean_line, style=SUBTLE)
 
-            self.log.write(formatted, scroll_end=True, animate=False)
+            # Nested tool sub-results have tree indentation structure, don't re-wrap
+            self.log.write(formatted, scroll_end=True, animate=False, wrap=False)
 
     def add_nested_tree_result(
         self,
@@ -1942,4 +1945,5 @@ class DefaultToolRenderer:
                 formatted.append("  ", style=SUBTLE)
                 formatted.append(content.replace("\t", "    "), style=SUBTLE)
 
-            self.log.write(formatted, scroll_end=True, animate=False)
+            # Diff lines have line numbers and fixed formatting, don't re-wrap
+            self.log.write(formatted, scroll_end=True, animate=False, wrap=False)
