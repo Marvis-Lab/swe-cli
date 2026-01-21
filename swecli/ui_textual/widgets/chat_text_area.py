@@ -321,6 +321,66 @@ class ChatTextArea(TextArea):
                     app._approval_confirm()
                 return
 
+        # Ask-user prompt keyboard handling
+        ask_user_controller = getattr(app, "_ask_user_controller", None)
+        ask_user_mode = bool(ask_user_controller and getattr(ask_user_controller, "active", False))
+        ask_user_other_mode = bool(
+            ask_user_controller and getattr(ask_user_controller, "_other_mode", False)
+        )
+
+        if ask_user_mode:
+            # In "Other" mode, allow typing but still handle Enter/Escape
+            if ask_user_other_mode:
+                if event.key in {"enter", "return"} and "+" not in event.key:
+                    event.stop()
+                    event.prevent_default()
+                    if hasattr(app, "_ask_user_confirm"):
+                        app._ask_user_confirm()
+                    return
+                if event.key in {"escape", "ctrl+c"}:
+                    event.stop()
+                    event.prevent_default()
+                    if hasattr(app, "_ask_user_cancel"):
+                        app._ask_user_cancel()
+                    return
+                # Allow other keys (typing) to pass through
+                await super()._on_key(event)
+                self.update_suggestion()
+                return
+
+            # Normal ask-user mode - intercept navigation keys
+            if event.key == "up":
+                event.stop()
+                event.prevent_default()
+                if hasattr(app, "_ask_user_move"):
+                    app._ask_user_move(-1)
+                return
+            if event.key == "down":
+                event.stop()
+                event.prevent_default()
+                if hasattr(app, "_ask_user_move"):
+                    app._ask_user_move(1)
+                return
+            if event.key == " ":
+                # Space toggles multi-select
+                event.stop()
+                event.prevent_default()
+                if hasattr(app, "_ask_user_toggle"):
+                    app._ask_user_toggle()
+                return
+            if event.key in {"escape", "ctrl+c"}:
+                event.stop()
+                event.prevent_default()
+                if hasattr(app, "_ask_user_cancel"):
+                    app._ask_user_cancel()
+                return
+            if event.key in {"enter", "return"} and "+" not in event.key:
+                event.stop()
+                event.prevent_default()
+                if hasattr(app, "_ask_user_confirm"):
+                    app._ask_user_confirm()
+                return
+
         model_picker = getattr(app, "_model_picker", None)
         picker_active = bool(model_picker and getattr(model_picker, "active", False))
 
@@ -434,6 +494,75 @@ class ChatTextArea(TextArea):
                 # Update live preview in the wizard panel
                 if hasattr(agent_creator, "update_input_preview"):
                     agent_creator.update_input_preview(self.text or "")
+                return
+
+        # Skill creator wizard keyboard handling
+        skill_creator = getattr(app, "_skill_creator", None)
+        skill_wizard_stage = None
+        if skill_creator and hasattr(skill_creator, "state") and skill_creator.state:
+            skill_wizard_stage = skill_creator.state.get("stage")
+
+        # During GENERATING stage, allow normal input so user can queue messages
+        skill_wizard_active = bool(
+            skill_creator
+            and getattr(skill_creator, "active", False)
+            and skill_wizard_stage != "generating"
+        )
+
+        if skill_wizard_active:
+
+            skill_text_input_stages = ("identifier", "purpose", "description")
+            is_skill_text_input_stage = skill_wizard_stage in skill_text_input_stages
+
+            # SELECTION STAGES: intercept up/down for navigation, B for back
+            if not is_skill_text_input_stage:
+                if event.key == "up":
+                    event.stop()
+                    event.prevent_default()
+                    if hasattr(app, "_skill_wizard_move"):
+                        app._skill_wizard_move(-1)
+                    return
+                if event.key == "down":
+                    event.stop()
+                    event.prevent_default()
+                    if hasattr(app, "_skill_wizard_move"):
+                        app._skill_wizard_move(1)
+                    return
+                if event.character and event.character.lower() == "b":
+                    event.stop()
+                    event.prevent_default()
+                    if hasattr(app, "_skill_wizard_back"):
+                        app._skill_wizard_back()
+                    return
+
+            # BOTH STAGES: Enter confirms, Escape cancels
+            if event.key in {"enter", "return"} and "+" not in event.key:
+                event.stop()
+                event.prevent_default()
+                # Sync current text to state before confirming (for text input stages)
+                if is_skill_text_input_stage and hasattr(skill_creator, "update_input_preview"):
+                    skill_creator.update_input_preview(self.text or "")
+                confirm = getattr(app, "_skill_wizard_confirm", None)
+                if confirm is not None:
+                    result = confirm()
+                    if inspect.isawaitable(result):
+                        asyncio.create_task(result)
+                return
+
+            if event.key in {"escape", "ctrl+c"}:
+                event.stop()
+                event.prevent_default()
+                if hasattr(app, "_skill_wizard_cancel"):
+                    app._skill_wizard_cancel()
+                return
+
+            # TEXT INPUT STAGES: Allow typing, update live preview after keystroke
+            if is_skill_text_input_stage:
+                await super()._on_key(event)
+                self.update_suggestion()
+                # Update live preview in the wizard panel
+                if hasattr(skill_creator, "update_input_preview"):
+                    skill_creator.update_input_preview(self.text or "")
                 return
 
         if event.key in {"pageup", "pagedown"}:

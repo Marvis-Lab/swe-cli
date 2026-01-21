@@ -465,11 +465,9 @@ class TestAskUserE2ERealAPI:
         """Test 20: Full integration with mocked controller response.
 
         Tests the _execute_ask_user method end-to-end by mocking the app's
-        ask_user_controller. Uses a dedicated thread with its own event loop
-        to properly handle the async controller.
+        ask_user_controller and the call_from_thread/run_worker pattern.
         """
         import threading
-        import concurrent.futures
 
         mock_config = MagicMock()
         mock_config.model = "gpt-4o"
@@ -484,48 +482,55 @@ class TestAskUserE2ERealAPI:
             mode_manager=MagicMock(),
         )
 
-        # Create a dedicated event loop in a background thread
-        loop = asyncio.new_event_loop()
-        loop_thread = threading.Thread(target=loop.run_forever, daemon=True)
-        loop_thread.start()
+        # Create mock app with controller that returns a canned response
+        mock_app = MagicMock()
+        mock_app.is_running = True
 
-        try:
-            # Create mock app with controller that returns a canned response
-            mock_app = MagicMock()
-            mock_app._loop = loop
+        async def mock_start(questions):
+            return {"0": "PostgreSQL"}
 
-            async def mock_start(questions):
-                return {"0": "PostgreSQL"}
+        mock_controller = MagicMock()
+        mock_controller.start = mock_start
+        mock_app._ask_user_controller = mock_controller
 
-            mock_controller = MagicMock()
-            mock_controller.start = mock_start
-            mock_app._ask_user_controller = mock_controller
+        # Mock run_worker to run the coroutine and set result
+        def mock_run_worker(coro, **kwargs):
+            # Run the coroutine in a new event loop
+            loop = asyncio.new_event_loop()
+            try:
+                loop.run_until_complete(coro)
+            finally:
+                loop.close()
+            return MagicMock()
 
-            mock_callback = MagicMock()
-            mock_callback.chat_app = mock_app
+        mock_app.run_worker = mock_run_worker
 
-            task = json.dumps(
-                {
-                    "questions": [
-                        {
-                            "question": "Which database?",
-                            "header": "Database",
-                            "options": [
-                                {"label": "PostgreSQL", "description": "SQL"},
-                                {"label": "MongoDB", "description": "NoSQL"},
-                            ],
-                        }
-                    ]
-                }
-            )
+        # Mock call_from_thread to execute callback immediately
+        def mock_call_from_thread(func):
+            func()
 
-            result = manager._execute_ask_user(task, mock_callback)
+        mock_app.call_from_thread = mock_call_from_thread
 
-            assert result["success"] is True
-            assert result["cancelled"] is False
-            assert "PostgreSQL" in result["content"]
-        finally:
-            # Properly shut down the loop
-            loop.call_soon_threadsafe(loop.stop)
-            loop_thread.join(timeout=2)
-            loop.close()
+        mock_callback = MagicMock()
+        mock_callback.chat_app = mock_app
+
+        task = json.dumps(
+            {
+                "questions": [
+                    {
+                        "question": "Which database?",
+                        "header": "Database",
+                        "options": [
+                            {"label": "PostgreSQL", "description": "SQL"},
+                            {"label": "MongoDB", "description": "NoSQL"},
+                        ],
+                    }
+                ]
+            }
+        )
+
+        result = manager._execute_ask_user(task, mock_callback)
+
+        assert result["success"] is True
+        assert result["cancelled"] is False
+        assert "PostgreSQL" in result["content"]

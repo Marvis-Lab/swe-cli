@@ -6,6 +6,8 @@ from pathlib import Path
 
 from rich.console import Console
 
+from swecli.ui_textual.style_tokens import CYAN, ERROR, SUCCESS, WARNING
+
 from swecli.core.runtime.approval import ApprovalManager
 from swecli.core.runtime import ConfigManager, ModeManager
 from swecli.core.context_engineering.history import SessionManager, UndoManager
@@ -222,7 +224,7 @@ Examples:
     # Run setup wizard if config doesn't exist
     if not config_exists():
         if not run_setup_wizard():
-            console.print("[yellow]Setup cancelled. Exiting.[/yellow]")
+            console.print(f"[{WARNING}]Setup cancelled. Exiting.[/{WARNING}]")
             sys.exit(0)
 
     # Clear terminal before starting interactive session
@@ -235,7 +237,7 @@ Examples:
     # Set working directory
     working_dir = Path(args.working_dir) if args.working_dir else Path.cwd()
     if not working_dir.exists():
-        console.print(f"[red]Error: Working directory does not exist: {working_dir}[/red]")
+        console.print(f"[{ERROR}]Error: Working directory does not exist: {working_dir}[/{ERROR}]")
         sys.exit(1)
 
     try:
@@ -264,10 +266,10 @@ Examples:
         return
 
     except KeyboardInterrupt:
-        console.print("\n[yellow]Interrupted.[/yellow]")
+        console.print(f"\n[{WARNING}]Interrupted.[/{WARNING}]")
         sys.exit(130)
     except Exception as e:
-        console.print(f"[red]Error: {str(e)}[/red]")
+        console.print(f"[{ERROR}]Error: {str(e)}[/{ERROR}]")
         if args.verbose:
             import traceback
             console.print(traceback.format_exc())
@@ -286,13 +288,13 @@ def _handle_config_command(args) -> None:
     console = Console()
 
     if not args.config_command:
-        console.print("[yellow]No config subcommand specified. Use --help for available commands.[/yellow]")
+        console.print(f"[{WARNING}]No config subcommand specified. Use --help for available commands.[/{WARNING}]")
         sys.exit(1)
 
     if args.config_command == "setup":
         # Run setup wizard (can be used to reconfigure)
         if not run_setup_wizard():
-            console.print("[yellow]Setup cancelled.[/yellow]")
+            console.print(f"[{WARNING}]Setup cancelled.[/{WARNING}]")
             sys.exit(0)
 
     elif args.config_command == "show":
@@ -301,7 +303,7 @@ def _handle_config_command(args) -> None:
         config_file = get_paths().global_settings
 
         if not config_file.exists():
-            console.print("[yellow]No configuration found. Run 'swecli config setup' first.[/yellow]")
+            console.print(f"[{WARNING}]No configuration found. Run 'swecli config setup' first.[/{WARNING}]")
             sys.exit(1)
 
         try:
@@ -332,10 +334,10 @@ def _handle_config_command(args) -> None:
             console.print(f"[dim]Config file: {config_file}[/dim]")
 
         except json.JSONDecodeError:
-            console.print(f"[red]Error: Invalid JSON in configuration file: {config_file}[/red]")
+            console.print(f"[{ERROR}]Error: Invalid JSON in configuration file: {config_file}[/{ERROR}]")
             sys.exit(1)
         except Exception as e:
-            console.print(f"[red]Error reading configuration: {e}[/red]")
+            console.print(f"[{ERROR}]Error reading configuration: {e}[/{ERROR}]")
             sys.exit(1)
 
 
@@ -352,7 +354,7 @@ def _handle_mcp_command(args) -> None:
     mcp_manager = MCPManager()
 
     if not args.mcp_command:
-        console.print("[yellow]No MCP subcommand specified. Use --help for available commands.[/yellow]")
+        console.print(f"[{WARNING}]No MCP subcommand specified. Use --help for available commands.[/{WARNING}]")
         sys.exit(1)
 
     try:
@@ -360,7 +362,7 @@ def _handle_mcp_command(args) -> None:
             servers = mcp_manager.list_servers()
 
             if not servers:
-                console.print("[yellow]No MCP servers configured[/yellow]")
+                console.print(f"[{WARNING}]No MCP servers configured[/{WARNING}]")
                 return
 
             table = Table(title="MCP Servers", show_header=True, header_style="bold cyan")
@@ -370,8 +372,8 @@ def _handle_mcp_command(args) -> None:
             table.add_column("Auto-start", justify="center")
 
             for name, config in servers.items():
-                enabled = "[green]✓[/green]" if config.enabled else "[red]✗[/red]"
-                auto_start = "[green]✓[/green]" if config.auto_start else "[dim]-[/dim]"
+                enabled = f"[{SUCCESS}]✓[/{SUCCESS}]" if config.enabled else f"[{ERROR}]✗[/{ERROR}]"
+                auto_start = f"[{SUCCESS}]✓[/{SUCCESS}]" if config.auto_start else "[dim]-[/dim]"
                 command = f"{config.command} {' '.join(config.args[:2])}" if config.args else config.command
                 if len(command) > 60:
                     command = command[:57] + "..."
@@ -383,11 +385,11 @@ def _handle_mcp_command(args) -> None:
         elif args.mcp_command == "get":
             servers = mcp_manager.list_servers()
             if args.name not in servers:
-                console.print(f"[red]Error: Server '{args.name}' not found[/red]")
+                console.print(f"[{ERROR}]Error: Server '{args.name}' not found[/{ERROR}]")
                 sys.exit(1)
 
             config = servers[args.name]
-            console.print(f"\n[bold cyan]{args.name}[/bold cyan]\n")
+            console.print(f"\n[bold {CYAN}]{args.name}[/bold {CYAN}]\n")
             console.print(f"Command: {config.command}")
             if config.args:
                 console.print(f"Args: {' '.join(config.args)}")
@@ -405,7 +407,7 @@ def _handle_mcp_command(args) -> None:
             if args.env:
                 for env_var in args.env:
                     if "=" not in env_var:
-                        console.print(f"[red]Error: Invalid environment variable format: {env_var}[/red]")
+                        console.print(f"[{ERROR}]Error: Invalid environment variable format: {env_var}[/{ERROR}]")
                         console.print("Use KEY=VALUE format")
                         sys.exit(1)
                     key, value = env_var.split("=", 1)
@@ -425,34 +427,34 @@ def _handle_mcp_command(args) -> None:
                 from swecli.core.context_engineering.mcp.config import save_config
                 save_config(config)
 
-            console.print(f"[green]✓[/green] Added MCP server '{args.name}'")
+            console.print(f"[{SUCCESS}]✓[/{SUCCESS}] Added MCP server '{args.name}'")
 
         elif args.mcp_command == "remove":
             success = mcp_manager.remove_server(args.name)
             if success:
-                console.print(f"[green]✓[/green] Removed MCP server '{args.name}'")
+                console.print(f"[{SUCCESS}]✓[/{SUCCESS}] Removed MCP server '{args.name}'")
             else:
-                console.print(f"[red]Error: Server '{args.name}' not found[/red]")
+                console.print(f"[{ERROR}]Error: Server '{args.name}' not found[/{ERROR}]")
                 sys.exit(1)
 
         elif args.mcp_command == "enable":
             success = mcp_manager.enable_server(args.name)
             if success:
-                console.print(f"[green]✓[/green] Enabled MCP server '{args.name}'")
+                console.print(f"[{SUCCESS}]✓[/{SUCCESS}] Enabled MCP server '{args.name}'")
             else:
-                console.print(f"[red]Error: Server '{args.name}' not found[/red]")
+                console.print(f"[{ERROR}]Error: Server '{args.name}' not found[/{ERROR}]")
                 sys.exit(1)
 
         elif args.mcp_command == "disable":
             success = mcp_manager.disable_server(args.name)
             if success:
-                console.print(f"[green]✓[/green] Disabled MCP server '{args.name}'")
+                console.print(f"[{SUCCESS}]✓[/{SUCCESS}] Disabled MCP server '{args.name}'")
             else:
-                console.print(f"[red]Error: Server '{args.name}' not found[/red]")
+                console.print(f"[{ERROR}]Error: Server '{args.name}' not found[/{ERROR}]")
                 sys.exit(1)
 
     except Exception as e:
-        console.print(f"[red]Error: {str(e)}[/red]")
+        console.print(f"[{ERROR}]Error: {str(e)}[/{ERROR}]")
         sys.exit(1)
 
 
@@ -469,13 +471,13 @@ def _handle_run_command(args) -> None:
     console = Console()
 
     if not args.run_command:
-        console.print("[yellow]No run subcommand specified. Use --help for available commands.[/yellow]")
+        console.print(f"[{WARNING}]No run subcommand specified. Use --help for available commands.[/{WARNING}]")
         sys.exit(1)
 
     if args.run_command == "ui":
         try:
             # Show spinner while starting up
-            with console.status("[cyan]Starting Web UI…[/cyan]", spinner="dots"):
+            with console.status(f"[{CYAN}]Starting Web UI…[/{CYAN}]", spinner="dots"):
                 # Initialize managers for backend
                 from swecli.core.runtime import ConfigManager, ModeManager
                 from swecli.core.context_engineering.history import SessionManager, UndoManager
@@ -501,7 +503,7 @@ def _handle_run_command(args) -> None:
                 backend_port = find_available_port(backend_host, preferred_port, max_attempts=10)
 
                 if backend_port is None:
-                    console.print(f"[red]Error: Could not find available port starting from {preferred_port}[/red]")
+                    console.print(f"[{ERROR}]Error: Could not find available port starting from {preferred_port}[/{ERROR}]")
                     sys.exit(1)
 
                 # Check for static files
@@ -509,7 +511,7 @@ def _handle_run_command(args) -> None:
                 static_dir = find_static_directory()
 
                 if not static_dir or not static_dir.exists():
-                    console.print("[red]Error: Built web UI static files not found[/red]")
+                    console.print(f"[{ERROR}]Error: Built web UI static files not found[/{ERROR}]")
                     sys.exit(1)
 
                 try:
@@ -532,15 +534,15 @@ def _handle_run_command(args) -> None:
 
                     # Verify server is running
                     if not web_server_thread.is_alive():
-                        console.print("[red]Error: Backend server thread terminated unexpectedly[/red]")
+                        console.print(f"[{ERROR}]Error: Backend server thread terminated unexpectedly[/{ERROR}]")
                         sys.exit(1)
 
                 except ImportError as e:
-                    console.print("[red]Error: Web dependencies not installed[/red]")
-                    console.print("[yellow]Install with: pip install 'swe-cli[web]'[/yellow]")
+                    console.print(f"[{ERROR}]Error: Web dependencies not installed[/{ERROR}]")
+                    console.print(f"[{WARNING}]Install with: pip install 'swe-cli[web]'[/{WARNING}]")
                     sys.exit(1)
                 except Exception as e:
-                    console.print(f"[red]Error starting backend server: {str(e)}[/red]")
+                    console.print(f"[{ERROR}]Error starting backend server: {str(e)}[/{ERROR}]")
                     sys.exit(1)
 
                 url = f"http://{backend_host}:{backend_port}"
@@ -552,19 +554,19 @@ def _handle_run_command(args) -> None:
                 threading.Thread(target=open_browser, daemon=True).start()
 
             # Simple success message
-            console.print(f"[green]✓ Web UI available at [cyan]{url}[/cyan][/green]\n")
+            console.print(f"[{SUCCESS}]✓ Web UI available at [{CYAN}]{url}[/{CYAN}][/{SUCCESS}]\n")
 
             # Keep the main thread alive and serve until interrupted
             try:
                 while True:
                     time.sleep(1)
             except KeyboardInterrupt:
-                console.print("\n[yellow]Stopping Web UI…[/yellow]")
+                console.print(f"\n[{WARNING}]Stopping Web UI…[/{WARNING}]")
 
         except KeyboardInterrupt:
-            console.print("\n[yellow]Startup cancelled.[/yellow]")
+            console.print(f"\n[{WARNING}]Startup cancelled.[/{WARNING}]")
         except Exception as e:
-            console.print(f"[red]Error: {str(e)}[/red]")
+            console.print(f"[{ERROR}]Error: {str(e)}[/{ERROR}]")
             sys.exit(1)
 
 
@@ -635,12 +637,12 @@ def _run_non_interactive(
     try:
         result = agent.run_sync(prompt, deps, message_history=message_history)
     except Exception as exc:  # noqa: BLE001
-        console.print(f"[red]Error: {exc}[/red]")
+        console.print(f"[{ERROR}]Error: {exc}[/{ERROR}]")
         sys.exit(1)
 
     if not result.get("success", False):
         error = result.get("error", "Unknown error")
-        console.print(f"[red]Error: {error}[/red]")
+        console.print(f"[{ERROR}]Error: {error}[/{ERROR}]")
         sys.exit(1)
 
     user_msg = ChatMessage(role=Role.USER, content=prompt)

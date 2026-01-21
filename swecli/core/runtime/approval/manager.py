@@ -18,6 +18,7 @@ from rich.panel import Panel
 from rich.text import Text
 
 from swecli.models.operation import Operation
+from swecli.ui_textual.style_tokens import PT_META_GREY
 
 
 class ApprovalChoice(str, Enum):
@@ -98,7 +99,9 @@ class ApprovalManager:
         def get_formatted_text() -> FormattedText:
             lines = []
             lines.append(("", "\n"))
-            lines.append(("class:border", "┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓\n"))
+            lines.append(
+                ("class:border", "┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓\n")
+            )
 
             preview_lines = preview.split("\n")[:3]
             for line in preview_lines:
@@ -107,9 +110,16 @@ class ApprovalManager:
                 lines.append(("class:preview", f"┃ {truncated}{padding}┃\n"))
 
             if len(preview.split("\n")) > 3:
-                lines.append(("class:preview", "┃ ...                                                     ┃\n"))
+                lines.append(
+                    (
+                        "class:preview",
+                        "┃ ...                                                     ┃\n",
+                    )
+                )
 
-            lines.append(("class:border", "┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛\n"))
+            lines.append(
+                ("class:border", "┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛\n")
+            )
             lines.append(("", "\n"))
             lines.append(("class:question bold", f"{message}\n"))
             lines.append(("", "\n"))
@@ -124,12 +134,12 @@ class ApprovalManager:
                 if idx == selected_index[0]:
                     lines.append(("class:selected bold", option_prefix))
                     if shortcut:
-                        lines.append(("#808080", f" ({shortcut})"))
+                        lines.append((PT_META_GREY, f" ({shortcut})"))
                     lines.append(("", "\n"))
                 else:
                     lines.append(("class:option", option_prefix))
                     if shortcut:
-                        lines.append(("#808080", f" ({shortcut})"))
+                        lines.append((PT_META_GREY, f" ({shortcut})"))
                     lines.append(("", "\n"))
 
             return FormattedText(lines)

@@ -263,3 +263,71 @@ class TestTodoHandlerUpdateComplete:
         result = handler.complete_todo(id="nonexistent-task")
         assert not result["success"]
         assert "not found" in result["error"]
+
+
+class TestTodoCompletionCounter:
+    """Test suite for verifying todo completion counter logic."""
+
+    def test_completion_counter_all_done(self):
+        """Verify counter shows N/N when all todos are completed."""
+        handler = TodoHandler()
+
+        # Create 3 todos
+        handler.write_todos(["Task 1", "Task 2", "Task 3"])
+
+        # Mark all as done
+        handler.update_todo("todo-1", status="completed")
+        handler.update_todo("todo-2", status="completed")
+        handler.update_todo("todo-3", status="completed")
+
+        # Verify all have status="done"
+        todos = list(handler._todos.values())
+        assert len(todos) == 3
+        assert all(t.status == "done" for t in todos)
+
+        # Calculate what counter should show
+        completed = len([t for t in todos if t.status == "done"])
+        total = len(todos)
+        assert completed == 3
+        assert total == 3
+
+    def test_spinner_callback_guard_no_active_todo(self):
+        """Verify spinner callback would be guarded when no active todo exists."""
+        handler = TodoHandler()
+        handler.write_todos([{"content": "Task 1", "status": "completed"}])
+
+        # All todos are done - spinner callback should be guarded
+        todos = list(handler._todos.values())
+        has_active = any(t.status == "doing" for t in todos)
+        assert not has_active  # Guard would prevent spinner render
+
+    def test_completion_counter_partial_done(self):
+        """Verify counter shows correct count when some todos are completed."""
+        handler = TodoHandler()
+
+        # Create 4 todos
+        handler.write_todos(["Task 1", "Task 2", "Task 3", "Task 4"])
+
+        # Mark 2 as done
+        handler.update_todo("todo-1", status="completed")
+        handler.update_todo("todo-3", status="completed")
+
+        todos = list(handler._todos.values())
+        completed = len([t for t in todos if t.status == "done"])
+        total = len(todos)
+        assert completed == 2
+        assert total == 4
+
+    def test_completion_counter_with_active_todo(self):
+        """Verify active todo detection works correctly."""
+        handler = TodoHandler()
+
+        # Create 3 todos
+        handler.write_todos(["Task 1", "Task 2", "Task 3"])
+
+        # Set one as in_progress
+        handler.update_todo("todo-2", status="in_progress")
+
+        todos = list(handler._todos.values())
+        has_active = any(t.status == "doing" for t in todos)
+        assert has_active  # Should have an active todo

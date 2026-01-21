@@ -26,14 +26,14 @@ class ConsoleBridge:
         self._console = console
         self._app: Any | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
-        
+
         self._console_queue: asyncio.Queue[str] = asyncio.Queue()
         self._console_task: asyncio.Task[None] | None = None
         self._ansi_decoder = AnsiDecoder()
-        
+
         self._original_console_print: Any = None
         self._original_console_log: Any = None
-        
+
         # State for deduplication and rendering
         self._last_console_line: str | None = None
         self._last_assistant_message_normalized: str | None = None
@@ -53,20 +53,21 @@ class ConsoleBridge:
                 with self._console.capture() as capture:
                     self._original_console_print(*args, **kwargs)
                 text = capture.get()
-                if text.strip():
+                if text:  # Allow blank lines through for intentional spacing
                     self.enqueue_text(text)
             else:
-                 self._original_console_print(*args, **kwargs)
+                self._original_console_print(*args, **kwargs)
 
         self._console.print = bridge_print  # type: ignore[assignment]
 
         if self._original_console_log is not None:
+
             def bridge_log(*args, **kwargs):
                 if hasattr(self._console, "capture"):
                     with self._console.capture() as capture:
                         self._original_console_log(*args, **kwargs)
                     text = capture.get()
-                    if text.strip():
+                    if text:  # Allow blank lines through for intentional spacing
                         self.enqueue_text(text)
                 else:
                     self._original_console_log(*args, **kwargs)
@@ -90,7 +91,7 @@ class ConsoleBridge:
         if self._console_task:
             self._console_task.cancel()
             # We don't await here as this is often called during shutdown cleanup
-            
+
         self.uninstall()
 
     def enqueue_text(self, text: str) -> None:
@@ -100,16 +101,16 @@ class ConsoleBridge:
 
         # Attempt to normalize for deduplication check using app logic if available
         if self._app and hasattr(self._app, "_normalize_paragraph"):
-             # We need to access app logic, but this might be called from any thread.
-             # Ideally we check deduplication at render time, but existing code checks here too?
-             # Existing code checks here:
-             # if hasattr(self.app, "_normalize_paragraph"): ...
-             # BUT app methods are not thread safe.
-             # However, enqueue_text is called from `bridge_print` which runs in whatever thread calls print().
-             # The existing code did check app attributes. This is risky but we'll replicate it
-             # or defer it to render time.
-             # Actually, `enqueue_message` in runner puts to queue. `_enqueue_console_text` puts to `_console_queue`.
-             pass
+            # We need to access app logic, but this might be called from any thread.
+            # Ideally we check deduplication at render time, but existing code checks here too?
+            # Existing code checks here:
+            # if hasattr(self.app, "_normalize_paragraph"): ...
+            # BUT app methods are not thread safe.
+            # However, enqueue_text is called from `bridge_print` which runs in whatever thread calls print().
+            # The existing code did check app attributes. This is risky but we'll replicate it
+            # or defer it to render time.
+            # Actually, `enqueue_message` in runner puts to queue. `_enqueue_console_text` puts to `_console_queue`.
+            pass
 
         if self._app and hasattr(self._app, "_normalize_paragraph"):
             try:
@@ -127,12 +128,12 @@ class ConsoleBridge:
             running_loop = None
 
         if self._loop and running_loop is self._loop:
-             self._console_queue.put_nowait(text)
+            self._console_queue.put_nowait(text)
         elif self._loop and self._loop.is_running():
-             self._loop.call_soon_threadsafe(self._console_queue.put_nowait, text)
+            self._loop.call_soon_threadsafe(self._console_queue.put_nowait, text)
         else:
-             # Fallback for tests or when loop is not fully managed
-             self._console_queue.put_nowait(text)
+            # Fallback for tests or when loop is not fully managed
+            self._console_queue.put_nowait(text)
 
     async def _drain_console_queue(self) -> None:
         """Drain queue and render output."""
@@ -153,33 +154,40 @@ class ConsoleBridge:
         renderables = list(self._ansi_decoder.decode(normalized))
         if not renderables:
             return
-            
+
         for renderable in renderables:
             if isinstance(renderable, Text):
                 plain = renderable.plain.strip()
-                if not plain:
-                    continue
-                if self._is_spinner_text(plain) or self._is_spinner_tip(plain):
-                    continue
-                
-                normalized_plain = plain.strip()
-                if hasattr(self._app, "_normalize_paragraph"):
-                    normalized_plain = self._app._normalize_paragraph(plain)
-                    
-                pending = getattr(self._app, "_pending_assistant_normalized", None)
-                # self._last_assistant_message_normalized must be maintained by external setter?
-                # or we just access app state if possible?
-                # The runner maintained `self._last_assistant_message_normalized`.
-                # We can replicate logic or expose a setter.
-                
-                targets = [value for value in (pending, self._last_assistant_message_normalized) if value]
-                if self._suppress_console_duplicate and normalized_plain and targets:
-                    if any(normalized_plain == target for target in targets):
+                # Allow blank lines through - they're intentional spacing
+                if plain:  # Only filter non-blank lines for duplicates/spinners
+                    if self._is_spinner_text(plain) or self._is_spinner_tip(plain):
                         continue
-                        
-                if plain == self._last_console_line:
-                    continue
-                self._last_console_line = plain
+
+                    normalized_plain = plain.strip()
+                    if hasattr(self._app, "_normalize_paragraph"):
+                        normalized_plain = self._app._normalize_paragraph(plain)
+
+                    pending = getattr(self._app, "_pending_assistant_normalized", None)
+                    # self._last_assistant_message_normalized must be maintained by external setter?
+                    # or we just access app state if possible?
+                    # The runner maintained `self._last_assistant_message_normalized`.
+                    # We can replicate logic or expose a setter.
+
+                    targets = [
+                        value
+                        for value in (pending, self._last_assistant_message_normalized)
+                        if value
+                    ]
+                    if self._suppress_console_duplicate and normalized_plain and targets:
+                        if any(normalized_plain == target for target in targets):
+                            continue
+
+                    if plain == self._last_console_line:
+                        continue
+                    self._last_console_line = plain
+                else:
+                    # Empty Text from decoded newline - create visible blank line
+                    renderable = Text(" ")
             else:
                 self._last_console_line = None
 
@@ -188,7 +196,7 @@ class ConsoleBridge:
             else:
                 if hasattr(self._app, "conversation"):
                     self._app.conversation.write(renderable)
-                    
+
         if not isinstance(renderables[-1], Text):
             self._last_console_line = None
         if self._suppress_console_duplicate:

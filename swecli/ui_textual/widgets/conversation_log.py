@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
-from typing import Any, List, TYPE_CHECKING
+from dataclasses import dataclass, field
+from typing import Any, List, Optional, TYPE_CHECKING
 
-from rich.console import Group, RenderableType
+from rich.console import Console, Group, RenderableType
 from rich.panel import Panel
 from rich.text import Text
 from textual.events import MouseDown, MouseMove, MouseScrollDown, MouseScrollUp, MouseUp, Resize
 from textual.geometry import Size
+from textual.strip import Strip
+from textual.timer import Timer
 from textual.widgets import RichLog
 from swecli.ui_textual.style_tokens import SUBTLE, CYAN
 
@@ -21,11 +24,23 @@ from swecli.ui_textual.widgets.conversation.tool_renderer import DefaultToolRend
 from swecli.ui_textual.widgets.conversation.scroll_controller import DefaultScrollController
 
 
+@dataclass
+class LineSource:
+    """Tracks the source renderable for a line for resize re-rendering."""
+
+    source: RenderableType  # Original Rich renderable
+    wrap: bool  # Whether this content should wrap on resize
+    line_indices: list[int] = field(default_factory=list)  # Line indices this source maps to
+
+
 class ConversationLog(RichLog):
     """Enhanced RichLog for conversation display with scrolling support."""
 
     can_focus = True
     ALLOW_SELECT = True
+
+    # Maximum number of line sources to track (memory cap)
+    MAX_LINE_SOURCES = 2000
 
     def __init__(self, **kwargs):
         super().__init__(
@@ -40,7 +55,7 @@ class ConversationLog(RichLog):
         self._spinner_manager = DefaultSpinnerManager(self, None)
         self._message_renderer = DefaultMessageRenderer(self, None)
         self._tool_renderer = DefaultToolRenderer(self, None)
-        
+
         self._last_assistant_rendered: str | None = None
         self._spinner_active = False
         self._approval_start: int | None = None
@@ -48,6 +63,11 @@ class ConversationLog(RichLog):
         self._debug_enabled = False  # Enable debug messages by default
         self._protected_lines: set[int] = set()  # Lines that should not be truncated
         self.MAX_PROTECTED_LINES = 200
+
+        # Source tracking for resize re-rendering
+        self._line_sources: list[LineSource] = []
+        self._last_render_width: int = 0
+        self._resize_timer: Optional[Timer] = None
         
     def refresh_line(self, y: int) -> None:
         """Refresh a specific line by invalidating cache and repainting."""
@@ -56,7 +76,75 @@ class ConversationLog(RichLog):
             self._line_cache.clear()
         self.refresh()
 
-    # write() inherited from RichLog - no custom override needed
+    def write(
+        self,
+        content: RenderableType,
+        width: int | None = None,
+        expand: bool = False,
+        shrink: bool = True,
+        scroll_end: bool | None = None,
+        animate: bool = False,
+        wrap: bool | None = None,
+    ) -> "Self":
+        """Write content, storing source for potential re-rendering on resize.
+
+        Args:
+            content: Rich renderable to write
+            width: Optional width override
+            expand: Whether to expand to container width
+            shrink: Whether to shrink to fit content
+            scroll_end: Whether to scroll to end after write
+            animate: Whether to animate scroll
+            wrap: Whether this content should re-wrap on resize.
+                  If None, uses self.wrap (True by default).
+                  Pass False for fixed-width content (terminal boxes, diffs, spinners).
+
+        Returns:
+            Self for chaining
+        """
+        # Determine if this content should wrap (default from self.wrap)
+        should_wrap = wrap if wrap is not None else self.wrap
+
+        # Track line count before write to map source to lines
+        lines_before = len(self.lines)
+
+        # Call parent write
+        result = super().write(
+            content,
+            width=width,
+            expand=expand,
+            shrink=shrink,
+            scroll_end=scroll_end,
+            animate=animate,
+        )
+
+        # Track line count after write
+        lines_after = len(self.lines)
+
+        # Store source for re-rendering (only for wrappable content)
+        if should_wrap:
+            line_indices = list(range(lines_before, lines_after))
+            self._line_sources.append(
+                LineSource(source=content, wrap=True, line_indices=line_indices)
+            )
+            # Prune old sources if we exceed the memory cap
+            self._prune_old_line_sources()
+        else:
+            # For non-wrappable content, store None source to maintain index mapping
+            line_indices = list(range(lines_before, lines_after))
+            self._line_sources.append(
+                LineSource(source=content, wrap=False, line_indices=line_indices)
+            )
+            self._prune_old_line_sources()
+
+        return result
+
+    def _prune_old_line_sources(self) -> None:
+        """Remove oldest line sources if we exceed MAX_LINE_SOURCES."""
+        if len(self._line_sources) > self.MAX_LINE_SOURCES:
+            # Remove oldest sources
+            to_remove = len(self._line_sources) - self.MAX_LINE_SOURCES
+            self._line_sources = self._line_sources[to_remove:]
 
     def on_mount(self) -> None:
         if self.app:
@@ -70,26 +158,90 @@ class ConversationLog(RichLog):
         self._scroll_controller.cleanup()
         self._tool_renderer.cleanup()
         self._spinner_manager.cleanup()
+        if self._resize_timer is not None:
+            self._resize_timer.stop()
+            self._resize_timer = None
 
     def on_resize(self, event: Resize) -> None:
-        """Handle terminal resize by refreshing the display.
+        """Handle terminal resize by re-rendering wrappable content.
 
-        Textual's RichLog handles line wrapping internally. We just need to:
-        1. Clear internal caches
-        2. Refresh the widget to re-render at new width
+        Unlike the default RichLog behavior which just clears caches,
+        we actually re-render stored source renderables at the new width
+        to properly reflow text content.
         """
         super().on_resize(event)
 
-        # Clear caches to force re-render
+        # Get new content width
+        new_width = self.scrollable_content_region.width
+
+        # Only re-render if width actually changed and is valid
+        if new_width != self._last_render_width and new_width > 0:
+            self._last_render_width = new_width
+            self._schedule_rerender()
+
+    def _schedule_rerender(self) -> None:
+        """Schedule a debounced re-render to avoid excessive re-rendering during rapid resize."""
+        if self._resize_timer is not None:
+            self._resize_timer.stop()
+        # Debounce: wait 100ms before re-rendering
+        self._resize_timer = self.set_timer(0.1, self._rerender_wrappable_content)
+
+    def _rerender_wrappable_content(self) -> None:
+        """Re-render all wrappable content at current width."""
+        self._resize_timer = None
+
+        width = self.scrollable_content_region.width
+        if width <= 0:
+            return
+
+        # Create console at new width for rendering
+        console = Console(width=width, force_terminal=True, no_color=False)
+
+        # Track which lines we've updated to avoid duplicates
+        updated_lines: set[int] = set()
+
+        for source_entry in self._line_sources:
+            if not source_entry.wrap:
+                # Skip non-wrappable content (terminal boxes, diffs, etc.)
+                continue
+
+            if not source_entry.line_indices:
+                continue
+
+            # Get the first line index for this source
+            first_line_idx = source_entry.line_indices[0]
+            if first_line_idx in updated_lines:
+                continue
+
+            # Check if line indices are still valid
+            if first_line_idx >= len(self.lines):
+                continue
+
+            # Re-render the source at new width
+            try:
+                # Render to segments using the console at new width
+                segments = list(console.render(source_entry.source))
+                new_strip = Strip(segments)
+
+                # Update the line in place
+                # Note: If the content wraps to multiple lines now, we only update the first
+                # This is a simplification - full multi-line handling would be more complex
+                self.lines[first_line_idx] = new_strip
+                updated_lines.add(first_line_idx)
+            except Exception:
+                # If rendering fails, leave the line as-is
+                pass
+
+        # Clear cache and refresh
         if hasattr(self, "_line_cache"):
             self._line_cache.clear()
-
-        # Refresh to re-render at new width
         self.refresh()
 
     def clear(self) -> "Self":
         """Clear all content."""
         self._protected_lines.clear()
+        self._line_sources.clear()
+        self._last_render_width = 0
         return super().clear()
 
     def set_debug_enabled(self, enabled: bool) -> None:

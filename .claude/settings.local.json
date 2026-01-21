@@ -59,7 +59,15 @@
       "Bash(ruff check:*)",
       "Bash(mypy:*)",
       "Bash(SWECLI_LOG_LEVEL=DEBUG python:*)",
-      "Bash(gtimeout 60 python:*)"
+      "Bash(gtimeout 60 python:*)",
+      "Bash(black:*)",
+      "Bash(tree:*)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Skill(superpowers:executing-plans)",
+      "Bash(git show:*)",
+      "Bash(pkill:*)",
+      "Bash(source:*)",
+      "Skill(superpowers:systematic-debugging)"
     ],
     "deny": [],
     "ask": []

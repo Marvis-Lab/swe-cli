@@ -217,7 +217,13 @@ class ConfigManager:
         return None
 
     def get_skill_dirs(self) -> list[Path]:
-        """Get all skill directories in priority order (project first, then user).
+        """Get all skill directories in priority order.
+
+        Returns directories from highest to lowest priority:
+        1. Project skills (.swecli/skills/)
+        2. User global skills (~/.swecli/skills/)
+        3. Project bundle skills (.swecli/plugins/bundles/*/skills/)
+        4. User bundle skills (~/.swecli/plugins/bundles/*/skills/)
 
         Returns:
             List of existing skill directories, highest priority first
@@ -229,7 +235,29 @@ class ConfigManager:
         # User global skills
         if self.user_skills_dir.exists():
             dirs.append(self.user_skills_dir)
+        # Bundle skills (from enabled bundles)
+        dirs.extend(self._get_bundle_skill_dirs())
         return dirs
+
+    def _get_bundle_skill_dirs(self) -> list[Path]:
+        """Get skill directories from all enabled bundles.
+
+        Returns:
+            List of skill directories from bundles
+        """
+        bundle_dirs = []
+        try:
+            from swecli.core.plugins import PluginManager
+
+            plugin_manager = PluginManager(self.working_dir)
+            for bundle in plugin_manager.list_bundles():
+                if bundle.enabled:
+                    skills_dir = Path(bundle.path) / "skills"
+                    if skills_dir.exists():
+                        bundle_dirs.append(skills_dir)
+        except Exception:
+            pass  # Bundles not available
+        return bundle_dirs
 
     def _load_markdown_agent(self, path: Path, source: str) -> dict[str, Any] | None:
         """Load a Claude Code-style markdown agent file.
@@ -261,6 +289,7 @@ class ConfigManager:
                 parts = content.split("---", 2)
                 if len(parts) >= 3:
                     import yaml
+
                     frontmatter = yaml.safe_load(parts[1])
                     if not isinstance(frontmatter, dict):
                         frontmatter = {}
@@ -268,7 +297,9 @@ class ConfigManager:
 
                     return {
                         "name": frontmatter.get("name", path.stem),
-                        "description": frontmatter.get("description", f"Custom agent from {path.name}"),
+                        "description": frontmatter.get(
+                            "description", f"Custom agent from {path.name}"
+                        ),
                         "model": frontmatter.get("model"),
                         "tools": frontmatter.get("tools", "*"),
                         "_system_prompt": system_prompt,  # Direct prompt, not skillPath

@@ -18,12 +18,10 @@ from typing import TYPE_CHECKING, Any, Optional
 from rich.text import Text
 from textual.widgets import Static
 
+from swecli.ui_textual.style_tokens import DIM_GREY
+
 if TYPE_CHECKING:
     from textual.timer import Timer
-
-
-# Base dim color for resting dots
-DIM_COLOR = "#6b7280"
 
 # Configuration
 BAR_WIDTH = 36  # Bar width
@@ -162,7 +160,7 @@ class ProgressBar(Static):
             return "·", mid_color
         else:
             # Resting state - tiny, dim
-            return "·", DIM_COLOR
+            return "·", DIM_GREY
 
     def on_unmount(self) -> None:
         """Clean up when widget is removed."""

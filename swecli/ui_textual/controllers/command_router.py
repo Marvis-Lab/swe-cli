@@ -51,6 +51,14 @@ class CommandRouter:
             # Fall through for other subcommands (list, edit, delete)
             return False
 
+        if cmd == "/skills":
+            args = " ".join(parts[1:]) if len(parts) > 1 else ""
+            if args.lower().startswith("create"):
+                await self.app._skill_creator.start()
+                return True
+            # Fall through for other subcommands (list, edit, delete, test)
+            return False
+
         if cmd == "/scroll":
             if conversation is not None:
                 self._render_scroll_demo(conversation)
@@ -88,6 +96,8 @@ class CommandRouter:
         conversation.add_system_message("  /scroll - Generate many messages (test scrolling)")
         conversation.add_system_message("  /models - Configure model slots")
         conversation.add_system_message("  /agents create - Create new agent with wizard")
+        conversation.add_system_message("  /skills - Create and manage custom skills")
+        conversation.add_system_message("  /plugins - Manage plugins and marketplaces")
         conversation.add_system_message("  /tasks - List background tasks")
         conversation.add_system_message("  /task <id> - Show task output")
         conversation.add_system_message("  /kill <id> - Kill a background task")

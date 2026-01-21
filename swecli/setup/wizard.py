@@ -14,6 +14,7 @@ from .providers import get_provider_config, get_provider_choices, get_provider_m
 from .validator import validate_api_key
 from .interactive_menu import InteractiveMenu
 from swecli.core.paths import get_paths, APP_DIR_NAME
+from swecli.ui_textual.style_tokens import CYAN, ERROR, SUCCESS, WARNING
 
 
 console = Console()
@@ -44,7 +45,7 @@ def run_setup_wizard() -> bool:
 
     provider_config = get_provider_config(provider_id)
     if not provider_config:
-        console.print(f"[red]Error: Provider '{provider_id}' not found[/red]")
+        console.print(f"[{ERROR}]Error: Provider '{provider_id}' not found[/{ERROR}]")
         return False
 
     # Step 2: Get API key
@@ -53,11 +54,11 @@ def run_setup_wizard() -> bool:
         return False
 
     # Step 3: Validate API key (optional)
-    if Confirm.ask("\n[yellow]Validate API key?[/yellow]", default=True):
+    if Confirm.ask(f"\n[{WARNING}]Validate API key?[/{WARNING}]", default=True):
         if not validate_key(provider_id, api_key):
             console.print(
-                "[yellow]⚠ Continuing without validation. "
-                "You may encounter errors if the key is invalid.[/yellow]"
+                f"[{WARNING}]⚠ Continuing without validation. "
+                f"You may encounter errors if the key is invalid.[/{WARNING}]"
             )
 
     # Step 4: Select model
@@ -67,7 +68,7 @@ def run_setup_wizard() -> bool:
 
     # Step 5: Advanced settings (optional)
     advanced = {}
-    if Confirm.ask("\n[yellow]Configure advanced settings?[/yellow]", default=False):
+    if Confirm.ask(f"\n[{WARNING}]Configure advanced settings?[/{WARNING}]", default=False):
         advanced = configure_advanced_settings()
 
     # Step 6: Save configuration
@@ -84,8 +85,8 @@ def run_setup_wizard() -> bool:
 
     if save_config(config):
         console.print()
-        console.print(f"[bold green]✓[/bold green] Configuration saved to ~/{APP_DIR_NAME}/settings.json")
-        console.print("[bold green]✓[/bold green] All set! Starting SWE-CLI...")
+        console.print(f"[bold {SUCCESS}]✓[/bold {SUCCESS}] Configuration saved to ~/{APP_DIR_NAME}/settings.json")
+        console.print(f"[bold {SUCCESS}]✓[/bold {SUCCESS}] All set! Starting SWE-CLI...")
         console.print()
         return True
 
@@ -110,10 +111,10 @@ def select_provider() -> Optional[str]:
         provider_name = next(
             (name for pid, name, _ in choices if pid == provider_id), provider_id
         )
-        console.print(f"\n[green]✓[/green] Selected: {provider_name}")
+        console.print(f"\n[{SUCCESS}]✓[/{SUCCESS}] Selected: {provider_name}")
         return provider_id
 
-    console.print("\n[yellow]Provider selection cancelled[/yellow]")
+    console.print(f"\n[{WARNING}]Provider selection cancelled[/{WARNING}]")
     return None
 
 
@@ -125,42 +126,42 @@ def get_api_key(provider_id: str, provider_config: dict) -> Optional[str]:
     console.print()
     if env_key:
         use_env = Confirm.ask(
-            f"[yellow]Found ${env_var} in environment. Use it?[/yellow]",
+            f"[{WARNING}]Found ${env_var} in environment. Use it?[/{WARNING}]",
             default=True,
         )
         if use_env:
-            console.print("[green]✓[/green] Using API key from environment")
+            console.print(f"[{SUCCESS}]✓[/{SUCCESS}] Using API key from environment")
             return env_key
 
     # Prompt for manual entry
-    console.print(f"\n[yellow]Enter your {provider_config['name']} API key:[/yellow]")
+    console.print(f"\n[{WARNING}]Enter your {provider_config['name']} API key:[/{WARNING}]")
     console.print(f"[dim](or press Enter to use ${env_var})[/dim]")
 
     api_key = Prompt.ask("API Key", password=True)
 
     if not api_key:
         if env_key:
-            console.print(f"[green]✓[/green] Using ${env_var}")
+            console.print(f"[{SUCCESS}]✓[/{SUCCESS}] Using ${env_var}")
             return env_key
-        console.print("[red]✗[/red] No API key provided")
+        console.print(f"[{ERROR}]✗[/{ERROR}] No API key provided")
         return None
 
-    console.print("[green]✓[/green] API key received")
+    console.print(f"[{SUCCESS}]✓[/{SUCCESS}] API key received")
     return api_key
 
 
 def validate_key(provider_id: str, api_key: str) -> bool:
     """Validate the API key with the provider."""
-    console.print("\n[yellow]Validating API key...[/yellow]", end="")
+    console.print(f"\n[{WARNING}]Validating API key...[/{WARNING}]", end="")
 
     success, error = validate_api_key(provider_id, api_key)
 
     if success:
-        console.print(" [bold green]✓ Valid![/bold green]")
+        console.print(f" [bold {SUCCESS}]✓ Valid![/bold {SUCCESS}]")
         return True
     else:
-        console.print(f" [bold red]✗ Failed[/bold red]")
-        console.print(f"[red]Error: {error}[/red]")
+        console.print(f" [bold {ERROR}]✗ Failed[/bold {ERROR}]")
+        console.print(f"[{ERROR}]Error: {error}[/{ERROR}]")
         return False
 
 
@@ -184,22 +185,22 @@ def select_model(provider_id: str, provider_config: dict) -> Optional[str]:
     model_id = menu.show()
 
     if not model_id:
-        console.print("\n[yellow]Model selection cancelled[/yellow]")
+        console.print(f"\n[{WARNING}]Model selection cancelled[/{WARNING}]")
         return None
 
     # Handle custom model input
     if model_id == "__custom__":
         console.print()
-        custom_id = Prompt.ask("[yellow]Enter custom model ID[/yellow]")
+        custom_id = Prompt.ask(f"[{WARNING}]Enter custom model ID[/{WARNING}]")
         if custom_id:
-            console.print(f"[green]✓[/green] Custom model: {custom_id}")
+            console.print(f"[{SUCCESS}]✓[/{SUCCESS}] Custom model: {custom_id}")
             return custom_id
-        console.print("[yellow]No custom model ID provided[/yellow]")
+        console.print(f"[{WARNING}]No custom model ID provided[/{WARNING}]")
         return None
 
     # Find the model name for confirmation message
     model_name = next((name for mid, name, _ in model_choices if mid == model_id), model_id)
-    console.print(f"\n[green]✓[/green] Selected: {model_name}")
+    console.print(f"\n[{SUCCESS}]✓[/{SUCCESS}] Selected: {model_name}")
     return model_id
 
 
@@ -207,11 +208,11 @@ def configure_advanced_settings() -> dict:
     """Configure advanced settings interactively."""
     settings = {}
 
-    console.print("\n[bold cyan]Advanced Settings[/bold cyan]")
+    console.print(f"\n[bold {CYAN}]Advanced Settings[/bold {CYAN}]")
 
     # Max tokens
     max_tokens = Prompt.ask(
-        "[yellow]Max tokens per response[/yellow]",
+        f"[{WARNING}]Max tokens per response[/{WARNING}]",
         default="16384",
     )
     try:
@@ -221,7 +222,7 @@ def configure_advanced_settings() -> dict:
 
     # Temperature
     temperature = Prompt.ask(
-        "[yellow]Temperature (0.0-2.0)[/yellow]",
+        f"[{WARNING}]Temperature (0.0-2.0)[/{WARNING}]",
         default="0.7",
     )
     try:
@@ -231,7 +232,7 @@ def configure_advanced_settings() -> dict:
 
     # Enable bash
     settings["enable_bash"] = Confirm.ask(
-        "[yellow]Enable bash command execution?[/yellow]",
+        f"[{WARNING}]Enable bash command execution?[/{WARNING}]",
         default=True,
     )
 
@@ -250,7 +251,7 @@ def save_config(config: dict) -> bool:
 
         return True
     except Exception as e:
-        console.print(f"[red]✗ Failed to save configuration: {e}[/red]")
+        console.print(f"[{ERROR}]✗ Failed to save configuration: {e}[/{ERROR}]")
         return False
 
 

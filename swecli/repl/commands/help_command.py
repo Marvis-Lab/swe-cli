@@ -54,6 +54,17 @@ class HelpCommand(CommandHandler):
 - `/mcp reload` - Reload MCP configuration
 - `/mcp debug` - Show debug info (tools in agent)
 
+## Agents & Skills
+- `/agents` - Create and manage custom agents
+- `/skills` - Create and manage custom skills with AI assistance
+
+## Plugins & Marketplace
+- `/plugins marketplace add <url>` - Add a marketplace repository
+- `/plugins marketplace list` - List known marketplaces
+- `/plugins install <plugin>@<marketplace>` - Install a plugin
+- `/plugins list` - List installed plugins
+- `/plugins update <plugin>@<marketplace>` - Update a plugin
+
 ## General
 - `/help` - Show this help message
 - `/exit` - Exit SWE-CLI

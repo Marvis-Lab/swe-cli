@@ -72,8 +72,64 @@ class PlanningAgent(BaseAgent):
             self.__http_client = AgentHttpClient(self._api_url, self._headers)
         return self.__http_client
 
-    def build_system_prompt(self) -> str:
+    def build_system_prompt(self, thinking_visible: bool = False) -> str:
+        """Build the system prompt for the planning agent.
+
+        Args:
+            thinking_visible: Ignored for planning agent (compatibility parameter).
+
+        Returns:
+            The formatted system prompt string
+        """
         return PlanningPromptBuilder(self._working_dir).build()
+
+    def call_thinking_llm(
+        self,
+        messages: list[dict],
+        task_monitor: Optional[Any] = None,
+    ) -> dict:
+        """Call LLM for thinking phase only - NO tools, just reasoning.
+
+        Args:
+            messages: Conversation messages
+            task_monitor: Optional monitor for tracking progress
+
+        Returns:
+            Dict with success status and thinking content
+        """
+        payload = {
+            "model": self.config.model,
+            "messages": messages,
+            # NO tools - just reasoning
+            **build_temperature_param(self.config.model, self.config.temperature),
+            **build_max_tokens_param(self.config.model, self.config.max_tokens),
+        }
+
+        result = self._http_client.post_json(payload, task_monitor=task_monitor)
+        if not result.success or result.response is None:
+            return {
+                "success": False,
+                "error": result.error or "Unknown error",
+                "content": "",
+            }
+
+        response = result.response
+        if response.status_code != 200:
+            return {
+                "success": False,
+                "error": f"API Error {response.status_code}: {response.text}",
+                "content": "",
+            }
+
+        response_data = response.json()
+        choice = response_data["choices"][0]
+        message_data = choice["message"]
+        content = message_data.get("content", "")
+
+        return {
+            "success": True,
+            "content": content,
+        }
 
     def build_tool_schemas(self) -> list[dict[str, Any]]:
         """Return read-only tool schemas for codebase exploration."""

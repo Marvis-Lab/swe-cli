@@ -38,6 +38,13 @@ SKILLS_DIR_NAME = "skills"
 AGENTS_DIR_NAME = "agents"
 COMMANDS_DIR_NAME = "commands"
 REPOS_DIR_NAME = "repos"
+PLUGINS_DIR_NAME = "plugins"
+MARKETPLACES_DIR_NAME = "marketplaces"
+BUNDLES_DIR_NAME = "bundles"
+PLUGIN_CACHE_DIR_NAME = "cache"
+KNOWN_MARKETPLACES_FILE_NAME = "known_marketplaces.json"
+INSTALLED_PLUGINS_FILE_NAME = "installed_plugins.json"
+BUNDLES_FILE_NAME = "bundles.json"
 SETTINGS_FILE_NAME = "settings.json"
 AGENTS_FILE_NAME = "agents.json"
 CONTEXT_FILE_NAME = "OPENCLI.md"
@@ -200,6 +207,66 @@ class Paths:
         return self.global_dir / HISTORY_FILE_NAME
 
     # ========================================================================
+    # Plugin Paths (User-level, in ~/.swecli/plugins/)
+    # ========================================================================
+
+    @cached_property
+    def global_plugins_dir(self) -> Path:
+        """Get global plugins directory.
+
+        Default: ~/.swecli/plugins/
+        """
+        return self.global_dir / PLUGINS_DIR_NAME
+
+    @cached_property
+    def global_marketplaces_dir(self) -> Path:
+        """Get global marketplaces directory where marketplace repos are cloned.
+
+        Default: ~/.swecli/plugins/marketplaces/
+        """
+        return self.global_plugins_dir / MARKETPLACES_DIR_NAME
+
+    @cached_property
+    def global_plugin_cache_dir(self) -> Path:
+        """Get global plugin cache directory for installed plugins.
+
+        Default: ~/.swecli/plugins/cache/
+        """
+        return self.global_plugins_dir / PLUGIN_CACHE_DIR_NAME
+
+    @cached_property
+    def known_marketplaces_file(self) -> Path:
+        """Get known marketplaces registry file.
+
+        Default: ~/.swecli/plugins/known_marketplaces.json
+        """
+        return self.global_plugins_dir / KNOWN_MARKETPLACES_FILE_NAME
+
+    @cached_property
+    def global_installed_plugins_file(self) -> Path:
+        """Get global installed plugins registry file.
+
+        Default: ~/.swecli/plugins/installed_plugins.json
+        """
+        return self.global_plugins_dir / INSTALLED_PLUGINS_FILE_NAME
+
+    @cached_property
+    def global_bundles_dir(self) -> Path:
+        """Get global bundles directory for directly-installed plugin bundles.
+
+        Default: ~/.swecli/plugins/bundles/
+        """
+        return self.global_plugins_dir / BUNDLES_DIR_NAME
+
+    @cached_property
+    def global_bundles_file(self) -> Path:
+        """Get global bundles registry file.
+
+        Default: ~/.swecli/plugins/bundles.json
+        """
+        return self.global_plugins_dir / BUNDLES_FILE_NAME
+
+    # ========================================================================
     # Project Paths (Project-level, in <working_dir>/.swecli/)
     # ========================================================================
 
@@ -268,6 +335,38 @@ class Paths:
         """
         return self._working_dir / MCP_PROJECT_CONFIG_NAME
 
+    @cached_property
+    def project_plugins_dir(self) -> Path:
+        """Get project plugins directory.
+
+        Default: <working_dir>/.swecli/plugins/
+        """
+        return self.project_dir / PLUGINS_DIR_NAME
+
+    @cached_property
+    def project_installed_plugins_file(self) -> Path:
+        """Get project installed plugins registry file.
+
+        Default: <working_dir>/.swecli/plugins/installed_plugins.json
+        """
+        return self.project_plugins_dir / INSTALLED_PLUGINS_FILE_NAME
+
+    @cached_property
+    def project_bundles_dir(self) -> Path:
+        """Get project bundles directory for directly-installed plugin bundles.
+
+        Default: <working_dir>/.swecli/plugins/bundles/
+        """
+        return self.project_plugins_dir / BUNDLES_DIR_NAME
+
+    @cached_property
+    def project_bundles_file(self) -> Path:
+        """Get project bundles registry file.
+
+        Default: <working_dir>/.swecli/plugins/bundles.json
+        """
+        return self.project_plugins_dir / BUNDLES_FILE_NAME
+
     # ========================================================================
     # Helper Methods
     # ========================================================================
@@ -282,6 +381,10 @@ class Paths:
         - ~/.swecli/cache/
         - ~/.swecli/skills/
         - ~/.swecli/agents/
+        - ~/.swecli/plugins/
+        - ~/.swecli/plugins/marketplaces/
+        - ~/.swecli/plugins/cache/
+        - ~/.swecli/plugins/bundles/
         """
         self.global_dir.mkdir(parents=True, exist_ok=True)
         self.global_sessions_dir.mkdir(parents=True, exist_ok=True)
@@ -289,6 +392,10 @@ class Paths:
         self.global_cache_dir.mkdir(parents=True, exist_ok=True)
         self.global_skills_dir.mkdir(parents=True, exist_ok=True)
         self.global_agents_dir.mkdir(parents=True, exist_ok=True)
+        self.global_plugins_dir.mkdir(parents=True, exist_ok=True)
+        self.global_marketplaces_dir.mkdir(parents=True, exist_ok=True)
+        self.global_plugin_cache_dir.mkdir(parents=True, exist_ok=True)
+        self.global_bundles_dir.mkdir(parents=True, exist_ok=True)
 
     def ensure_project_dirs(self) -> None:
         """Create project directories if in a git repository.
@@ -303,17 +410,26 @@ class Paths:
     def get_skill_dirs(self) -> list[Path]:
         """Get all skill directories in priority order.
 
-        Returns directories in order: project first (highest priority), then global.
+        Returns directories in order:
+        1. Project skills (.swecli/skills/) - highest priority
+        2. User global skills (~/.swecli/skills/)
+        3. Project bundle skills (.swecli/plugins/bundles/*/skills/)
+        4. User bundle skills (~/.swecli/plugins/bundles/*/skills/)
+
         Only returns directories that exist.
 
         Returns:
             List of existing skill directories
         """
         dirs = []
+        # Project skills (highest priority)
         if self.project_skills_dir.exists():
             dirs.append(self.project_skills_dir)
+        # User global skills
         if self.global_skills_dir.exists():
             dirs.append(self.global_skills_dir)
+        # Bundle skills are handled separately by PluginManager.get_plugin_skills()
+        # to allow for proper source attribution
         return dirs
 
     def get_agents_dirs(self) -> list[Path]:

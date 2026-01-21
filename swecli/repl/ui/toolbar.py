@@ -4,6 +4,8 @@ from typing import TYPE_CHECKING
 
 from prompt_toolkit.formatted_text import FormattedText
 
+from swecli.ui_textual.style_tokens import PT_GREEN, PT_GREY, PT_ORANGE, PT_PURPLE
+
 if TYPE_CHECKING:
     from swecli.core.runtime import ModeManager
     from swecli.core.context_engineering.history import SessionManager
@@ -48,9 +50,9 @@ class Toolbar:
         remaining_pct = max(0.0, 100.0 - (used / limit * 100.0))
 
         mode_style = (
-            'fg:#ff9f43 bold'
+            f'fg:{PT_ORANGE} bold'
             if self.mode_manager.current_mode == OperationMode.NORMAL
-            else 'fg:#2ecc71 bold'
+            else f'fg:{PT_GREEN} bold'
         )
 
         # Extract readable model name (last part after /)
@@ -61,11 +63,11 @@ class Toolbar:
             [
                 (mode_style, f" {mode} "),
                 (
-                    'fg:#aaaaaa',
+                    f'fg:{PT_GREY}',
                     " • Shift+Tab: Toggle Mode • Ctrl+C: Exit • Context Left: ",
                 ),
-                ('fg:#aaaaaa', f"{remaining_pct:.0f}% "),
-                ('fg:#aaaaaa', f"• {provider_name}: "),
-                ('fg:#6c5ce7', f"{model_name} "),
+                (f'fg:{PT_GREY}', f"{remaining_pct:.0f}% "),
+                (f'fg:{PT_GREY}', f"• {provider_name}: "),
+                (f'fg:{PT_PURPLE}', f"{model_name} "),
             ]
         )

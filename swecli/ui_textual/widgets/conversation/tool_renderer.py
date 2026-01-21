@@ -19,6 +19,7 @@ from swecli.ui_textual.style_tokens import (
     CYAN,
     ERROR,
     GREEN_BRIGHT,
+    GREEN_GRADIENT,
     GREEN_PROMPT,
     GREY,
     PRIMARY,
@@ -131,31 +132,6 @@ class DefaultToolRenderer:
 
         # Nested tool state - multi-tool tracking for parallel agents
         self._nested_spinner_char = "⏺"
-        self._nested_color_gradient = [
-            "#00ff00",
-            "#00f500",
-            "#00eb00",
-            "#00e100",
-            "#00d700",
-            "#00cd00",
-            "#00c300",
-            "#00b900",
-            "#00af00",
-            "#00a500",
-            "#009b00",
-            "#009100",  # Dimmest
-            "#009b00",
-            "#00a500",
-            "#00af00",
-            "#00b900",
-            "#00c300",
-            "#00cd00",
-            "#00d700",
-            "#00e100",
-            "#00eb00",
-            "#00f500",
-            "#00ff00",  # Peak bright
-        ]
         # Multi-tool tracking: (parent, tool_id) -> NestedToolState
         self._nested_tools: Dict[Tuple[str, str], NestedToolState] = {}
         self._nested_tool_timer: Timer | None = None
@@ -333,7 +309,8 @@ class DefaultToolRenderer:
                 # Overwrite spacing placeholder with first diff line (no gap)
                 self.log.lines[spacing_line] = text_to_strip(formatted)
             else:
-                self.log.write(formatted)
+                # Tool result continuation lines preserve formatting, don't re-wrap
+                self.log.write(formatted, wrap=False)
 
         # Clear the pending spacing line
         self.log._pending_spacing_line = None
@@ -445,11 +422,12 @@ class DefaultToolRenderer:
         formatted = Text()
         indent = self._build_tree_indent(depth, parent, is_last)
         formatted.append(indent)
-        formatted.append(f"{self._nested_spinner_char} ", style=self._nested_color_gradient[0])
+        formatted.append(f"{self._nested_spinner_char} ", style=GREEN_GRADIENT[0])
         formatted.append_text(tool_text)
         formatted.append(" (0s)", style=GREY)
 
-        self.log.write(formatted, scroll_end=True, animate=False)
+        # Nested tool lines have tree structure and are updated in-place, don't re-wrap
+        self.log.write(formatted, scroll_end=True, animate=False, wrap=False)
 
         # Generate tool_id if not provided
         if not tool_id:
@@ -609,14 +587,12 @@ class DefaultToolRenderer:
 
         # Animate all tools in the multi-tool tracking dict
         for key, state in self._nested_tools.items():
-            state.color_index = (state.color_index + 1) % len(self._nested_color_gradient)
+            state.color_index = (state.color_index + 1) % len(GREEN_GRADIENT)
             self._render_nested_tool_line_for_state(state)
 
         # Also animate legacy single-tool state if present
         if self._nested_tool_line is not None and self._nested_tool_text is not None:
-            self._nested_color_index = (self._nested_color_index + 1) % len(
-                self._nested_color_gradient
-            )
+            self._nested_color_index = (self._nested_color_index + 1) % len(GREEN_GRADIENT)
             self._render_nested_tool_line()
 
         # Animate parallel agents: header spinner and agent row gradient bullets
@@ -631,7 +607,7 @@ class DefaultToolRenderer:
                 if agent.status == "running":
                     # Update gradient color index
                     idx = self._agent_spinner_states.get(tool_call_id, 0)
-                    idx = (idx + 1) % len(self._nested_color_gradient)
+                    idx = (idx + 1) % len(GREEN_GRADIENT)
                     self._agent_spinner_states[tool_call_id] = idx
 
                     # Update agent row with gradient animation
@@ -643,9 +619,7 @@ class DefaultToolRenderer:
             self._update_header_spinner()
 
             # Update status line with gradient bullet
-            self._bullet_gradient_index = (self._bullet_gradient_index + 1) % len(
-                self._nested_color_gradient
-            )
+            self._bullet_gradient_index = (self._bullet_gradient_index + 1) % len(GREEN_GRADIENT)
             self._update_single_agent_status_line()
 
         # Schedule next animation frame
@@ -680,7 +654,7 @@ class DefaultToolRenderer:
         formatted = Text()
         indent = self._build_tree_indent(state.depth, state.parent, is_last=False)
         formatted.append(indent)
-        color = self._nested_color_gradient[state.color_index]
+        color = GREEN_GRADIENT[state.color_index]
         formatted.append(f"{self._nested_spinner_char} ", style=color)
         formatted.append_text(state.tool_text.copy())
         formatted.append(f" ({elapsed}s)", style=GREY)
@@ -709,7 +683,7 @@ class DefaultToolRenderer:
         formatted = Text()
         indent = "  " * self._nested_tool_depth
         formatted.append(indent)
-        color = self._nested_color_gradient[self._nested_color_index]
+        color = GREEN_GRADIENT[self._nested_color_index]
         formatted.append(f"{self._nested_spinner_char} ", style=color)
         formatted.append_text(self._nested_tool_text.copy())
         formatted.append(f" ({elapsed}s)", style=GREY)
@@ -740,11 +714,11 @@ class DefaultToolRenderer:
         """
         self._spacing.before_parallel_agents()
 
-        # Write header line
+        # Write header line - updated in-place with spinner, don't re-wrap
         header = Text()
         header.append("⠋ ", style=CYAN)  # Rotating spinner for header
         header.append(f"Running {len(agent_infos)} agents… ")
-        self.log.write(header, scroll_end=True, animate=False)
+        self.log.write(header, scroll_end=True, animate=False, wrap=False)
         header_line = len(self.log.lines) - 1
 
         # Create agents dict keyed by tool_call_id
@@ -756,18 +730,20 @@ class DefaultToolRenderer:
             agent_type = info.get("agent_type", "Agent")
 
             # Agent row: "   ⏺ Description · 0 tools" (gradient flashing bullet)
+            # Updated in-place with spinner animation, don't re-wrap
             agent_row = Text()
             agent_row.append("   ⏺ ", style=GREEN_BRIGHT)  # Gradient bullet for agent rows
             agent_row.append(description)
             agent_row.append(" · 0 tools", style=GREY)
-            self.log.write(agent_row, scroll_end=True, animate=False)
+            self.log.write(agent_row, scroll_end=True, animate=False, wrap=False)
             agent_line = len(self.log.lines) - 1
 
             # Status row: "      ⎿  Initializing...." (no tree connector for agent row)
+            # Updated in-place, don't re-wrap
             status_row = Text()
             status_row.append("      ⎿  ", style=GREY)
             status_row.append("Initializing....", style=SUBTLE)
-            self.log.write(status_row, scroll_end=True, animate=False)
+            self.log.write(status_row, scroll_end=True, animate=False, wrap=False)
             status_line_num = len(self.log.lines) - 1
 
             agents[tool_call_id] = AgentInfo(
@@ -877,8 +853,8 @@ class DefaultToolRenderer:
         if use_spinner:
             # Use gradient color for ⏺ bullet (animate through green gradient)
             idx = self._agent_spinner_states.get(agent.tool_call_id, 0)
-            color_idx = idx % len(self._nested_color_gradient)
-            color = self._nested_color_gradient[color_idx]
+            color_idx = idx % len(GREEN_GRADIENT)
+            color = GREEN_GRADIENT[color_idx]
             row = Text()
             row.append("   ⏺ ", style=color)  # Gradient flashing bullet
             row.append(agent.description)
@@ -926,7 +902,7 @@ class DefaultToolRenderer:
 
         # Build agent row: "   ⏺ Description · N tools" with gradient color
         unique_count = agent.tool_count
-        color = self._nested_color_gradient[color_idx % len(self._nested_color_gradient)]
+        color = GREEN_GRADIENT[color_idx % len(GREEN_GRADIENT)]
         row = Text()
         row.append("   ⏺ ", style=color)  # Gradient flashing bullet
         row.append(agent.description)
@@ -1086,26 +1062,29 @@ class DefaultToolRenderer:
         self._spacing.before_single_agent()
 
         # Header line: "⠋ Explore(description)" - Rotating spinner
+        # Updated in-place with animation, don't re-wrap
         header = Text()
         header.append("⠋ ", style=CYAN)
         header.append(f"{agent_type}(", style=CYAN)
         header.append(description, style=PRIMARY)
         header.append(")", style=CYAN)
-        self.log.write(header, scroll_end=True, animate=False)
+        self.log.write(header, scroll_end=True, animate=False, wrap=False)
         header_line = len(self.log.lines) - 1
 
         # Status line: "   ⏺ 0 tools" - Gradient flashing bullet
+        # Updated in-place with animation, don't re-wrap
         status_row = Text()
         status_row.append("   ⏺ ", style=GREEN_BRIGHT)  # Will be animated with gradient
         status_row.append("0 tools", style=GREY)
-        self.log.write(status_row, scroll_end=True, animate=False)
+        self.log.write(status_row, scroll_end=True, animate=False, wrap=False)
         status_line_num = len(self.log.lines) - 1
 
         # Current tool line: "      ⎿  Initializing..."
+        # Updated in-place, don't re-wrap
         tool_row = Text()
         tool_row.append("      ⎿  ", style=GREY)
         tool_row.append("Initializing...", style=SUBTLE)
-        self.log.write(tool_row, scroll_end=True, animate=False)
+        self.log.write(tool_row, scroll_end=True, animate=False, wrap=False)
         tool_line_num = len(self.log.lines) - 1
 
         self._single_agent = SingleAgentInfo(
@@ -1156,8 +1135,8 @@ class DefaultToolRenderer:
         agent = self._single_agent
         row = Text()
         # Use gradient color for ⏺ bullet (animate through green gradient)
-        color_idx = self._bullet_gradient_index % len(self._nested_color_gradient)
-        color = self._nested_color_gradient[color_idx]
+        color_idx = self._bullet_gradient_index % len(GREEN_GRADIENT)
+        color = GREEN_GRADIENT[color_idx]
         row.append("   ⏺ ", style=color)  # Gradient flashing bullet
         row.append(f"{agent.tool_count} tool" + ("s" if agent.tool_count != 1 else ""), style=GREY)
 
@@ -1425,7 +1404,8 @@ class DefaultToolRenderer:
             formatted.append_text(self._tool_display)
         formatted.append(" (0s)", style=GREY)
 
-        self.log.write(formatted)
+        # Tool call lines are updated in-place with spinners, don't re-wrap
+        self.log.write(formatted, wrap=False)
 
     # --- Tool Result Parsing Helpers ---
 
@@ -1455,10 +1435,10 @@ class DefaultToolRenderer:
         return "", []
 
     def _write_edit_result(self, header: str, diff_lines: list[str]) -> None:
-        # Write header with ⎿ prefix to match other tool results
-        self.log.write(Text(f"    ⎿  {header}", style=SUBTLE))
+        # Write header with ⎿ prefix to match other tool results - header can wrap
+        self.log.write(Text(f"    ⎿  {header}", style=SUBTLE), wrap=True)
 
-        # Write diff lines with proper formatting
+        # Write diff lines with proper formatting - diff lines should NOT wrap
         # Lines come from _format_edit_file_result after ANSI stripping:
         #   Addition: "NNN + content"  (line number right-aligned in 3 chars)
         #   Deletion: "NNN - content"
@@ -1475,7 +1455,7 @@ class DefaultToolRenderer:
                 formatted.append(line, style=ERROR)
             else:
                 formatted.append(line, style=SUBTLE)
-            self.log.write(formatted)
+            self.log.write(formatted, wrap=False)
 
     def _write_generic_tool_result(self, text: str) -> None:
         lines = text.rstrip("\n").splitlines() or [text]
@@ -1500,7 +1480,9 @@ class DefaultToolRenderer:
             else:
                 # Use dim for normal, red for error
                 line.append(message, style=ERROR if is_error else SUBTLE)
-            self.log.write(line)
+            # Tool result text - allow first line to wrap but not subsequent lines
+            # (preserves output formatting while allowing summary text to reflow)
+            self.log.write(line, wrap=(i == 0))
 
     # --- Bash Box Output ---
 
@@ -1532,13 +1514,13 @@ class DefaultToolRenderer:
             # Store full content and render collapsed summary
             start_line = len(self.log.lines)
 
-            # Write collapsed summary line
+            # Write collapsed summary line - summary text can wrap
             summary = summarize_output(lines, "bash")
             hint = get_expansion_hint()
             summary_line = Text(f"{indent}    \u23bf  ", style=GREY)
             summary_line.append(summary, style=SUBTLE)
             summary_line.append(f" {hint}", style=f"{SUBTLE} italic")
-            self.log.write(summary_line)
+            self.log.write(summary_line, wrap=True)
 
             end_line = len(self.log.lines) - 1
 
@@ -1576,7 +1558,8 @@ class DefaultToolRenderer:
         prefix = f"{indent}    \u23bf  " if is_first else f"{indent}       "
         output_line = Text(prefix, style=GREY)
         output_line.append(normalized, style=ERROR if is_error else GREY)
-        self.log.write(output_line)
+        # Bash output preserves formatting, don't re-wrap
+        self.log.write(output_line, wrap=False)
 
     def start_streaming_bash_box(self, command: str = "", working_dir: str = ".") -> None:
         """Start streaming bash output with minimal style."""
@@ -1635,13 +1618,13 @@ class DefaultToolRenderer:
 
         start_line = len(self.log.lines)
 
-        # Write collapsed summary line
+        # Write collapsed summary line - summary text can wrap
         summary = summarize_output(content_lines, "bash")
         hint = get_expansion_hint()
         summary_line = Text(f"    \u23bf  ", style=GREY)
         summary_line.append(summary, style=SUBTLE)
         summary_line.append(f" {hint}", style=f"{SUBTLE} italic")
-        self.log.write(summary_line)
+        self.log.write(summary_line, wrap=True)
 
         end_line = len(self.log.lines) - 1
 
@@ -1744,12 +1727,12 @@ class DefaultToolRenderer:
         indent = "  " * collapsible.depth
         new_start = len(self.log.lines)
 
-        # Write collapsed summary
+        # Write collapsed summary - summary text can wrap
         hint = get_expansion_hint()
         summary_line = Text(f"{indent}    \u23bf  ", style=GREY)
         summary_line.append(collapsible.summary, style=SUBTLE)
         summary_line.append(f" {hint}", style=f"{SUBTLE} italic")
-        self.log.write(summary_line)
+        self.log.write(summary_line, wrap=True)
 
         # Update collapsible state
         collapsible.is_expanded = False
@@ -1815,7 +1798,8 @@ class DefaultToolRenderer:
         # Use ⎿ prefix to match main agent style
         formatted.append("    ⎿  ", style=GREY)
         formatted.append(text, style=SUBTLE)
-        self.log.write(formatted, scroll_end=True, animate=False)
+        # Todo sub-results have tree indentation structure, don't re-wrap
+        self.log.write(formatted, scroll_end=True, animate=False, wrap=False)
 
     def add_todo_sub_results(self, items: list, depth: int, is_last_parent: bool = True) -> None:
         """Add multiple sub-result lines for todo list operations.

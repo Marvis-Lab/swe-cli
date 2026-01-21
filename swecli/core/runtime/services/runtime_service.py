@@ -93,6 +93,7 @@ class RuntimeService:
             tool_registry,
             self._mode_manager,
             self._config_manager.working_dir,
+            config_manager=self._config_manager,
         )
         agents = agent_factory.create_agents()
 
@@ -117,6 +118,7 @@ class RuntimeService:
             registry,
             self._mode_manager,
             self._config_manager.working_dir,
+            config_manager=self._config_manager,
         )
         suite.agents = suite.agent_factory.create_agents()
         return registry

@@ -8,6 +8,8 @@ from rich.console import Console
 from rich.table import Table
 from rich import box
 
+from swecli.ui_textual.style_tokens import BLUE_BG_ACTIVE, MENU_HINT
+
 console = Console()
 
 # ANSI escape codes for terminal control
@@ -87,13 +89,17 @@ class InteractiveMenu:
 
         # Title and instructions
         if self.search_mode:
-            instructions = "[#7a8691]Type to search • Esc to exit search • Enter to select[/#7a8691]"
-            search_display = f"[bright_yellow]Search:[/bright_yellow] [yellow]{self.search_query}_[/yellow]"
+            instructions = (
+                f"[{MENU_HINT}]Type to search • Esc to exit search • Enter to select[/{MENU_HINT}]"
+            )
+            search_display = (
+                f"[bright_yellow]Search:[/bright_yellow] [yellow]{self.search_query}_[/yellow]"
+            )
             table.add_row(f"[bold bright_cyan]{self.title}[/bold bright_cyan]")
             table.add_row(search_display)
             table.add_row(instructions)
         else:
-            instructions = "[#7a8691]↑/↓ to navigate • / to search • Enter to select • Esc to cancel[/#7a8691]"
+            instructions = f"[{MENU_HINT}]↑/↓ to navigate • / to search • Enter to select • Esc to cancel[/{MENU_HINT}]"
             table.add_row(f"[bold bright_cyan]{self.title}[/bold bright_cyan]")
             table.add_row(instructions)
 
@@ -107,6 +113,7 @@ class InteractiveMenu:
 
             # Render to string
             from io import StringIO
+
             string_buffer = StringIO()
             temp_console = Console(file=string_buffer, force_terminal=True, width=80)
             temp_console.print(table)
@@ -142,14 +149,16 @@ class InteractiveMenu:
             if is_selected:
                 # Selected item with pointer and background
                 pointer = "[bold bright_cyan]❯[/bold bright_cyan]"
-                name_style = f"[bold white on #1f2d3a]{name:<24}[/bold white on #1f2d3a]"
-                desc_style = f"[#7a8691 on #1f2d3a]{description}[/#7a8691 on #1f2d3a]"
+                name_style = (
+                    f"[bold white on {BLUE_BG_ACTIVE}]{name:<24}[/bold white on {BLUE_BG_ACTIVE}]"
+                )
+                desc_style = f"[{MENU_HINT} on {BLUE_BG_ACTIVE}]{description}[/{MENU_HINT} on {BLUE_BG_ACTIVE}]"
                 table.add_row(f"{pointer} {name_style} {desc_style}")
             else:
                 # Unselected item
                 pointer = "[dim] [/dim]"
                 name_style = f"[white]{name:<24}[/white]"
-                desc_style = f"[#7a8691]{description}[/#7a8691]"
+                desc_style = f"[{MENU_HINT}]{description}[/{MENU_HINT}]"
                 table.add_row(f"{pointer} {name_style} {desc_style}")
 
         # Show "..." if there are items below
@@ -158,6 +167,7 @@ class InteractiveMenu:
 
         # Render to string using Rich Console
         from io import StringIO
+
         string_buffer = StringIO()
         temp_console = Console(file=string_buffer, force_terminal=True, width=80)
         temp_console.print(table)
@@ -218,13 +228,9 @@ class InteractiveMenu:
                 else:
                     # Normal navigation mode
                     if key == "\x1b[A":  # Up arrow
-                        self.selected_index = (self.selected_index - 1) % len(
-                            self.filtered_items
-                        )
+                        self.selected_index = (self.selected_index - 1) % len(self.filtered_items)
                     elif key == "\x1b[B":  # Down arrow
-                        self.selected_index = (self.selected_index + 1) % len(
-                            self.filtered_items
-                        )
+                        self.selected_index = (self.selected_index + 1) % len(self.filtered_items)
                     elif key == "\r":  # Enter
                         if self.filtered_items:
                             return self.filtered_items[self.selected_index][0]

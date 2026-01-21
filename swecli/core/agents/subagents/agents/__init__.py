@@ -1,5 +1,6 @@
 """Subagent specifications."""
 
+from .ask_user import ASK_USER_SUBAGENT
 from .code_explorer import CODE_EXPLORER_SUBAGENT
 from .web_clone import WEB_CLONE_SUBAGENT
 from .web_generator import WEB_GENERATOR_SUBAGENT
@@ -11,6 +12,7 @@ from .issue_resolver import ISSUE_RESOLVER_SUBAGENT
 from .github_resolver import GITHUB_RESOLVER_SUBAGENT
 
 ALL_SUBAGENTS = [
+    ASK_USER_SUBAGENT,
     CODE_EXPLORER_SUBAGENT,
     WEB_CLONE_SUBAGENT,
     WEB_GENERATOR_SUBAGENT,

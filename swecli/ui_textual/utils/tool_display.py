@@ -51,7 +51,7 @@ _TOOL_DISPLAY_PARTS: dict[str, tuple[str, str]] = {
     "configure_mcp_server": ("Configure", "MCP server"),
     "list_mcp_presets": ("List MCPs", "MCP presets"),
     "task_complete": ("Complete", "task"),
-    "invoke_skill": ("Invoke", "skill"),
+    "invoke_skill": ("Skill", "skill"),
 }
 
 _PATH_HINT_KEYS = {"file_path", "path", "directory", "dir", "image_path", "working_dir", "target"}

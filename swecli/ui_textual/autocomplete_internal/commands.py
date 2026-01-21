@@ -77,5 +77,7 @@ BUILTIN_COMMANDS.register(SlashCommand("tasks", "list background tasks"))
 BUILTIN_COMMANDS.register(SlashCommand("task", "show output from a background task (usage: /task <id>)"))
 BUILTIN_COMMANDS.register(SlashCommand("kill", "kill a background task (usage: /kill <id>)"))
 
-# Agent management commands
+# Agent and skill management commands
 BUILTIN_COMMANDS.register(SlashCommand("agents", "create and manage custom agents"))
+BUILTIN_COMMANDS.register(SlashCommand("skills", "create and manage custom skills with AI assistance"))
+BUILTIN_COMMANDS.register(SlashCommand("plugins", "manage plugins and marketplaces"))

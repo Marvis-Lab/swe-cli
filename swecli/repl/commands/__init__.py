@@ -12,6 +12,8 @@ from swecli.repl.commands.help_command import HelpCommand
 from swecli.repl.commands.config_commands import ConfigCommands
 from swecli.repl.commands.tool_commands import ToolCommands
 from swecli.repl.commands.agents_commands import AgentsCommands
+from swecli.repl.commands.skills_commands import SkillsCommands
+from swecli.repl.commands.plugins_commands import PluginsCommands
 
 __all__ = [
     "CommandHandler",
@@ -23,4 +25,6 @@ __all__ = [
     "ConfigCommands",
     "ToolCommands",
     "AgentsCommands",
+    "SkillsCommands",
+    "PluginsCommands",
 ]

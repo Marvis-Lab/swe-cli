@@ -6,6 +6,8 @@ from typing import TYPE_CHECKING, Optional
 
 from textual.widgets import Static
 
+from swecli.ui_textual.style_tokens import SUCCESS, WARNING
+
 if TYPE_CHECKING:
     from swecli.ui_textual.managers.spinner_service import SpinnerService, SpinnerFrame
 
@@ -61,16 +63,29 @@ class TodoPanel(Static):
 
         todos = list(self.todo_handler._todos.values())
 
-        # Hide when no todos OR all todos are completed
-        if not todos or all(t.status == "done" for t in todos):
+        # Hide when no todos at all
+        if not todos:
+            self._stop_spinner()
             self.update("")
             self.border_title = ""
-            # Hide completely
             if self.has_class("collapsed"):
                 self.remove_class("collapsed")
             if self.has_class("expanded"):
                 self.remove_class("expanded")
+            return
+
+        # Show completion summary when all done (instead of hiding)
+        if all(t.status == "done" for t in todos):
             self._stop_spinner()
+            total = len(todos)
+            self.update(
+                f"[{SUCCESS}]✓ {total}/{total} completed[/{SUCCESS}] "
+                f"[dim](Press Ctrl+T to expand/hide)[/dim]"
+            )
+            self.border_title = ""
+            # Keep collapsed class for styling consistency
+            if not self.has_class("collapsed") and not self.has_class("expanded"):
+                self.add_class("collapsed")
             return
 
         # Auto-show in collapsed state when todos are created
@@ -95,19 +110,17 @@ class TodoPanel(Static):
             else:
                 # Update the active text in case it changed
                 if self._spinner_service:
-                    self._spinner_service.update_metadata(
-                        self._spinner_id, active_text=active_text
-                    )
+                    self._spinner_service.update_metadata(self._spinner_id, active_text=active_text)
             # Initial render will happen via callback
         else:
-            # No active task - show completion progress
+            # No active task - STOP SPINNER FIRST to prevent race condition
+            self._stop_spinner()
+
+            # Now safe to show completion progress
             completed = len([t for t in todos if t.status == "done"])
             total = len(todos)
             summary = f"{completed}/{total} completed [dim](Press Ctrl+T to expand/hide)[/dim]"
             self.update(summary)
-
-            # Stop spinner
-            self._stop_spinner()
 
         self.border_title = ""  # No border title in collapsed mode
 
@@ -118,10 +131,7 @@ class TodoPanel(Static):
 
         # Sort todos by status: doing -> todo -> done
         status_order = {"doing": 0, "todo": 1, "done": 2}
-        sorted_todos = sorted(
-            todos,
-            key=lambda t: (status_order.get(t.status, 3), t.id)
-        )
+        sorted_todos = sorted(todos, key=lambda t: (status_order.get(t.status, 3), t.id))
 
         # Build display content
         lines = []
@@ -132,7 +142,7 @@ class TodoPanel(Static):
                 lines.append(f"[dim]✓ [strike]{todo.title}[/strike][/dim]")
             elif todo.status == "doing":
                 # In-progress: yellow
-                lines.append(f"[yellow]▶ {todo.title}[/yellow]")
+                lines.append(f"[{WARNING}]▶ {todo.title}[/{WARNING}]")
             else:
                 # Pending: gray
                 lines.append(f"[dim]○ {todo.title}[/dim]")
@@ -190,12 +200,22 @@ class TodoPanel(Static):
         Args:
             frame: SpinnerFrame containing animation data
         """
-        # Only render if still in collapsed mode
+        # Guard 1: Don't render if expanded mode
         if self.is_expanded:
             return
 
+        # Guard 2: Don't render if spinner was stopped (ID cleared)
+        if not self._spinner_id:
+            return
+
+        # Guard 3: Don't render if no active todo exists
+        if self.todo_handler:
+            todos = list(self.todo_handler._todos.values())
+            if not any(t.status == "doing" for t in todos):
+                return
+
         active_text = frame.metadata.get("active_text", "")
-        summary = f"[yellow]{frame.char} {active_text}[/yellow] [dim](Press Ctrl+T to expand/hide)[/dim]"
+        summary = f"[{WARNING}]{frame.char} {active_text}[/{WARNING}] [dim](Press Ctrl+T to expand/hide)[/dim]"
         self.update(summary)
 
     def toggle_expansion(self) -> None:

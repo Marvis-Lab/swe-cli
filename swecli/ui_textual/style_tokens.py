@@ -42,6 +42,29 @@ GOLD = "#FFD700"            # Thinking model indicator
 THINKING = "#5a5e66"        # Darker gray for thinking content
 THINKING_ICON = "⟡"         # Concave diamond - thinking prefix icon
 
+# Prompt toolkit / toolbar colors
+PT_ORANGE = "#ff9f43"       # Normal mode toolbar
+PT_GREEN = "#2ecc71"        # Plan mode toolbar
+PT_GREY = "#aaaaaa"         # Toolbar text
+PT_PURPLE = "#6c5ce7"       # Model name
+PT_BG_BLACK = "#000000"     # Menu background
+PT_BG_SELECTED = "#2A2A2A"  # Selected completion
+PT_META_GREY = "#808080"    # Meta text, keyboard shortcuts
+
+# Menu/UI colors
+MENU_HINT = "#7a8691"       # Menu hints/instructions
+
+# Progress bar / animation
+DIM_GREY = "#6b7280"        # Resting pearl color
+
+# Animation gradient (green pulse for tool spinner)
+GREEN_GRADIENT = [
+    "#00ff00", "#00f500", "#00eb00", "#00e100", "#00d700", "#00cd00",
+    "#00c300", "#00b900", "#00af00", "#00a500", "#009b00", "#009100",
+    "#009b00", "#00a500", "#00af00", "#00b900", "#00c300", "#00cd00",
+    "#00d700", "#00e100", "#00eb00", "#00f500", "#00ff00",
+]
+
 # Icons/prefixes
 ERROR_ICON = "✖"
 WARNING_ICON = "⚠"

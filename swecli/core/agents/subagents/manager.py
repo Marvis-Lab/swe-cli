@@ -1172,6 +1172,11 @@ Use ONLY the filename or relative path for all file operations.
         Returns:
             Result dict with content, success, and messages
         """
+        # SPECIAL CASE: ask-user subagent
+        # This is a built-in that shows UI panel instead of running LLM
+        if name == "ask-user":
+            return self._execute_ask_user(task, ui_callback)
+
         # Auto-detect Docker execution for subagents with docker_config
         # Only trigger if docker_handler is not already provided (to avoid recursion)
         if docker_handler is None:
@@ -1315,6 +1320,182 @@ ALWAYS use relative paths (just the filename or relative path like src/file.py).
         # TextualUICallback.on_tool_result() for spawn_subagent
 
         return result
+
+    def _execute_ask_user(
+        self,
+        task: str,
+        ui_callback: Any,
+    ) -> dict[str, Any]:
+        """Execute the ask-user built-in subagent.
+
+        This is a special subagent that shows a UI panel for user input
+        instead of running an LLM. It parses questions from the task JSON
+        and displays them in an interactive panel.
+
+        Args:
+            task: JSON string containing questions (from spawn_subagent prompt)
+            ui_callback: UI callback with access to app
+
+        Returns:
+            Result dict with user's answers
+        """
+        import json
+
+        # Parse questions from task (JSON string)
+        try:
+            questions_data = json.loads(task)
+            questions = self._parse_ask_user_questions(questions_data.get("questions", []))
+        except json.JSONDecodeError:
+            return {
+                "success": False,
+                "error": "Invalid questions format - expected JSON",
+                "content": "",
+            }
+
+        if not questions:
+            return {
+                "success": False,
+                "error": "No questions provided",
+                "content": "",
+            }
+
+        # Get app reference from ui_callback
+        app = getattr(ui_callback, "chat_app", None) or getattr(ui_callback, "_app", None)
+        if app is None:
+            # Try to get app from nested callback parent
+            parent = getattr(ui_callback, "_parent_callback", None)
+            if parent:
+                app = getattr(parent, "chat_app", None) or getattr(parent, "_app", None)
+
+        if app is None:
+            return {
+                "success": False,
+                "error": "UI app not available for ask-user",
+                "content": "",
+            }
+
+        # Show panel and wait for user response using call_from_thread pattern
+        # (similar to approval_manager.py)
+        import threading
+
+        if not hasattr(app, "call_from_thread") or not getattr(app, "is_running", False):
+            return {
+                "success": False,
+                "error": "UI app not available or not running for ask-user",
+                "content": "",
+            }
+
+        done_event = threading.Event()
+        result_holder: dict[str, Any] = {"answers": None, "error": None}
+
+        def invoke_panel() -> None:
+            async def run_panel() -> None:
+                try:
+                    result_holder["answers"] = await app._ask_user_controller.start(
+                        questions
+                    )
+                except Exception as exc:
+                    result_holder["error"] = exc
+                finally:
+                    done_event.set()
+
+            app.run_worker(
+                run_panel(),
+                name="ask-user-panel",
+                exclusive=True,
+                exit_on_error=False,
+            )
+
+        try:
+            app.call_from_thread(invoke_panel)
+
+            # Wait for user response with timeout
+            if not done_event.wait(timeout=600):  # 10 min timeout
+                return {
+                    "success": False,
+                    "error": "Ask user timed out",
+                    "content": "",
+                }
+
+            if result_holder["error"]:
+                raise result_holder["error"]
+
+            answers = result_holder["answers"]
+        except Exception as e:
+            logger.exception("Ask user failed")
+            return {
+                "success": False,
+                "error": f"Ask user failed: {e}",
+                "content": "",
+            }
+
+        if answers is None:
+            return {
+                "success": True,
+                "content": "User cancelled/skipped the question(s).",
+                "answers": {},
+                "cancelled": True,
+            }
+
+        # Format answers for agent consumption
+        answer_lines = []
+        for idx, ans in answers.items():
+            if isinstance(ans, list):
+                ans_text = ", ".join(str(a) for a in ans)
+            else:
+                ans_text = str(ans)
+            answer_lines.append(f"Question {idx}: {ans_text}")
+
+        answer_text = "\n".join(answer_lines) if answer_lines else "No answers provided"
+
+        return {
+            "success": True,
+            "content": f"User answered:\n{answer_text}",
+            "answers": answers,
+            "cancelled": False,
+        }
+
+    def _parse_ask_user_questions(self, questions_data: list) -> list:
+        """Parse question dicts into Question objects.
+
+        Args:
+            questions_data: List of question dictionaries from JSON
+
+        Returns:
+            List of Question objects
+        """
+        from swecli.core.context_engineering.tools.implementations.ask_user_tool import (
+            Question,
+            QuestionOption,
+        )
+
+        questions = []
+        for q in questions_data:
+            if not isinstance(q, dict):
+                continue
+
+            options = []
+            for opt in q.get("options", []):
+                if isinstance(opt, dict):
+                    options.append(
+                        QuestionOption(
+                            label=opt.get("label", ""),
+                            description=opt.get("description", ""),
+                        )
+                    )
+                else:
+                    options.append(QuestionOption(label=str(opt)))
+
+            if options:
+                questions.append(
+                    Question(
+                        question=q.get("question", ""),
+                        header=q.get("header", "")[:12],
+                        options=options,
+                        multi_select=q.get("multiSelect", False),
+                    )
+                )
+        return questions
 
     async def execute_subagent_async(
         self,
