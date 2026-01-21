@@ -55,9 +55,9 @@ python -m swecli
 ```
 
 Use the exact system prompts from (do not create custom prompts):
-- `swecli/core/agents/prompts/main_system_prompt.txt`
-- `swecli/core/agents/prompts/planner_system_prompt.txt`
-- `swecli/core/agents/prompts/thinking_system_prompt.txt`
+- `swecli/core/agents/prompts/templates/main_system_prompt.txt`
+- `swecli/core/agents/prompts/templates/planner_system_prompt.txt`
+- `swecli/core/agents/prompts/templates/thinking_system_prompt.txt`
 
 ## Architecture Overview
 
