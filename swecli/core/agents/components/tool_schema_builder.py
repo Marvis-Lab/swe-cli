@@ -67,9 +67,7 @@ class ToolSchemaBuilder:
         # Filter to allowed tools if specified
         if self._allowed_tools is not None:
             schemas = [
-                schema
-                for schema in schemas
-                if schema["function"]["name"] in self._allowed_tools
+                schema for schema in schemas if schema["function"]["name"] in self._allowed_tools
             ]
 
         # Add task tool schema if subagent manager is configured
@@ -86,8 +84,7 @@ class ToolSchemaBuilder:
                 # Filter MCP schemas to only allowed tools
                 allowed_set = set(self._allowed_tools)
                 mcp_schemas = [
-                    schema for schema in mcp_schemas
-                    if schema["function"]["name"] in allowed_set
+                    schema for schema in mcp_schemas if schema["function"]["name"] in allowed_set
                 ]
             schemas.extend(mcp_schemas)
         return schemas
@@ -102,6 +99,7 @@ class ToolSchemaBuilder:
             return None
 
         from swecli.core.agents.subagents.task_tool import create_task_tool_schema
+
         return create_task_tool_schema(subagent_manager)
 
     def _build_mcp_schemas(self) -> Sequence[dict[str, Any]]:
@@ -1067,13 +1065,17 @@ _BUILTIN_TOOL_SCHEMAS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "get_subagent_output",
-            "description": "Retrieve output from a running or completed background subagent task. Use this to check on the status and results of subagents launched with run_in_background=true.",
+            "description": "ONLY use this for subagents launched with run_in_background=true. "
+            "Synchronous subagents (the default) return results immediately in the tool response with "
+            "[completion_status=success] - do NOT call this tool for them. "
+            "The tool_call_id from spawn_subagent is NOT a task_id - only background subagents return task_ids.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "task_id": {
                         "type": "string",
-                        "description": "The task ID returned when the background subagent was spawned",
+                        "description": "The task_id returned when a background subagent was spawned (NOT the tool_call_id). "
+                        "Only subagents with run_in_background=true return a task_id.",
                     },
                     "block": {
                         "type": "boolean",

@@ -26,7 +26,9 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 from swecli.core.context_engineering.tools.implementations.pdf_tool import PDFTool
-from swecli.core.context_engineering.tools.implementations.task_complete_tool import TaskCompleteTool
+from swecli.core.context_engineering.tools.implementations.task_complete_tool import (
+    TaskCompleteTool,
+)
 from swecli.core.context_engineering.tools.symbol_tools import (
     handle_find_symbol,
     handle_find_referencing_symbols,
@@ -76,7 +78,7 @@ class ToolRegistry:
         open_browser_tool: Union[Any, None] = None,
         vlm_tool: Union[Any, None] = None,
         web_screenshot_tool: Union[Any, None] = None,
-        mcp_manager: Union[Any, None] = None
+        mcp_manager: Union[Any, None] = None,
     ) -> None:
         self.file_ops = file_ops
         self.write_tool = write_tool
@@ -295,15 +297,16 @@ class ToolRegistry:
         # Format output for consistency
         if result.get("success"):
             content = result.get("content", "")
+            # Always set completion_status for sync subagents (they complete immediately)
+            # This helps the LLM understand that results are already included
+            completion_status = result.get("completion_status", "success")
             response = {
                 "success": True,
-                "output": None,  # Don't show in tool result line
+                "output": "[SYNC COMPLETE] Subagent finished. Results included below.",
                 "separate_response": content,  # Show as separate assistant message
                 "subagent_type": subagent_type,
+                "completion_status": completion_status,  # Always include for sync completions
             }
-            # Propagate completion_status if subagent called task_complete
-            if result.get("completion_status"):
-                response["completion_status"] = result["completion_status"]
             return response
         else:
             # Check both "error" and "content" fields for error message
@@ -316,7 +319,9 @@ class ToolRegistry:
                 "interrupted": result.get("interrupted", False),  # Propagate interrupt flag
             }
 
-    def _get_subagent_output(self, arguments: dict[str, Any], context: Any = None) -> dict[str, Any]:
+    def _get_subagent_output(
+        self, arguments: dict[str, Any], context: Any = None
+    ) -> dict[str, Any]:
         """Get output from a background subagent task.
 
         Args:
@@ -346,14 +351,16 @@ class ToolRegistry:
 
         # Check if manager has background task support
         if hasattr(self._subagent_manager, "get_background_task_output"):
-            return self._subagent_manager.get_background_task_output(task_id, block=block, timeout=timeout)
+            return self._subagent_manager.get_background_task_output(
+                task_id, block=block, timeout=timeout
+            )
 
         # Fallback for managers without background support
         return {
             "success": False,
             "error": f"Background task support not available. Task ID '{task_id}' not found.",
             "output": "Background subagent execution is not yet fully implemented. "
-                     "Subagents currently run synchronously.",
+            "Subagents currently run synchronously.",
         }
 
     def get_schemas(self) -> list[dict[str, Any]]:
@@ -425,9 +432,7 @@ class ToolRegistry:
 
     @staticmethod
     def _plan_blocked_result(tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
-        summary_text = (
-            f"Plan-only mode blocks '{tool_name}'. Switch to normal mode to execute."
-        )
+        summary_text = f"Plan-only mode blocks '{tool_name}'. Switch to normal mode to execute."
         return {
             "success": False,
             "error": summary_text,
@@ -577,7 +582,7 @@ class ToolRegistry:
             output_parts.append(f"Pages: {page_count}")
             if sections:
                 output_parts.append(f"Detected sections: {len(sections)}")
-                section_titles = [s.get('title', '') for s in sections[:10]]
+                section_titles = [s.get("title", "") for s in sections[:10]]
                 output_parts.append(f"  {', '.join(section_titles)}")
 
             output_parts.append("\n--- Content ---\n")
@@ -597,7 +602,9 @@ class ToolRegistry:
                 "output": None,
             }
 
-    def _execute_task_complete(self, arguments: dict[str, Any], context: Any = None) -> dict[str, Any]:
+    def _execute_task_complete(
+        self, arguments: dict[str, Any], context: Any = None
+    ) -> dict[str, Any]:
         """Execute the task_complete tool to signal explicit task completion.
 
         Args:
@@ -612,7 +619,9 @@ class ToolRegistry:
 
         return self._task_complete_tool.execute(summary=summary, status=status)
 
-    def _handle_invoke_skill(self, arguments: dict[str, Any], context: Any = None) -> dict[str, Any]:
+    def _handle_invoke_skill(
+        self, arguments: dict[str, Any], context: Any = None
+    ) -> dict[str, Any]:
         """Execute the invoke_skill tool to load skill content into context.
 
         Args:

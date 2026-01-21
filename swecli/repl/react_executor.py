@@ -180,21 +180,26 @@ class ReactExecutor:
 
         return None
 
-    def _should_skip_thinking_after_subagent(self, messages: list) -> bool:
-        """Check if we should skip thinking phase after subagent completion.
+    def _check_subagent_completion(self, messages: list) -> bool:
+        """Check if the last tool result was from a completed subagent.
 
-        After spawn_subagent completes successfully, the results are already
-        visible. Skip thinking phase to let main agent directly decide.
+        Returns True if the last tool result indicates subagent completion.
+        Used to skip thinking phase AND inject stop signal.
         """
-        # Find the last tool result in messages
+        import logging
+
+        _logger = logging.getLogger(__name__)
+
         for msg in reversed(messages):
             if msg.get("role") == "tool":
                 content = msg.get("content", "")
-                # Check for spawn_subagent completion marker
-                if "[completion_status=success]" in content or "[SYNC COMPLETE]" in content:
-                    return True
-                # If we find a tool result that's not a subagent completion, don't skip
-                return False
+                is_subagent_complete = (
+                    "[completion_status=success]" in content or "[SYNC COMPLETE]" in content
+                )
+                _logger.debug(
+                    f"[SUBAGENT_CHECK] Last tool result: is_subagent={is_subagent_complete}"
+                )
+                return is_subagent_complete
             # Stop searching if we hit a user message (new turn)
             if msg.get("role") == "user" and "<thinking_trace>" not in msg.get("content", ""):
                 return False
@@ -212,9 +217,22 @@ class ReactExecutor:
         if ctx.tool_registry and hasattr(ctx.tool_registry, "thinking_handler"):
             thinking_visible = ctx.tool_registry.thinking_handler.is_visible
 
+        # Check if last tool was subagent completion
+        subagent_just_completed = self._check_subagent_completion(ctx.messages)
+
+        # Log decision point
+        import logging
+
+        _logger = logging.getLogger(__name__)
+        _logger.debug(
+            f"[ITERATION] thinking_visible={thinking_visible}, "
+            f"subagent_completed={subagent_just_completed}, "
+            f"msg_count={len(ctx.messages)}"
+        )
+
         # THINKING PHASE: Get thinking trace BEFORE action (when thinking mode is ON)
         # Skip thinking phase after subagent completion - main agent decides directly
-        if thinking_visible and not self._should_skip_thinking_after_subagent(ctx.messages):
+        if thinking_visible and not subagent_just_completed:
             thinking_trace = self._get_thinking_trace(ctx.messages, ctx.agent, ctx.ui_callback)
             if thinking_trace:
                 # Inject trace as user message for the action phase
@@ -224,6 +242,22 @@ class ReactExecutor:
                         "content": f"<thinking_trace>\n{thinking_trace}\n</thinking_trace>\n\nBased on this analysis, proceed with the appropriate action.",
                     }
                 )
+
+        # STOP SIGNAL: After subagent completion, tell agent to just summarize
+        if subagent_just_completed:
+            _logger.debug("[ITERATION] Injecting stop signal after subagent completion")
+            ctx.messages.append(
+                {
+                    "role": "user",
+                    "content": (
+                        "<subagent_complete>\n"
+                        "The subagent has completed successfully. "
+                        "DO NOT make any additional tool calls. "
+                        "Simply summarize the subagent's findings for the user and complete your response.\n"
+                        "</subagent_complete>"
+                    ),
+                }
+            )
 
         # ACTION PHASE: Call LLM with tools (no force_think)
         task_monitor = TaskMonitor()
@@ -245,6 +279,12 @@ class ReactExecutor:
 
         # Parse response - now includes reasoning_content
         content, tool_calls, reasoning_content = self._parse_llm_response(response)
+
+        # Log what the LLM decided to do
+        _logger.debug(
+            f"[LLM_DECISION] content_len={len(content)}, "
+            f"tool_calls={[tc['function']['name'] for tc in (tool_calls or [])]}"
+        )
 
         # Display reasoning content via UI callback if thinking mode is ON
         # The visibility check is done inside on_thinking() which checks chat_app._thinking_visible

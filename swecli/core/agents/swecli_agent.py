@@ -282,7 +282,7 @@ class SwecliAgent(BaseAgent):
                 }
 
             # Check for interrupt request (for web UI)
-            if hasattr(self, 'web_state') and self.web_state.is_interrupt_requested():
+            if hasattr(self, "web_state") and self.web_state.is_interrupt_requested():
                 self.web_state.clear_interrupt()
                 return {
                     "content": "Task interrupted by user",
@@ -302,7 +302,7 @@ class SwecliAgent(BaseAgent):
 
             # Use provided task_monitor, or create WebInterruptMonitor for web UI
             monitor = task_monitor
-            if monitor is None and hasattr(self, 'web_state'):
+            if monitor is None and hasattr(self, "web_state"):
                 monitor = WebInterruptMonitor(self.web_state)
 
             result = self._http_client.post_json(payload, task_monitor=monitor)
@@ -356,42 +356,24 @@ class SwecliAgent(BaseAgent):
                     if consecutive_no_tool_calls >= MAX_NUDGE_ATTEMPTS:
                         # Exhausted nudge attempts - give up
                         return {
-                            "content": cleaned_content or "Could not complete after multiple attempts",
+                            "content": cleaned_content
+                            or "Could not complete after multiple attempts",
                             "messages": messages,
                             "success": False,
                         }
 
                     # Nudge agent to fix the error and retry
-                    messages.append({
-                        "role": "user",
-                        "content": "The previous operation failed. Please fix the issue and try again, or call task_complete with status='failed' if you cannot proceed.",
-                    })
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": "The previous operation failed. Please fix the issue and try again, or call task_complete with status='failed' if you cannot proceed.",
+                        }
+                    )
                     continue
 
                 # Last tool succeeded (or no previous tool) - accept implicit completion
-                # For subagents: generate a summary before returning to parent
-                is_subagent = hasattr(self, "_subagent_system_prompt") and self._subagent_system_prompt is not None
-
-                if is_subagent:
-                    # Request explicit summary for better parent context
-                    summary_request = {
-                        "role": "user",
-                        "content": "Briefly summarize what you accomplished (2-3 sentences). Focus on key outcomes and results.",
-                    }
-                    messages.append(summary_request)
-
-                    summary_result = self.call_llm(messages, task_monitor)
-                    if summary_result.get("success"):
-                        summary_content = self._response_cleaner.clean(
-                            summary_result.get("content", "")
-                        )
-                        return {
-                            "content": summary_content or cleaned_content or "",
-                            "messages": messages,
-                            "success": True,
-                        }
-
-                # Main agent or summary generation failed: return as-is
+                # Return the natural completion content directly without extra LLM calls
+                # This prevents subagents from making unnecessary tool calls (like get_subagent_output)
                 return {
                     "content": cleaned_content or "",
                     "messages": messages,
@@ -421,10 +403,14 @@ class SwecliAgent(BaseAgent):
                     ui_callback.on_tool_call(tool_name, tool_args)
 
                 # Check if this is a subagent (has overridden system prompt)
-                is_subagent = hasattr(self, "_subagent_system_prompt") and self._subagent_system_prompt is not None
+                is_subagent = (
+                    hasattr(self, "_subagent_system_prompt")
+                    and self._subagent_system_prompt is not None
+                )
 
                 # Log tool registry type for debugging Docker execution
                 import logging
+
                 _logger = logging.getLogger(__name__)
                 _logger.info(f"SwecliAgent executing tool: {tool_name}")
                 _logger.info(f"  tool_registry type: {type(self.tool_registry).__name__}")
