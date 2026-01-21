@@ -7,6 +7,9 @@ from rich.text import Text
 
 from swecli.ui_textual.style_tokens import BLUE_BG_ACTIVE, BLUE_LIGHT, GREY
 
+# Maximum number of tools to show at once
+_MAX_VISIBLE_TOOLS = 10
+
 
 def create_location_panel(selected_index: int, working_dir: str = "") -> RenderableType:
     """Create location selection panel using Rich components.
@@ -353,5 +356,125 @@ def create_success_panel(agent_name: str, agent_path: str) -> RenderableType:
         title="[bold]Agent Created[/bold]",
         title_align="left",
         border_style="bright_green",
+        padding=(1, 2),
+    )
+
+
+def create_tool_selection_panel(
+    tools: list,
+    selected_indices: set[int],
+    focused_index: int,
+    scroll_offset: int = 0,
+    warning: str = "",
+) -> RenderableType:
+    """Create tool selection panel with checkboxes.
+
+    Args:
+        tools: List of ToolInfo objects with name, display_name, description
+        selected_indices: Set of currently selected tool indices
+        focused_index: Index of currently focused tool
+        scroll_offset: Scroll position for long lists
+        warning: Optional warning message to display
+
+    Returns:
+        Rich Panel renderable with scrollable checkbox list
+    """
+    elements = []
+
+    header = Text("Select tools for this agent:", style=BLUE_LIGHT)
+    elements.append(header)
+
+    if warning:
+        elements.append(Text(f"⚠ {warning}", style="bold yellow"))
+
+    elements.append(Text(""))  # Spacing
+
+    # Calculate visible range
+    total_tools = len(tools)
+    visible_count = min(_MAX_VISIBLE_TOOLS, total_tools)
+
+    # Ensure focused index is visible
+    if focused_index < scroll_offset:
+        scroll_offset = focused_index
+    elif focused_index >= scroll_offset + visible_count:
+        scroll_offset = focused_index - visible_count + 1
+
+    # Clamp scroll offset
+    scroll_offset = max(0, min(scroll_offset, total_tools - visible_count))
+
+    # Create table for tools
+    table = Table.grid(expand=False, padding=(0, 1))
+    table.add_column(width=2, justify="center")  # Pointer
+    table.add_column(width=4, justify="center")  # Checkbox
+    table.add_column(width=20)  # Tool name
+    table.add_column(ratio=1)  # Description
+
+    # Add visible rows
+    end_index = min(scroll_offset + visible_count, total_tools)
+    for i in range(scroll_offset, end_index):
+        tool = tools[i]
+        is_selected = i in selected_indices
+        is_focused = i == focused_index
+
+        # Pointer
+        pointer = "❯" if is_focused else " "
+
+        # Checkbox with appropriate style
+        if is_selected:
+            checkbox = "[×]"
+            checkbox_style = "bold bright_green" if is_focused else "bright_green"
+        else:
+            checkbox = "[ ]"
+            checkbox_style = "white" if is_focused else "dim"
+
+        # Tool name and description
+        name_style = "bold white" if is_focused else "white"
+        desc_style = "dim white" if is_focused else "dim"
+
+        row_style = f"on {BLUE_BG_ACTIVE}" if is_focused else ""
+
+        table.add_row(
+            Text(pointer, style="bold bright_cyan" if is_focused else "dim"),
+            Text(checkbox, style=checkbox_style),
+            Text(tool.display_name, style=name_style),
+            Text(tool.description, style=desc_style),
+            style=row_style,
+        )
+
+    elements.append(table)
+
+    # Scroll indicators
+    scroll_text = Text()
+    if scroll_offset > 0:
+        scroll_text.append("▲ ", style="dim cyan")
+    if end_index < total_tools:
+        scroll_text.append("▼ ", style="dim cyan")
+    if scroll_text.plain:
+        elements.append(Text())  # Spacing
+        elements.append(scroll_text)
+
+    elements.append(Text())  # Spacing
+
+    # Selection hints
+    hints = Text()
+    hints.append("[a] All ", style="bright_cyan")
+    hints.append("  ", style="")
+    hints.append("[n] None ", style="bright_cyan")
+    hints.append("  ", style="")
+    hints.append("[i] Invert", style="bright_cyan")
+    elements.append(hints)
+
+    # Instructions
+    instructions = Text(
+        "Use ↑/↓ to navigate, Space to toggle, Enter to confirm, Esc to cancel.",
+        style=f"italic {GREY}",
+    )
+    elements.append(instructions)
+
+    return Panel(
+        Group(*elements),
+        title="[bold]Select Tools[/bold]",
+        title_align="left",
+        border_style="bright_cyan",
         padding=(1, 2),
     )

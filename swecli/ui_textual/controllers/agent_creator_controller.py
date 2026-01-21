@@ -16,6 +16,7 @@ from swecli.ui_textual.components.agent_creator_panels import (
     create_description_input_panel,
     create_generating_panel,
     create_success_panel,
+    create_tool_selection_panel,
 )
 from swecli.ui_textual.managers.spinner_service import SpinnerType
 
@@ -28,11 +29,39 @@ AGENT_TEMPLATE = """---
 name: {name}
 description: "{description}"
 model: sonnet
-tools: "*"
+{tools}
 ---
 
 {system_prompt}
 """
+
+
+def _format_tools_list(selected_tools: list[str]) -> str:
+    """Format selected tools for YAML frontmatter.
+
+    Args:
+        selected_tools: List of selected tool names.
+
+    Returns:
+        YAML-formatted tools string (either 'tools: "*"' or a list).
+    """
+    if not selected_tools:
+        return 'tools: []'  # No tools
+
+    # If all built-in tools are selected, use wildcard
+    from swecli.core.agents.subagents.tool_metadata import get_available_tools
+
+    all_tools = get_available_tools()
+    all_tool_names = {t.name for t in all_tools}
+
+    if set(selected_tools) >= all_tool_names:
+        return 'tools: "*"'
+
+    # Format as YAML list
+    lines = ["tools:"]
+    for tool in sorted(selected_tools):
+        lines.append(f"  - {tool}")
+    return "\n".join(lines)
 
 
 class AgentCreatorController:
@@ -44,6 +73,7 @@ class AgentCreatorController:
     STAGE_IDENTIFIER = "identifier"
     STAGE_PROMPT = "prompt"
     STAGE_DESCRIPTION = "description"
+    STAGE_TOOLS = "tools"
     STAGE_GENERATING = "generating"
 
     def __init__(self, app: "SWECLIChatApp") -> None:
@@ -73,6 +103,11 @@ class AgentCreatorController:
             self.app.refresh()
             return
 
+        # Load available tools for selection
+        from swecli.core.agents.subagents.tool_metadata import get_available_tools
+
+        available_tools = get_available_tools()
+
         self.state = {
             "stage": self.STAGE_LOCATION,
             "selected_index": 0,
@@ -84,6 +119,12 @@ class AgentCreatorController:
             "input_value": "",
             "input_error": "",
             "panel_start": None,
+            # Tool selection state (all selected by default)
+            "available_tools": available_tools,
+            "selected_tools": set(range(len(available_tools))),  # All selected
+            "focused_tool": 0,
+            "scroll_offset": 0,
+            "tools_warning": "",
         }
 
         # Clear input field and focus
@@ -125,6 +166,15 @@ class AgentCreatorController:
             new_index = (current + delta) % 3
             state["selected_index"] = new_index
             self._render_current_panel()
+        elif stage == self.STAGE_TOOLS:
+            # Tool selection navigation
+            tools = state.get("available_tools", [])
+            if not tools:
+                return
+            current = state.get("focused_tool", 0)
+            new_index = (current + delta) % len(tools)
+            state["focused_tool"] = new_index
+            self._render_current_panel()
 
     def cancel(self) -> None:
         """Cancel the wizard."""
@@ -153,6 +203,18 @@ class AgentCreatorController:
             state["selected_index"] = 1  # Manual was selected
             state["input_value"] = ""
             state["input_error"] = ""
+            self._render_current_panel()
+            return
+
+        if stage == self.STAGE_TOOLS:
+            # Go back based on method
+            method = state.get("method")
+            if method == "generate":
+                # For AI generation, go back to description
+                state["stage"] = self.STAGE_DESCRIPTION
+            else:
+                # For manual, go back to prompt
+                state["stage"] = self.STAGE_PROMPT
             self._render_current_panel()
             return
 
@@ -231,7 +293,7 @@ class AgentCreatorController:
             return
 
         if stage == self.STAGE_PROMPT:
-            # Save system prompt and create the agent
+            # Save system prompt and move to tool selection
             prompt = state.get("input_value", "").strip()
             if not prompt:
                 state["input_error"] = "System prompt is required"
@@ -239,6 +301,15 @@ class AgentCreatorController:
                 return
 
             state["system_prompt"] = prompt
+            state["stage"] = self.STAGE_TOOLS
+            state["input_value"] = ""
+            state["tools_warning"] = ""
+            self._render_current_panel()
+            return
+
+        if stage == self.STAGE_TOOLS:
+            # Proceed to agent creation - both paths use _create_agent_manual
+            # which saves with the selected tools
             await self._create_agent_manual()
             return
 
@@ -294,6 +365,20 @@ class AgentCreatorController:
                 return True
             return True
 
+        # Tool selection stage - handle shortcuts
+        if stage == self.STAGE_TOOLS:
+            normalized = raw_value.strip().lower()
+            if normalized == "a":
+                self._select_all_tools()
+                return True
+            elif normalized == "n":
+                self._deselect_all_tools()
+                return True
+            elif normalized == "i":
+                self._invert_tool_selection()
+                return True
+            return True  # Consume all input in tool selection
+
         # Text input stages
         if stage in (self.STAGE_IDENTIFIER, self.STAGE_PROMPT, self.STAGE_DESCRIPTION):
             state["input_value"] = raw_value.strip()
@@ -336,11 +421,89 @@ class AgentCreatorController:
             panel = create_prompt_input_panel(state.get("input_value", ""))
         elif stage == self.STAGE_DESCRIPTION:
             panel = create_description_input_panel(state.get("input_value", ""))
+        elif stage == self.STAGE_TOOLS:
+            panel = create_tool_selection_panel(
+                tools=state.get("available_tools", []),
+                selected_indices=state.get("selected_tools", set()),
+                focused_index=state.get("focused_tool", 0),
+                scroll_offset=state.get("scroll_offset", 0),
+                warning=state.get("tools_warning", ""),
+            )
         else:
             # STAGE_GENERATING is handled by spinner in _create_agent_generate()
             return
 
         self._post_panel(panel)
+
+    def toggle_tool_selection(self) -> None:
+        """Toggle selection of focused tool."""
+        state = self.state
+        if not state or state.get("stage") != self.STAGE_TOOLS:
+            return
+
+        focused = state.get("focused_tool", 0)
+        selected = state.get("selected_tools", set())
+
+        if focused in selected:
+            selected.discard(focused)
+        else:
+            selected.add(focused)
+
+        state["selected_tools"] = selected
+        self._render_current_panel()
+
+    def _select_all_tools(self) -> None:
+        """Select all tools."""
+        state = self.state
+        if not state:
+            return
+
+        tools = state.get("available_tools", [])
+        state["selected_tools"] = set(range(len(tools)))
+        state["tools_warning"] = ""
+        self._render_current_panel()
+
+    def _deselect_all_tools(self) -> None:
+        """Deselect all tools."""
+        state = self.state
+        if not state:
+            return
+
+        state["selected_tools"] = set()
+        state["tools_warning"] = "Warning: Agent with no tools"
+        self._render_current_panel()
+
+    def _invert_tool_selection(self) -> None:
+        """Invert current selection."""
+        state = self.state
+        if not state:
+            return
+
+        tools = state.get("available_tools", [])
+        all_indices = set(range(len(tools)))
+        current = state.get("selected_tools", set())
+
+        # Invert selection
+        state["selected_tools"] = all_indices - current
+
+        # Set warning if none selected
+        if not state["selected_tools"]:
+            state["tools_warning"] = "Warning: Agent with no tools"
+        else:
+            state["tools_warning"] = ""
+
+        self._render_current_panel()
+
+    def _get_selected_tool_names(self) -> list[str]:
+        """Get list of selected tool names."""
+        state = self.state
+        if not state:
+            return []
+
+        selected_indices = state.get("selected_tools", set())
+        tools = state.get("available_tools", [])
+
+        return [tools[i].name for i in selected_indices if i < len(tools)]
 
     def _post_panel(self, panel: RenderableType) -> None:
         """Post Rich panel to conversation, replacing previous panel if exists."""
@@ -385,6 +548,7 @@ class AgentCreatorController:
 
         name = state.get("agent_name", "")
         system_prompt = state.get("system_prompt", "")
+        selected_tools = self._get_selected_tool_names()
 
         try:
             agents_dir = self._get_agents_dir()
@@ -395,9 +559,13 @@ class AgentCreatorController:
             # Generate description from name
             description = f"A specialized agent for {name.replace('-', ' ')}"
 
+            # Format tools for frontmatter
+            tools_yaml = _format_tools_list(selected_tools)
+
             content = AGENT_TEMPLATE.format(
                 name=name,
                 description=description,
+                tools=tools_yaml,
                 system_prompt=system_prompt,
             )
 
@@ -512,59 +680,112 @@ class AgentCreatorController:
                 response_data = result.response.json()
                 content = response_data["choices"][0]["message"]["content"]
 
-                # Parse the response to extract name and write the file
-                name, agent_content = self._parse_generated_agent(content, description)
-
-                agents_dir = self._get_agents_dir()
-                agents_dir.mkdir(parents=True, exist_ok=True)
-
-                agent_file = agents_dir / f"{name}.md"
-                agent_file.write_text(agent_content, encoding="utf-8")
-
                 # Stop spinner
                 if spinner_service and spinner_id:
                     spinner_service.stop(spinner_id)
 
-                # Clear the panel
-                start = state.get("panel_start")
-                if start is not None:
-                    self.app.conversation._truncate_from(start)
+                # Parse the response to extract name and system prompt
+                name, system_prompt = self._parse_generated_agent_for_tools(content, description)
 
-                # Show inline result with ⎿ format
-                result_text = Text()
-                result_text.append("  ⎿  ", style="dim")
-                result_text.append(f"Created agent: {name} at {agent_file}", style="dim")
-                self.app.conversation.write(result_text)
-                self.app.refresh()
+                # Store generated metadata for tool selection
+                state["agent_name"] = name
+                state["system_prompt"] = system_prompt
 
-                # Clear state
-                self.state = None
+                # Resume processing before moving to next panel
+                if runner:
+                    runner.resume_processing()
 
-                if self._on_complete:
-                    self._on_complete(name, str(agent_file))
+                # Reset processing state if queue is empty
+                queue_size = runner.get_queue_size() if runner else 0
+                if queue_size == 0:
+                    self.app.notify_processing_complete()
+
+                # Move to tool selection
+                state["stage"] = self.STAGE_TOOLS
+                state["tools_warning"] = ""
+                self._render_current_panel()
+                return
             else:
                 # LLM call failed
                 error_msg = result.error if result.error else "Unknown error"
                 if spinner_service and spinner_id:
                     spinner_service.stop(spinner_id)
+
+                # Resume processing
+                if runner:
+                    runner.resume_processing()
+
+                queue_size = runner.get_queue_size() if runner else 0
+                if queue_size == 0:
+                    self.app.notify_processing_complete()
+
                 await self._create_agent_fallback(description, error_msg)
+                return
 
         except Exception as e:
             if spinner_service and spinner_id:
                 spinner_service.stop(spinner_id)
-            self.end(f"Failed to create agent: {e}", clear_panel=True)
-        finally:
-            # Resume message processor first (will process any queued messages)
+
+            # Resume processing on error
             if runner:
                 runner.resume_processing()
 
-            # Check queue and reset processing state appropriately
             queue_size = runner.get_queue_size() if runner else 0
             if queue_size == 0:
-                # No queued messages, reset processing state
                 self.app.notify_processing_complete()
-            # If queue has messages, the queue processor will call
-            # notify_processing_complete() after processing them all
+
+            self.end(f"Failed to create agent: {e}", clear_panel=True)
+        finally:
+            # Note: Processing is resumed inline on success/error paths above
+            # This finally block is a fallback for unexpected cases
+            pass
+
+    def _parse_generated_agent_for_tools(self, content: str, description: str) -> tuple[str, str]:
+        """Parse LLM-generated agent content and extract name and system prompt.
+
+        Returns:
+            Tuple of (agent_name, system_prompt)
+        """
+        import re
+
+        content = content.strip()
+
+        # Remove markdown code block wrapper if present
+        if content.startswith("```"):
+            # Find first newline after opening backticks
+            first_newline = content.find("\n")
+            if first_newline != -1:
+                content = content[first_newline + 1 :]
+            # Remove closing backticks
+            if content.rstrip().endswith("```"):
+                content = content.rstrip()[:-3].rstrip()
+
+        # Extract name and system prompt from YAML frontmatter
+        name = "custom-agent"
+        system_prompt = f"You are a specialized agent for:\n\n{description}"
+
+        frontmatter_match = re.match(r"^---\s*\n(.*?)\n---", content, re.DOTALL)
+        if frontmatter_match:
+            frontmatter = frontmatter_match.group(1)
+            name_match = re.search(r"^name:\s*(.+)$", frontmatter, re.MULTILINE)
+            if name_match:
+                name = name_match.group(1).strip().strip('"').strip("'")
+
+        # Get the content after frontmatter as the system prompt
+        if frontmatter_match:
+            system_prompt = content[frontmatter_match.end():].strip()
+        else:
+            # No frontmatter, use entire content as system prompt
+            system_prompt = content
+
+        # Clean the name to ensure it's valid
+        name = "".join(c if c.isalnum() or c == "-" else "-" for c in name.lower())
+        name = "-".join(filter(None, name.split("-")))[:30]  # Max 30 chars
+
+        if not name:
+            name = "custom-agent"
+
+        return name, system_prompt
 
     def _parse_generated_agent(self, content: str, description: str) -> tuple[str, str]:
         """Parse LLM-generated agent content and extract name.
@@ -626,8 +847,9 @@ class AgentCreatorController:
         name = "".join(c if c.isalnum() or c == "-" else "-" for c in name)
         name = "-".join(filter(None, name.split("-")))[:30]
 
-        # Generate basic system prompt
-        system_prompt = f"""You are a specialized agent for the following purpose:
+        # Store generated metadata for tool selection
+        state["agent_name"] = name
+        state["system_prompt"] = f"""You are a specialized agent for the following purpose:
 
 {description}
 
@@ -643,36 +865,10 @@ class AgentCreatorController:
 - Focus on delivering high-quality results
 """
 
-        agents_dir = self._get_agents_dir()
-        agents_dir.mkdir(parents=True, exist_ok=True)
-
-        agent_file = agents_dir / f"{name}.md"
-
-        content = AGENT_TEMPLATE.format(
-            name=name,
-            description=description[:100] + "..." if len(description) > 100 else description,
-            system_prompt=system_prompt,
-        )
-
-        agent_file.write_text(content, encoding="utf-8")
-
-        # Clear the panel
-        start = state.get("panel_start")
-        if start is not None:
-            self.app.conversation._truncate_from(start)
-
-        # Show inline result with ⎿ format (note: fallback template)
-        result_text = Text()
-        result_text.append("  ⎿  ", style="dim")
-        result_text.append(f"Created agent (fallback): {name} at {agent_file}", style="dim")
-        self.app.conversation.write(result_text)
-        self.app.refresh()
-
-        # Clear state
-        self.state = None
-
-        if self._on_complete:
-            self._on_complete(name, str(agent_file))
+        # Move to tool selection
+        state["stage"] = self.STAGE_TOOLS
+        state["tools_warning"] = ""
+        self._render_current_panel()
 
 
 __all__ = ["AgentCreatorController"]

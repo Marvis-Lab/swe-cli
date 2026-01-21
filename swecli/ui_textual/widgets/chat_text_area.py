@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import inspect
 from dataclasses import dataclass
 from typing import Any, Optional
@@ -343,7 +344,7 @@ class ChatTextArea(TextArea):
                 if confirm is not None:
                     result = confirm()
                     if inspect.isawaitable(result):
-                        await result
+                        asyncio.create_task(result)
                 return
             if event.key in {"escape", "ctrl+c"}:
                 event.stop()
@@ -397,6 +398,14 @@ class ChatTextArea(TextArea):
                         app._agent_wizard_back()
                     return
 
+                # TOOLS STAGE: Space key toggles selection
+                if wizard_stage == "tools" and event.key == " ":
+                    event.stop()
+                    event.prevent_default()
+                    if hasattr(agent_creator, "toggle_tool_selection"):
+                        agent_creator.toggle_tool_selection()
+                    return
+
             # BOTH STAGES: Enter confirms, Escape cancels
             if event.key in {"enter", "return"} and "+" not in event.key:
                 event.stop()
@@ -408,7 +417,7 @@ class ChatTextArea(TextArea):
                 if confirm is not None:
                     result = confirm()
                     if inspect.isawaitable(result):
-                        await result
+                        asyncio.create_task(result)
                 return
 
             if event.key in {"escape", "ctrl+c"}:
