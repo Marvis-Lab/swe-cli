@@ -108,3 +108,15 @@ def test_leading_bullet_not_on_nested_bullets():
     # Root level bullet should get the leading bullet
     assert plains[1].startswith("⏺")
     assert "Root item" in plains[1]
+
+
+def test_leading_bullet_no_extra_indent():
+    """First bullet with ⏺ should not have extra spacing (hanging indent style)."""
+    plains = _render_plain("- First\n- Second", leading=True)
+    # First bullet should start with "⏺ -" (no extra space between ⏺ and -)
+    assert plains[0].startswith("⏺ -")
+    # Should NOT have double space between ⏺ and dash
+    assert not plains[0].startswith("⏺  -")
+    # Second bullet should be indented to create hanging indent effect
+    assert plains[1].startswith("  ")
+    assert "- Second" in plains[1]

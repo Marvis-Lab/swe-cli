@@ -118,11 +118,15 @@ def render_markdown_text_segment(content: str, *, leading: bool = False) -> Tupl
             rendered = _render_inline_markdown(bullet_text)
             indent_level = max(0, len(indent) // 2)
             bullet_line = Text()
-            symbol = "  - " if indent_level == 0 else "    - "
+            # Check if this bullet will get the leading marker
+            allow_leading_for_bullet = leading and not leading_consumed and indent_level == 0
+            # No leading spaces when getting ⏺, otherwise standard spacing
+            if allow_leading_for_bullet:
+                symbol = "- "
+            else:
+                symbol = "  - " if indent_level == 0 else "    - "
             bullet_line.append("  " * indent_level + symbol)
             bullet_line.append_text(rendered)
-            # Allow leading bullet only for first bullet at root level
-            allow_leading_for_bullet = leading and not leading_consumed and indent_level == 0
             emit(bullet_line, allow_leading=allow_leading_for_bullet)
             index += 1
             continue
@@ -135,13 +139,13 @@ def render_markdown_text_segment(content: str, *, leading: bool = False) -> Tupl
             rendered = _render_inline_markdown(item_text)
             indent_level = max(0, len(indent) // 2)
             ordered_line = Text()
+            # Check if this item will get the leading marker
+            allow_leading_for_ordered = leading and not leading_consumed and indent_level == 0
             if indent_level == 0:
                 ordered_line.append(f"{number}. ")
             else:
                 ordered_line.append("  " * indent_level + "– ")
             ordered_line.append_text(rendered)
-            # Allow leading bullet only for first ordered item at root level
-            allow_leading_for_ordered = leading and not leading_consumed and indent_level == 0
             emit(ordered_line, allow_leading=allow_leading_for_ordered)
             index += 1
             continue
