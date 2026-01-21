@@ -15,7 +15,8 @@ class TestSanitizeLocalPaths:
 
     def _create_registry(self):
         """Create a minimal DockerToolRegistry for testing."""
-        from swecli.core.docker.tool_handler import DockerToolRegistry, DockerToolHandler
+        from swecli.core.docker.tool_handler import DockerToolHandler
+        from swecli.core.docker.tool_registry import DockerToolRegistry
 
         # Create a mock docker handler
         mock_runtime = MagicMock()
