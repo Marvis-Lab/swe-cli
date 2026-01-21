@@ -60,11 +60,10 @@ class AgentInfo:
     tool_call_id: str
     line_number: int = 0  # Line for agent row
     status_line: int = 0  # Line for status/current tool
-    tool_count: int = 0  # Unique tool count
+    tool_count: int = 0  # Total tool call count
     current_tool: str = "Initializing...."
     status: str = "running"  # running, completed, failed
     is_last: bool = False  # For tree connector rendering
-    called_tools: set = field(default_factory=set)  # Track unique tool names
 
 
 @dataclass
@@ -77,10 +76,9 @@ class SingleAgentInfo:
     header_line: int = 0  # Line for header "⠋ Explore(description)"
     status_line: int = 0  # Line for "   ⏺ N tools" or "      ⎿  current_tool"
     tool_line: int = 0  # Line for "      ⎿  current_tool"
-    tool_count: int = 0
+    tool_count: int = 0  # Total tool call count
     current_tool: str = "Initializing..."
     status: str = "running"
-    called_tools: set = field(default_factory=set)
 
 
 @dataclass
@@ -387,9 +385,8 @@ class DefaultToolRenderer:
             else:
                 tool_name = plain_text.split()[0] if plain_text.split() else "unknown"
 
-            # Track unique tools
-            self._single_agent.called_tools.add(tool_name)
-            self._single_agent.tool_count = len(self._single_agent.called_tools)
+            # Count tool calls
+            self._single_agent.tool_count += 1
             self._single_agent.current_tool = plain_text
 
             # Update header with rotating spinner
@@ -419,9 +416,8 @@ class DefaultToolRenderer:
                 else:
                     tool_name = plain_text.split()[0] if plain_text.split() else "unknown"
 
-                # Add to called_tools set (unique tracking)
-                agent.called_tools.add(tool_name)
-                agent.tool_count = len(agent.called_tools)
+                # Count tool calls
+                agent.tool_count += 1
 
                 # Update display text
                 agent.current_tool = plain_text
@@ -803,7 +799,7 @@ class DefaultToolRenderer:
 
         group = self._parallel_group
         total_agents = len(group.agents)
-        total_tools = sum(len(a.called_tools) for a in group.agents.values())
+        total_tools = sum(a.tool_count for a in group.agents.values())
         all_completed = all(a.status in ("completed", "failed") for a in group.agents.values())
         any_failed = any(a.status == "failed" for a in group.agents.values())
 
@@ -870,7 +866,7 @@ class DefaultToolRenderer:
             return
 
         # Build agent row: "   ⏺ Description · N tools" (gradient bullet if running, checkmark if complete)
-        unique_count = len(agent.called_tools)
+        unique_count = agent.tool_count
         use_spinner = agent.status == "running"
 
         if use_spinner:
@@ -924,7 +920,7 @@ class DefaultToolRenderer:
             return
 
         # Build agent row: "   ⏺ Description · N tools" with gradient color
-        unique_count = len(agent.called_tools)
+        unique_count = agent.tool_count
         color = self._nested_color_gradient[color_idx % len(self._nested_color_gradient)]
         row = Text()
         row.append("   ⏺ ", style=color)  # Gradient flashing bullet
@@ -987,7 +983,7 @@ class DefaultToolRenderer:
         # Build completed agent row: "   ✓ Description · N tools" (green checkmark)
         status_char = "✓" if success else "✗"
         status_style = SUCCESS if success else ERROR
-        unique_count = len(agent.called_tools)
+        unique_count = agent.tool_count
 
         row = Text()
         row.append(f"   {status_char} ", style=status_style)
