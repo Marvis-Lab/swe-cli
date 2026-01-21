@@ -742,6 +742,9 @@ class DefaultToolRenderer:
             start_time=time.monotonic(),
         )
 
+        # Start animation timer for spinner and gradient effects
+        self._start_nested_tool_timer()
+
     def _render_parallel_header(self) -> Text:
         """Render the parallel agents header line.
 
