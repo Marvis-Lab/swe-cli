@@ -390,9 +390,7 @@ class DefaultToolRenderer:
             # Track unique tools
             self._single_agent.called_tools.add(tool_name)
             self._single_agent.tool_count = len(self._single_agent.called_tools)
-            self._single_agent.current_tool = (
-                plain_text[:50] if len(plain_text) <= 50 else plain_text[:47] + "..."
-            )
+            self._single_agent.current_tool = plain_text
 
             # Update header with rotating spinner
             self._update_header_spinner()
@@ -426,9 +424,7 @@ class DefaultToolRenderer:
                 agent.tool_count = len(agent.called_tools)
 
                 # Update display text
-                agent.current_tool = (
-                    plain_text[:50] if len(plain_text) <= 50 else plain_text[:47] + "..."
-                )
+                agent.current_tool = plain_text
 
                 # Update agent row to show unique tool count
                 self._update_agent_row(agent)
