@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -43,6 +44,11 @@ class TextualUICallback:
         self._pending_nested_calls: list[ToolCall] = []
         # Thinking mode visibility toggle (default OFF)
         self._thinking_visible = False
+        # Track parallel agent group state SYNCHRONOUSLY to avoid race conditions
+        # This is set immediately when parallel agents start, before async UI update
+        self._in_parallel_agent_group: bool = False
+        # Track current single agent ID for completion callback
+        self._current_single_agent_id: str | None = None
 
     def on_thinking_start(self) -> None:
         """Called when the agent starts thinking."""
@@ -77,9 +83,17 @@ class TextualUICallback:
         if not content or not content.strip():
             return
 
+        # Stop spinner BEFORE displaying thinking trace (so it appears above, not below)
+        if self.chat_app and hasattr(self.chat_app, "_stop_local_spinner"):
+            self._run_on_ui(self.chat_app._stop_local_spinner)
+
         # Display thinking block with special styling
         if hasattr(self.conversation, 'add_thinking_block'):
             self._run_on_ui(self.conversation.add_thinking_block, content)
+
+        # Restart spinner for the action phase
+        if self.chat_app and hasattr(self.chat_app, '_start_local_spinner'):
+            self._run_on_ui(self.chat_app._start_local_spinner)
 
     def toggle_thinking_visibility(self) -> bool:
         """Toggle thinking content visibility.
@@ -297,6 +311,34 @@ class TextualUICallback:
             self._current_thinking = False
             return
 
+        # Skip displaying individual spawn_subagent calls when in parallel mode
+        # The parallel group header handles display for these
+        if tool_name == "spawn_subagent" and self._in_parallel_agent_group:
+            return  # Already displayed in parallel header, skip regular display
+
+        # For single spawn_subagent calls, use single agent display
+        # The tool still needs to execute - we just want custom display
+        if tool_name == "spawn_subagent" and not self._in_parallel_agent_group:
+            # Normalize args first - tool_args may be a JSON string from react_executor
+            normalized = self._normalize_arguments(tool_args)
+            subagent_type = normalized.get("subagent_type", "general-purpose")
+            description = normalized.get("description", "")
+
+            # Set the flag to prevent nested tool calls from showing individually
+            self._in_parallel_agent_group = True
+
+            # Use tool_call_id if available, otherwise use the agent type as the key
+            agent_key = tool_call_id or subagent_type
+            self._current_single_agent_id = agent_key  # Store for completion
+
+            # Stop any local spinner
+            if self.chat_app and hasattr(self.chat_app, "_stop_local_spinner"):
+                self._run_on_ui(self.chat_app._stop_local_spinner)
+
+            # Call on_single_agent_start for proper single agent display
+            self.on_single_agent_start(subagent_type, description, agent_key)
+            return  # Prevent SpinnerService from creating competing display
+
         # Stop thinking spinner if still active
         if self._current_thinking:
             self._run_on_ui(self.conversation.stop_spinner)
@@ -305,25 +347,27 @@ class TextualUICallback:
         if self.chat_app and hasattr(self.chat_app, "_stop_local_spinner"):
             self._run_on_ui(self.chat_app._stop_local_spinner)
 
-        normalized_args = self._normalize_arguments(tool_args)
-        # Resolve relative paths to absolute for display
-        display_args = self._resolve_paths_in_args(normalized_args)
-        display_text = build_tool_call_text(tool_name, display_args)
+        # Skip regular display for spawn_subagent - parallel display handles it
+        if tool_name != "spawn_subagent":
+            normalized_args = self._normalize_arguments(tool_args)
+            # Resolve relative paths to absolute for display
+            display_args = self._resolve_paths_in_args(normalized_args)
+            display_text = build_tool_call_text(tool_name, display_args)
 
-        # Use SpinnerService for unified spinner management
-        if self._app is not None and hasattr(self._app, 'spinner_service'):
-            # Bash commands don't need placeholders - their output is rendered separately
-            is_bash = tool_name in ("bash_execute", "run_command")
-            spinner_id = self._app.spinner_service.start(display_text, skip_placeholder=is_bash)
-            # Track spinner by tool_call_id for parallel execution
-            key = tool_call_id or f"_default_{id(tool_args)}"
-            self._tool_spinner_ids[key] = spinner_id
-        else:
-            # Fallback to direct calls if SpinnerService not available
-            if hasattr(self.conversation, 'add_tool_call') and self._app is not None:
-                self._app.call_from_thread(self.conversation.add_tool_call, display_text)
-            if hasattr(self.conversation, 'start_tool_execution') and self._app is not None:
-                self._app.call_from_thread(self.conversation.start_tool_execution)
+            # Use SpinnerService for unified spinner management
+            if self._app is not None and hasattr(self._app, 'spinner_service'):
+                # Bash commands don't need placeholders - their output is rendered separately
+                is_bash = tool_name in ("bash_execute", "run_command")
+                spinner_id = self._app.spinner_service.start(display_text, skip_placeholder=is_bash)
+                # Track spinner by tool_call_id for parallel execution
+                key = tool_call_id or f"_default_{id(tool_args)}"
+                self._tool_spinner_ids[key] = spinner_id
+            else:
+                # Fallback to direct calls if SpinnerService not available
+                if hasattr(self.conversation, 'add_tool_call') and self._app is not None:
+                    self._app.call_from_thread(self.conversation.add_tool_call, display_text)
+                if hasattr(self.conversation, 'start_tool_execution') and self._app is not None:
+                    self._app.call_from_thread(self.conversation.start_tool_execution)
 
     def on_tool_result(
         self,
@@ -350,9 +394,10 @@ class TextualUICallback:
             thinking_content = result.get("_thinking_content", "")
             if thinking_content:
                 self.on_thinking(thinking_content)
-                # Restart spinner - model is still working on next steps
-                if self.chat_app and hasattr(self.chat_app, '_start_local_spinner'):
-                    self._run_on_ui(self.chat_app._start_local_spinner)
+
+            # Restart spinner - model continues processing after think
+            if self.chat_app and hasattr(self.chat_app, '_start_local_spinner'):
+                self._run_on_ui(self.chat_app._start_local_spinner)
             return  # Don't show as standard tool result
 
         # Stop spinner animation
@@ -375,6 +420,13 @@ class TextualUICallback:
         if tool_name == "spawn_subagent":
             if spinner_id and self._app is not None and hasattr(self._app, 'spinner_service'):
                 self._app.spinner_service.stop(spinner_id, success)
+            # For single agent spawns, mark as complete
+            if self._in_parallel_agent_group:
+                agent_key = getattr(self, '_current_single_agent_id', None)
+                if agent_key:
+                    self.on_single_agent_complete(agent_key, success)
+                self._in_parallel_agent_group = False
+                self._current_single_agent_id = None
             return
 
         # Bash commands: handle background vs immediate differently
@@ -489,6 +541,7 @@ class TextualUICallback:
         tool_args: Dict[str, Any],
         depth: int,
         parent: str,
+        tool_id: str = "",
     ) -> None:
         """Called when a nested tool call (from subagent) is about to be executed.
 
@@ -497,6 +550,7 @@ class TextualUICallback:
             tool_args: Arguments for the tool call
             depth: Nesting depth level (1 = direct child of main agent)
             parent: Name/identifier of the parent subagent
+            tool_id: Unique tool call ID for tracking parallel tools
         """
         normalized_args = self._normalize_arguments(tool_args)
 
@@ -508,6 +562,7 @@ class TextualUICallback:
                 display_text,
                 depth,
                 parent,
+                tool_id,
             )
 
     def on_nested_tool_result(
@@ -517,6 +572,7 @@ class TextualUICallback:
         result: Any,
         depth: int,
         parent: str,
+        tool_id: str = "",
     ) -> None:
         """Called when a nested tool execution (from subagent) completes.
 
@@ -526,10 +582,24 @@ class TextualUICallback:
             result: Result of the tool execution (can be dict or string)
             depth: Nesting depth level
             parent: Name/identifier of the parent subagent
+            tool_id: Unique tool call ID for tracking parallel tools
         """
         # Handle string results by converting to dict format
         if isinstance(result, str):
             result = {"success": True, "output": result}
+
+        # Collect for session storage (always, even in collapsed mode)
+        self._pending_nested_calls.append(ToolCall(
+            id=f"nested_{len(self._pending_nested_calls)}",
+            name=tool_name,
+            parameters=tool_args,
+            result=result,
+        ))
+
+        # Skip ALL display when in collapsed parallel mode
+        # The header shows aggregated stats, individual tool results are hidden
+        if self._in_parallel_agent_group:
+            return
 
         # Skip displaying interrupted operations
         # These are already shown by the approval controller interrupt message
@@ -543,6 +613,7 @@ class TextualUICallback:
                     depth,
                     parent,
                     False,  # success=False for interrupted
+                    tool_id,
                 )
             return
 
@@ -557,6 +628,7 @@ class TextualUICallback:
                 depth,
                 parent,
                 success,
+                tool_id,
             )
 
         normalized_args = self._normalize_arguments(tool_args)
@@ -608,14 +680,6 @@ class TextualUICallback:
         # Auto-refresh todo panel after nested todo tool execution
         if tool_name in {"write_todos", "update_todo", "complete_todo"}:
             self._refresh_todo_panel()
-
-        # Collect for session storage
-        self._pending_nested_calls.append(ToolCall(
-            id=f"nested_{len(self._pending_nested_calls)}",
-            name=tool_name,
-            parameters=tool_args,
-            result=result,
-        ))
 
     def _display_tool_sub_result(
         self, tool_name: str, tool_args: Dict[str, Any], result: Dict[str, Any], depth: int
@@ -919,3 +983,101 @@ class TextualUICallback:
         
         # Display in conversation
         self._run_on_ui(self.conversation.write, result_text)
+
+    # --- Parallel Agent Group Methods ---
+
+    def on_parallel_agents_start(self, agent_infos: list[dict]) -> None:
+        """Called when parallel agents start executing.
+
+        Args:
+            agent_infos: List of agent info dicts with keys:
+                - agent_type: Type of agent (e.g., "Explore")
+                - description: Short description of agent's task
+                - tool_call_id: Unique ID for tracking this agent
+        """
+        print(f"[DEBUG] on_parallel_agents_start: {agent_infos}", file=sys.stderr)
+
+        # Set flag SYNCHRONOUSLY before async UI update to prevent race conditions
+        # This ensures on_tool_call sees the flag immediately
+        self._in_parallel_agent_group = True
+
+        if hasattr(self.conversation, 'on_parallel_agents_start') and self._app is not None:
+            print(f"[DEBUG] Calling conversation.on_parallel_agents_start", file=sys.stderr)
+            self._app.call_from_thread(
+                self.conversation.on_parallel_agents_start,
+                agent_infos,
+            )
+        else:
+            print(f"[DEBUG] Missing on_parallel_agents_start or app: has_method={hasattr(self.conversation, 'on_parallel_agents_start')}, _app={self._app}", file=sys.stderr)
+
+    def on_parallel_agent_complete(self, tool_call_id: str, success: bool) -> None:
+        """Called when a parallel agent completes.
+
+        Args:
+            tool_call_id: Unique tool call ID of the agent that completed
+            success: Whether the agent succeeded
+        """
+        if hasattr(self.conversation, 'on_parallel_agent_complete') and self._app is not None:
+            self._app.call_from_thread(
+                self.conversation.on_parallel_agent_complete,
+                tool_call_id,
+                success,
+            )
+
+    def on_parallel_agents_done(self) -> None:
+        """Called when all parallel agents have completed."""
+        # Clear flag SYNCHRONOUSLY to allow normal tool call display to resume
+        self._in_parallel_agent_group = False
+
+        if hasattr(self.conversation, 'on_parallel_agents_done') and self._app is not None:
+            self._app.call_from_thread(self.conversation.on_parallel_agents_done)
+
+    def on_single_agent_start(self, agent_type: str, description: str, tool_call_id: str) -> None:
+        """Called when a single subagent starts.
+
+        Args:
+            agent_type: Type of agent (e.g., "Explore", "Code-Explorer")
+            description: Task description
+            tool_call_id: Unique ID for tracking
+        """
+        if hasattr(self.conversation, 'on_single_agent_start') and self._app is not None:
+            self._app.call_from_thread(
+                self.conversation.on_single_agent_start,
+                agent_type,
+                description,
+                tool_call_id,
+            )
+
+    def on_single_agent_complete(self, tool_call_id: str, success: bool = True) -> None:
+        """Called when a single subagent completes.
+
+        Args:
+            tool_call_id: Unique ID of the agent that completed
+            success: Whether the agent succeeded
+        """
+        if hasattr(self.conversation, 'on_single_agent_complete') and self._app is not None:
+            self._app.call_from_thread(
+                self.conversation.on_single_agent_complete,
+                tool_call_id,
+                success,
+            )
+
+    def toggle_parallel_expansion(self) -> bool:
+        """Toggle the expand/collapse state of parallel agent display.
+
+        Returns:
+            New expansion state (True = expanded)
+        """
+        if hasattr(self.conversation, 'toggle_parallel_expansion'):
+            return self.conversation.toggle_parallel_expansion()
+        return True
+
+    def has_active_parallel_group(self) -> bool:
+        """Check if there's an active parallel agent group.
+
+        Returns:
+            True if a parallel group is currently active
+        """
+        if hasattr(self.conversation, 'has_active_parallel_group'):
+            return self.conversation.has_active_parallel_group()
+        return False
