@@ -252,6 +252,23 @@ class WebSocketToolBroadcaster:
         except Exception:  # noqa: BLE001
             return "<unserializable>"
 
+    def set_subagent_manager(self, manager: Any) -> None:
+        """Set the subagent manager, delegating to the underlying registry.
+
+        This preserves the subagent manager reference when the tool registry
+        is wrapped with the WebSocket broadcaster.
+
+        Args:
+            manager: SubAgentManager instance
+        """
+        if hasattr(self.tool_registry, 'set_subagent_manager'):
+            self.tool_registry.set_subagent_manager(manager)
+
+    @property
+    def _subagent_manager(self) -> Any:
+        """Get subagent manager from the underlying registry."""
+        return getattr(self.tool_registry, '_subagent_manager', None)
+
     def __getattr__(self, name: str) -> Any:
         """Delegate all other attributes to the wrapped tool registry."""
         return getattr(self.tool_registry, name)

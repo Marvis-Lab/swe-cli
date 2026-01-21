@@ -39,12 +39,25 @@ class SwecliAgent(BaseAgent):
         tool_registry: Any,
         mode_manager: Any,
         working_dir: Any = None,
+        allowed_tools: Any = None,
     ) -> None:
+        """Initialize the SwecliAgent.
+
+        Args:
+            config: Application configuration
+            tool_registry: The tool registry for tool execution
+            mode_manager: Mode manager for operation mode
+            working_dir: Optional working directory for file operations
+            allowed_tools: Optional list of allowed tool names for filtering.
+                          If None, all tools are allowed. Used by subagents
+                          to restrict available tools (e.g., Code-Explorer
+                          only gets read_file, search, list_files, etc.)
+        """
         self.__http_client = None  # Lazy initialization - defer API key validation
         self.__thinking_http_client = None  # Lazy initialization for Thinking model
         self._response_cleaner = ResponseCleaner()
         self._working_dir = working_dir
-        self._schema_builder = ToolSchemaBuilder(tool_registry)
+        self._schema_builder = ToolSchemaBuilder(tool_registry, allowed_tools)
         super().__init__(config, tool_registry, mode_manager)
 
     @property

@@ -1,4 +1,4 @@
-"""Command handlers for tool-related commands (/init, /run, /resolve-github-issue, /paper2code)."""
+"""Command handlers for tool-related commands (/init, /resolve-github-issue, /paper2code)."""
 
 import asyncio
 from datetime import datetime
@@ -244,78 +244,6 @@ class ToolCommands(CommandHandler):
             self.print_error(f"Error: {e}")
             import traceback
             traceback.print_exc()
-
-    def run_command(self, args: str) -> None:
-        """Handle /run command to execute a bash command.
-
-        Args:
-            args: Command to execute
-        """
-        if not args:
-            self.print_command_header("run")
-            self.print_error("Please provide a command to run")
-            return
-
-        command = args.strip()
-
-        # Check if bash is enabled
-        if not self.config.enable_bash:
-            self.print_command_header("run")
-            self.print_error("Bash execution is disabled")
-            self.console.print("  ⎿  [dim]Enable it in config with 'enable_bash: true'[/dim]")
-            return
-
-        # Create operation
-        operation = Operation(
-            id=str(hash(f"{command}{datetime.now()}")),
-            type=OperationType.BASH_EXECUTE,
-            target=command,
-            parameters={"command": command},
-            created_at=datetime.now(),
-        )
-
-        # Show preview
-        self.print_command_header("run", command)
-
-        # Check if approval is needed
-        if not self.mode_manager.needs_approval(operation):
-            operation.approved = True
-        else:
-            result = None
-            try:
-                # Try to get existing event loop
-                loop = asyncio.get_running_loop()
-                # We're in an async context - skip approval, assume pre-approved
-                operation.approved = True
-            except RuntimeError:
-                # No running loop - we can run synchronously
-                result = asyncio.run(self.approval_manager.request_approval(
-                    operation=operation,
-                    preview=f"Execute: {command}"
-                ))
-
-                if not result.approved:
-                    self.print_warning("Operation cancelled")
-                    return
-
-        # Execute command
-        try:
-            bash_result = self.bash_tool.execute(command, operation=operation)
-
-            if bash_result.success:
-                self.print_success("Success")
-                if bash_result.stdout:
-                    self.console.print(bash_result.stdout)
-                if bash_result.stderr:
-                    self.console.print(f"  ⎿  [yellow]Stderr:[/yellow] {bash_result.stderr}")
-                self.console.print(f"  ⎿  [dim]Exit code: {bash_result.exit_code}[/dim]")
-                # Record for history
-                self.undo_manager.record_operation(operation)
-            else:
-                self.print_error(f"Command failed: {bash_result.error}")
-
-        except Exception as e:
-            self.error_handler.handle_error(e, operation)
 
     def _create_console_callback(self):
         """Create a simple console callback for progress display."""

@@ -33,8 +33,21 @@ PLANNING_TOOLS = {
 class ToolSchemaBuilder:
     """Assemble tool schemas for NORMAL mode agents."""
 
-    def __init__(self, tool_registry: Union[Any, None]) -> None:
+    def __init__(
+        self,
+        tool_registry: Union[Any, None],
+        allowed_tools: Union[list[str], None] = None,
+    ) -> None:
+        """Initialize the tool schema builder.
+
+        Args:
+            tool_registry: The tool registry for MCP and task tool schemas
+            allowed_tools: Optional list of allowed tool names for filtering.
+                          If None, all tools are allowed. Used by subagents
+                          to restrict available tools.
+        """
         self._tool_registry = tool_registry
+        self._allowed_tools = allowed_tools
 
     def build(self, thinking_visible: bool = True) -> list[dict[str, Any]]:
         """Return tool schema definitions including MCP and task tool extensions.
@@ -43,17 +56,39 @@ class ToolSchemaBuilder:
             thinking_visible: Deprecated parameter (kept for API compatibility).
                              Thinking is now a separate pre-processing phase,
                              not a tool the model calls.
+
+        Returns:
+            List of tool schemas. If allowed_tools was set, only returns
+            schemas for tools in that list.
         """
+        # Get all builtin tool schemas
         schemas: list[dict[str, Any]] = deepcopy(_BUILTIN_TOOL_SCHEMAS)
 
-        # Add task tool schema if subagent manager is configured
-        task_schema = self._build_task_schema()
-        if task_schema:
-            schemas.append(task_schema)
+        # Filter to allowed tools if specified
+        if self._allowed_tools is not None:
+            schemas = [
+                schema
+                for schema in schemas
+                if schema["function"]["name"] in self._allowed_tools
+            ]
 
-        # Add MCP tool schemas
+        # Add task tool schema if subagent manager is configured
+        # Only add if spawn_subagent is in allowed_tools or no filter
+        if self._allowed_tools is None or "spawn_subagent" in self._allowed_tools:
+            task_schema = self._build_task_schema()
+            if task_schema:
+                schemas.append(task_schema)
+
+        # Add MCP tool schemas (only those matching allowed_tools)
         mcp_schemas = self._build_mcp_schemas()
         if mcp_schemas:
+            if self._allowed_tools is not None:
+                # Filter MCP schemas to only allowed tools
+                allowed_set = set(self._allowed_tools)
+                mcp_schemas = [
+                    schema for schema in mcp_schemas
+                    if schema["function"]["name"] in allowed_set
+                ]
             schemas.extend(mcp_schemas)
         return schemas
 

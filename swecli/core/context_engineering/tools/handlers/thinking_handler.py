@@ -29,16 +29,16 @@ class ThinkingHandler:
         self._next_id = 1
         self._visible = True  # Default ON - shows thinking content by default
 
-    def add_thinking(self, content: str) -> dict:
+    def add_thinking(self, thought: str) -> dict:
         """Add a thinking block.
 
         Args:
-            content: The reasoning/thinking content from the model
+            thought: The reasoning/thinking content from the model
 
         Returns:
-            Result dict with success status and special _thinking_content key
+            Result dict with success status and special keys for UI
         """
-        if not content or not content.strip():
+        if not thought or not thought.strip():
             return {
                 "success": False,
                 "error": "Thinking content cannot be empty",
@@ -48,14 +48,14 @@ class ThinkingHandler:
         block_id = f"think-{self._next_id}"
         self._next_id += 1
 
-        block = ThinkingBlock(id=block_id, content=content.strip())
+        block = ThinkingBlock(id=block_id, content=thought.strip())
         self._blocks.append(block)
 
         return {
             "success": True,
-            "output": content.strip(),  # Include in message history for subsequent LLM calls
+            "output": thought.strip(),  # Include in message history for subsequent LLM calls
             "thinking_id": block_id,
-            "_thinking_content": content.strip(),  # Special key for UI callback
+            "_thinking_content": thought.strip(),  # Special key for UI callback
         }
 
     def get_all_thinking(self) -> List[ThinkingBlock]:

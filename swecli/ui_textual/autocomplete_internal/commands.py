@@ -61,15 +61,9 @@ BUILTIN_COMMANDS.register(SlashCommand("help", "show available commands and help
 BUILTIN_COMMANDS.register(SlashCommand("exit", "exit SWE-CLI"))
 BUILTIN_COMMANDS.register(SlashCommand("quit", "exit SWE-CLI (alias for /exit)"))
 BUILTIN_COMMANDS.register(SlashCommand("clear", "clear current session and start fresh"))
-BUILTIN_COMMANDS.register(SlashCommand("history", "show command history"))
-BUILTIN_COMMANDS.register(SlashCommand("sessions", "list all saved sessions"))
-BUILTIN_COMMANDS.register(SlashCommand("resume", "resume a previous session"))
 BUILTIN_COMMANDS.register(SlashCommand("models", "interactive model/provider selector"))
-BUILTIN_COMMANDS.register(SlashCommand("changes", "show files changed in the current session"))
-BUILTIN_COMMANDS.register(SlashCommand("changed-files", "show files changed in the current session"))
 
 # Execution commands
-BUILTIN_COMMANDS.register(SlashCommand("run", "run a bash command"))
 BUILTIN_COMMANDS.register(SlashCommand("mode", "switch between NORMAL and PLAN mode"))
 
 # Advanced commands

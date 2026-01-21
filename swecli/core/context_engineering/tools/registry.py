@@ -230,12 +230,18 @@ class ToolRegistry:
         self._discovered_mcp_tools.clear()
         logger.debug("Cleared all discovered MCP tools")
 
-    def _execute_spawn_subagent(self, arguments: dict[str, Any], context: Any = None) -> dict[str, Any]:
+    def _execute_spawn_subagent(
+        self,
+        arguments: dict[str, Any],
+        context: Any = None,
+        tool_call_id: Union[str, None] = None,
+    ) -> dict[str, Any]:
         """Execute the spawn_subagent tool to spawn a subagent.
 
         Args:
             arguments: Tool arguments with 'description', 'prompt', and 'subagent_type'
             context: Tool execution context
+            tool_call_id: Unique tool call ID for parent context tracking
 
         Returns:
             Result from subagent execution
@@ -283,6 +289,7 @@ class ToolRegistry:
             ui_callback=ui_callback,
             task_monitor=task_monitor,
             show_spawn_header=False,
+            tool_call_id=tool_call_id,  # Pass for parent context tracking
         )
 
         # Format output for consistency
@@ -365,6 +372,7 @@ class ToolRegistry:
         session_manager: Union[Any, None] = None,
         ui_callback: Union[Any, None] = None,
         is_subagent: bool = False,
+        tool_call_id: Union[str, None] = None,
     ) -> dict[str, Any]:
         """Execute a tool by delegating to registered handlers."""
         if tool_name.startswith("mcp__"):
@@ -396,7 +404,11 @@ class ToolRegistry:
 
         handler = self._handlers[tool_name]
         try:
-            if tool_name in {"write_file", "edit_file", "run_command", "spawn_subagent"}:
+            if tool_name == "spawn_subagent":
+                # spawn_subagent needs tool_call_id for parent context tracking
+                return self._execute_spawn_subagent(arguments, context, tool_call_id)
+
+            if tool_name in {"write_file", "edit_file", "run_command"}:
                 # Handlers requiring context
                 return handler(arguments, context)
 

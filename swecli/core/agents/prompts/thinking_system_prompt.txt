@@ -81,6 +81,17 @@ Use this list to reason about what actions are possible. Suggest which tools to 
 - **analyze_image(prompt, image_path?)**: Analyze images with VLM.
 - **open_browser(url)**: Open URL or local file in browser.
 
+## Subagents
+
+Consider spawning a subagent for complex, isolated tasks.
+
+{available_agents}
+
+**Spawn for**: Large features, deep research, multi-file refactoring, independent parallel work.
+**Don't spawn for**: Single file edits, quick checks, tasks completable in 2-3 tool calls.
+
+**IMPORTANT**: This list is for **reasoning purposes only**. You cannot execute `spawn_subagent` in this phase. If needed, your reasoning conclusion should be to spawn the subagent.
+
 ## MCP Tool Discovery
 
 When MCP servers are connected (github, database, slack, etc.), use `search_tools` to discover available TOOLS before using them:

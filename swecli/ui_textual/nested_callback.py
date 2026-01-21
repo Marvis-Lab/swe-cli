@@ -113,7 +113,12 @@ class NestedUICallback(ForwardingUICallback):
 
     # Override methods that need special nesting behavior:
 
-    def on_tool_call(self, tool_name: str, tool_args: Dict[str, Any]) -> None:
+    def on_tool_call(
+        self,
+        tool_name: str,
+        tool_args: Dict[str, Any],
+        tool_call_id: Optional[str] = None,
+    ) -> None:
         """Called when a tool call is about to be executed.
 
         Forwards to parent as a nested tool call with depth information.
@@ -122,12 +127,16 @@ class NestedUICallback(ForwardingUICallback):
         Args:
             tool_name: Name of the tool being called
             tool_args: Arguments for the tool call
+            tool_call_id: Optional unique ID for this tool call (for parallel tracking)
         """
         if self._parent is None:
             return
 
         # Sanitize paths for display (e.g., /Users/.../file.py → [uv:id]:/workspace/file.py)
         display_args = self._sanitize_tool_args(tool_name, tool_args)
+
+        # Generate tool_id if not provided
+        tool_id = tool_call_id or f"{self._context}_{tool_name}_{id(tool_args)}"
 
         # Check if parent supports nested tool calls
         if hasattr(self._parent, "on_nested_tool_call"):
@@ -136,16 +145,18 @@ class NestedUICallback(ForwardingUICallback):
                 display_args,
                 depth=self._depth,
                 parent=self._context,
+                tool_id=tool_id,
             )
         elif hasattr(self._parent, "on_tool_call"):
             # Fallback: use regular tool call (loses nesting info)
-            self._parent.on_tool_call(tool_name, display_args)
+            self._parent.on_tool_call(tool_name, display_args, tool_call_id)
 
     def on_tool_result(
         self,
         tool_name: str,
         tool_args: Dict[str, Any],
         result: Dict[str, Any],
+        tool_call_id: Optional[str] = None,
     ) -> None:
         """Called when a tool execution completes.
 
@@ -156,12 +167,16 @@ class NestedUICallback(ForwardingUICallback):
             tool_name: Name of the tool that was executed
             tool_args: Arguments that were used
             result: Result of the tool execution
+            tool_call_id: Optional unique ID for this tool call (for parallel tracking)
         """
         if self._parent is None:
             return
 
         # Sanitize paths for display (e.g., /Users/.../file.py → [uv:id]:/workspace/file.py)
         display_args = self._sanitize_tool_args(tool_name, tool_args)
+
+        # Generate tool_id if not provided
+        tool_id = tool_call_id or f"{self._context}_{tool_name}_{id(tool_args)}"
 
         # Check if parent supports nested tool results
         if hasattr(self._parent, "on_nested_tool_result"):
@@ -171,10 +186,11 @@ class NestedUICallback(ForwardingUICallback):
                 result,
                 depth=self._depth,
                 parent=self._context,
+                tool_id=tool_id,
             )
         elif hasattr(self._parent, "on_tool_result"):
             # Fallback: use regular tool result (loses nesting info)
-            self._parent.on_tool_result(tool_name, display_args, result)
+            self._parent.on_tool_result(tool_name, display_args, result, tool_call_id)
 
     # on_interrupt is automatically forwarded by ForwardingUICallback
 

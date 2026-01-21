@@ -49,7 +49,7 @@ _TOOL_DISPLAY_PARTS: dict[str, tuple[str, str]] = {
     "web_search": ("Search", "web"),
     "get_subagent_output": ("Get Output", "subagent"),
     "configure_mcp_server": ("Configure", "MCP server"),
-    "list_mcp_presets": ("List", "MCP presets"),
+    "list_mcp_presets": ("List MCPs", "MCP presets"),
     "task_complete": ("Complete", "task"),
     "invoke_skill": ("Invoke", "skill"),
 }
@@ -307,9 +307,10 @@ def format_tool_call(tool_name: str, tool_args: Mapping[str, Any]) -> str:
         description = tool_args.get("description", "")
         # Show full description without truncation, no [Docker] suffix
         # Docker is shown as a separate step with spinner
+        # Just show "Explore(description)" format, no "Spawn[]" wrapper
         if description:
-            return f"Spawn[{subagent_type}]({description})"
-        return f"Spawn[{subagent_type}]"
+            return f"{subagent_type}({description})"
+        return subagent_type
 
     # Docker container startup
     elif tool_name == "docker_start" and tool_args:

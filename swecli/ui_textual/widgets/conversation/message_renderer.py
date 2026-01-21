@@ -21,11 +21,10 @@ class DefaultMessageRenderer:
 
     def add_user_message(self, message: str) -> None:
         """Render a user message."""
-        # Add blank line before user prompt if previous line has content
-        if self.log.lines and hasattr(self.log.lines[-1], 'plain'):
-            last_plain = self.log.lines[-1].plain.strip() if self.log.lines[-1].plain else ""
-            if last_plain:
-                self.log.write(Text(""))
+        # Always add blank line before user prompt if there's any previous content
+        # This ensures spacing after command results, tool outputs, etc.
+        if self.log.lines:
+            self.log.write(Text(""))
         self.log.write(Text(f"› {message}", style=f"bold {PRIMARY}"))
         # Only add trailing blank line for non-command messages
         # Commands output directly below without spacing
@@ -89,6 +88,21 @@ class DefaultMessageRenderer:
         self.log.write(bullet)
         self.log.write(Text(""))
 
+    def add_command_result(self, lines: list[str], is_error: bool = False) -> None:
+        """Render command result lines with tree continuation prefix.
+
+        Used for displaying results from slash commands like /help, /model, etc.
+        Uses the same tree prefix (⎿) as tool results for visual consistency.
+
+        Args:
+            lines: List of result lines to display
+            is_error: If True, use error styling; otherwise use subtle styling
+        """
+        style = ERROR if is_error else SUBTLE
+        for line in lines:
+            self.log.write(Text(f"  ⎿  {line}", style=style))
+        self.log.write(Text(""))  # Trailing blank line for spacing
+
     def add_thinking_block(self, content: str) -> None:
         """Render thinking content with dimmed blur effect (60% opacity).
 
@@ -101,6 +115,13 @@ class DefaultMessageRenderer:
         """
         if not content or not content.strip():
             return
+
+        # Add blank line before thinking only if previous line has content
+        # (avoids double spacing when add_user_message already added a blank line)
+        if self.log.lines and hasattr(self.log.lines[-1], 'plain'):
+            last_plain = self.log.lines[-1].plain.strip() if self.log.lines[-1].plain else ""
+            if last_plain:
+                self.log.write(Text(""))
 
         lines = content.strip().split('\n')
         text = Text()

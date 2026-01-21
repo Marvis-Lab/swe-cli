@@ -132,12 +132,13 @@ class SubAgentManager:
         # Create a filtered tool registry if tools are specified
         tool_names = spec.get("tools", self._all_tool_names)
 
-        # Create the subagent instance
+        # Create the subagent instance with tool filtering
         agent = SwecliAgent(
             config=self._get_subagent_config(spec),
             tool_registry=self._tool_registry,
             mode_manager=self._mode_manager,
             working_dir=self._working_dir,
+            allowed_tools=tool_names,  # Pass tool filtering to agent
         )
 
         # Override system prompt for subagent
@@ -823,6 +824,20 @@ Use ONLY the filename or relative path for all file operations.
             return first_line + "..."
         return first_line
 
+    def _get_agent_display_type(self, name: str) -> str:
+        """Get the display type for an agent.
+
+        Args:
+            name: The subagent name
+
+        Returns:
+            The display type (e.g., "Explore" for "Explore" agent)
+        """
+        # Map internal agent names to display types
+        # For now, just return the name as-is
+        # Could add special handling for specific agents
+        return name
+
     def _execute_with_docker(
         self,
         name: str,
@@ -1132,6 +1147,7 @@ Use ONLY the filename or relative path for all file operations.
         docker_handler: Any = None,
         path_mapping: dict[str, str] | None = None,
         show_spawn_header: bool = True,
+        tool_call_id: str | None = None,
     ) -> dict[str, Any]:
         """Execute a subagent synchronously with the given task.
 
@@ -1149,6 +1165,9 @@ Use ONLY the filename or relative path for all file operations.
                          Used to remap paths when tools like read_pdf run locally.
             show_spawn_header: Whether to show the Spawn[] header. Set to False when
                               called via tool_registry (react_executor already showed it).
+            tool_call_id: Optional unique tool call ID for parent context tracking.
+                         When provided, used as parent_context in NestedUICallback
+                         to enable individual agent tracking in parallel display.
 
         Returns:
             Result dict with content, success, and messages
@@ -1182,6 +1201,9 @@ Use ONLY the filename or relative path for all file operations.
 
         compiled = self._agents[name]
 
+        # Note: UI callback notifications for single agents are handled by
+        # TextualUICallback.on_tool_call() and on_tool_result() for spawn_subagent
+
         # Determine which tool registry to use
         if docker_handler is not None:
             # Use Docker-based tool registry for Docker execution
@@ -1211,18 +1233,23 @@ Use ONLY the filename or relative path for all file operations.
                     "content": "",
                 }
 
+            # Get allowed tools from spec (for subagent tool filtering)
+            allowed_tools = spec.get("tools", self._all_tool_names)
+
             # Create new agent with overridden tool_registry and/or working_dir
             import logging
             _logger = logging.getLogger(__name__)
             _logger.info(f"Creating SwecliAgent with tool_registry type: {type(tool_registry).__name__}")
             _logger.info(f"  docker_handler is None: {docker_handler is None}")
             _logger.info(f"  working_dir: {working_dir}")
+            _logger.info(f"  allowed_tools: {allowed_tools}")
 
             agent = SwecliAgent(
                 config=self._get_subagent_config(spec),
                 tool_registry=tool_registry,
                 mode_manager=self._mode_manager,
                 working_dir=working_dir if working_dir is not None else self._working_dir,
+                allowed_tools=allowed_tools,  # Pass tool filtering
             )
             # Apply system prompt override
             if spec.get("system_prompt"):
@@ -1261,11 +1288,15 @@ ALWAYS use relative paths (just the filename or relative path like src/file.py).
                 nested_callback = ui_callback
             else:
                 # Wrap in NestedUICallback for proper nesting display
+                # Use tool_call_id as parent_context for individual agent tracking
+                # in parallel display (falls back to name for single agent calls)
                 # No path_sanitizer for local subagents - Docker subagents should
                 # use create_docker_nested_callback() before calling execute_subagent()
+                import sys
+                print(f"[DEBUG MANAGER] Creating NestedUICallback: tool_call_id={tool_call_id!r}, name={name!r}, parent_context={tool_call_id or name!r}", file=sys.stderr)
                 nested_callback = NestedUICallback(
                     parent_callback=ui_callback,
-                    parent_context=name,
+                    parent_context=tool_call_id or name,
                     depth=1,
                 )
 
@@ -1279,6 +1310,9 @@ ALWAYS use relative paths (just the filename or relative path like src/file.py).
             max_iterations=None,  # Unlimited - run until natural completion
             task_monitor=task_monitor,  # Pass task monitor for interrupt support
         )
+
+        # Note: UI callback completion notification is handled by
+        # TextualUICallback.on_tool_result() for spawn_subagent
 
         return result
 
@@ -1322,8 +1356,28 @@ ALWAYS use relative paths (just the filename or relative path like src/file.py).
         Returns:
             List of results from each subagent
         """
+        # 1. Notify start of parallel execution
+        agent_names = [name for name, _ in tasks]
+        if ui_callback and hasattr(ui_callback, 'on_parallel_agents_start'):
+            ui_callback.on_parallel_agents_start(agent_names)
+
+        # 2. Execute in parallel with completion tracking
+        async def execute_with_tracking(name: str, task: str) -> dict[str, Any]:
+            """Execute a single subagent and report completion."""
+            result = await self.execute_subagent_async(name, task, deps, ui_callback)
+            success = result.get("success", True) if isinstance(result, dict) else True
+            if ui_callback and hasattr(ui_callback, 'on_parallel_agent_complete'):
+                ui_callback.on_parallel_agent_complete(name, success)
+            return result
+
         coroutines = [
-            self.execute_subagent_async(name, task, deps, ui_callback)
+            execute_with_tracking(name, task)
             for name, task in tasks
         ]
-        return await asyncio.gather(*coroutines)
+        results = await asyncio.gather(*coroutines)
+
+        # 3. Notify completion of all parallel agents
+        if ui_callback and hasattr(ui_callback, 'on_parallel_agents_done'):
+            ui_callback.on_parallel_agents_done()
+
+        return results

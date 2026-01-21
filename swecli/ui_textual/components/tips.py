@@ -15,7 +15,6 @@ class TipsManager:
         "Press Shift+Tab to toggle between NORMAL and PLAN modes",
         "Use ↑↓ arrow keys to navigate through command history",
         "Use /help to see all available commands",
-        "Use /sessions to list all previous sessions",
         "Use /models to switch between different AI models",
         "Page Up/Page Down scroll through long conversations",
         "Press Esc to interrupt long-running operations",
@@ -25,7 +24,6 @@ class TipsManager:
         "MCP servers extend swecli with custom tools and capabilities",
         "Use /mcp list to see all available MCP servers",
         "Session auto-save preserves your work automatically",
-        "Use /continue to resume your most recent session",
         "Use /clear to start a fresh conversation",
         "Approval rules can be customized for different operations",
     ]

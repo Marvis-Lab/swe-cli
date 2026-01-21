@@ -218,7 +218,6 @@ class REPL:
         self.mode_commands = ModeCommands(
             self.console,
             self.mode_manager,
-            self.undo_manager,
             self.approval_manager,
         )
 
@@ -527,12 +526,6 @@ class REPL:
             self.running = False
         elif cmd == "/clear":
             self.session_commands.clear()
-        elif cmd == "/sessions":
-            self.session_commands.list_sessions()
-        elif cmd == "/resume":
-            self.session_commands.resume(args)
-        elif cmd == "/changed-files" or cmd == "/changes":
-            self.session_commands.changed_files()
         elif cmd == "/mode":
             result = self.mode_commands.switch_mode(args)
             # Sync agent after mode switch
@@ -542,16 +535,12 @@ class REPL:
                     self.agent = self.planning_agent
                 else:
                     self.agent = self.normal_agent
-        elif cmd == "/history":
-            self.mode_commands.show_history()
         elif cmd == "/models":
             self.config_commands.show_model_selector()
         elif cmd == "/mcp":
             self.mcp_commands.handle(args)
         elif cmd == "/init":
             self.tool_commands.init_codebase(command)
-        elif cmd == "/run":
-            self.tool_commands.run_command(args)
         elif cmd == "/resolve-issue":
             self.tool_commands.resolve_issue(command)
         elif cmd == "/paper2code":
@@ -559,9 +548,9 @@ class REPL:
         elif cmd == "/agents":
             self.agents_commands.handle(args)
         else:
-            self.console.print(f"[cyan]⏺[/cyan] {cmd}")
             self.console.print(f"  ⎿  [red]Unknown command[/red]")
             self.console.print("  ⎿  Type /help for available commands")
+            self.console.print("")  # Blank line for spacing
 
 
     def _connect_mcp_servers(self) -> None:

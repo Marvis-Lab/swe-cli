@@ -186,6 +186,18 @@ class ConversationLog(RichLog):
         self.stop_spinner()  # Retain state change logic here
         self._message_renderer.add_error(message)
 
+    def add_command_result(self, lines: list[str], is_error: bool = False) -> None:
+        """Render command result lines with tree continuation prefix.
+
+        Used for displaying results from slash commands. Uses the same tree
+        prefix (⎿) as tool results for visual consistency.
+
+        Args:
+            lines: List of result lines to display
+            is_error: If True, use error styling; otherwise use subtle styling
+        """
+        self._message_renderer.add_command_result(lines, is_error)
+
     def render_approval_prompt(self, renderables: list[Any]) -> None:
         """Render the approval prompt panel."""
         # Clear existing if any
@@ -234,8 +246,9 @@ class ConversationLog(RichLog):
         depth: int,
         parent: str,
         success: bool,
+        tool_id: str = "",
     ) -> None:
-        self._tool_renderer.complete_nested_tool_call(tool_name, depth, parent, success)
+        self._tool_renderer.complete_nested_tool_call(tool_name, depth, parent, success, tool_id)
 
     def add_nested_tree_result(
         self,
@@ -290,8 +303,9 @@ class ConversationLog(RichLog):
         display: Text | str,
         depth: int,
         parent: str,
+        tool_id: str = "",
     ) -> None:
-        self._tool_renderer.add_nested_tool_call(display, depth, parent)
+        self._tool_renderer.add_nested_tool_call(display, depth, parent, tool_id)
 
     def add_nested_tool_sub_results(self, lines: list, depth: int, is_last_parent: bool = True) -> None:
         """Add tool result lines for nested subagent tools."""
@@ -304,6 +318,63 @@ class ConversationLog(RichLog):
     def add_todo_sub_results(self, items: list, depth: int, is_last_parent: bool = True) -> None:
         """Add multiple sub-result lines for todo list operations."""
         self._tool_renderer.add_todo_sub_results(items, depth, is_last_parent)
+
+    # --- Parallel Agent Group Methods ---
+
+    def on_parallel_agents_start(self, agent_infos: list[dict] | list[str]) -> None:
+        """Called when parallel agents start executing.
+
+        Args:
+            agent_infos: List of agent info dicts with keys (new format):
+                - agent_type: Type of agent (e.g., "Explore")
+                - description: Short description of agent's task
+                - tool_call_id: Unique ID for tracking this agent
+                Or list of agent name strings (legacy format for backward compatibility).
+        """
+        # Convert legacy string format to dict format
+        if agent_infos and isinstance(agent_infos[0], str):
+            agent_infos = [
+                {"agent_type": name, "description": name, "tool_call_id": name}
+                for name in agent_infos
+            ]
+        self._tool_renderer.on_parallel_agents_start(agent_infos)
+
+    def on_parallel_agent_complete(self, agent_name: str, success: bool) -> None:
+        """Called when a parallel agent completes."""
+        self._tool_renderer.on_parallel_agent_complete(agent_name, success)
+
+    def on_parallel_agents_done(self) -> None:
+        """Called when all parallel agents have completed."""
+        self._tool_renderer.on_parallel_agents_done()
+
+    # --- Single Agent Methods (treated as parallel group of 1) ---
+
+    def on_single_agent_start(self, agent_type: str, description: str, tool_call_id: str) -> None:
+        """Called when a single agent starts (non-parallel execution).
+
+        Args:
+            agent_type: Type of agent (e.g., "Explore", "Code-Explorer")
+            description: Task description
+            tool_call_id: Unique ID for tracking
+        """
+        self._tool_renderer.on_single_agent_start(agent_type, description, tool_call_id)
+
+    def on_single_agent_complete(self, tool_call_id: str, success: bool = True) -> None:
+        """Called when a single agent completes.
+
+        Args:
+            tool_call_id: Unique ID of the agent that completed
+            success: Whether the agent succeeded
+        """
+        self._tool_renderer.on_single_agent_complete(tool_call_id, success)
+
+    def toggle_parallel_expansion(self) -> bool:
+        """Toggle expand/collapse state of parallel agent display."""
+        return self._tool_renderer.toggle_parallel_expansion()
+
+    def has_active_parallel_group(self) -> bool:
+        """Check if there's an active parallel agent group."""
+        return self._tool_renderer.has_active_parallel_group()
 
     def _truncate_from(self, index: int) -> None:
         if index >= len(self.lines):

@@ -618,11 +618,15 @@ class TestNestedUICallback:
 
         callback.on_tool_call("read_file", {"path": "/test/file.py"})
 
+        # Verify on_nested_tool_call was called with expected args
+        # tool_id is auto-generated so we use ANY
+        from unittest.mock import ANY
         parent_callback.on_nested_tool_call.assert_called_once_with(
             "read_file",
             {"path": "/test/file.py"},
             depth=1,
             parent="researcher",
+            tool_id=ANY,
         )
 
     def test_nested_callback_forwards_tool_result(self):
@@ -641,17 +645,22 @@ class TestNestedUICallback:
         result = {"success": True, "output": "file content"}
         callback.on_tool_result("read_file", {"path": "/test/file.py"}, result)
 
+        # Verify on_nested_tool_result was called with expected args
+        # tool_id is auto-generated so we use ANY
+        from unittest.mock import ANY
         parent_callback.on_nested_tool_result.assert_called_once_with(
             "read_file",
             {"path": "/test/file.py"},
             result,
             depth=1,
             parent="researcher",
+            tool_id=ANY,
         )
 
     def test_nested_callback_fallback_to_regular_methods(self):
         """Test fallback to regular methods when nested methods unavailable."""
         from swecli.ui_textual.nested_callback import NestedUICallback
+        from unittest.mock import ANY
 
         parent_callback = MagicMock(spec=["on_tool_call", "on_tool_result"])
 
@@ -662,7 +671,8 @@ class TestNestedUICallback:
         )
 
         callback.on_tool_call("read_file", {"path": "/test/file.py"})
-        parent_callback.on_tool_call.assert_called_once_with("read_file", {"path": "/test/file.py"})
+        # Fallback passes tool_call_id as third argument
+        parent_callback.on_tool_call.assert_called_once_with("read_file", {"path": "/test/file.py"}, ANY)
 
     def test_nested_callback_handles_none_parent(self):
         """Test that NestedUICallback handles None parent gracefully."""

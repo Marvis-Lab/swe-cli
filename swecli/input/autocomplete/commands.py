@@ -24,12 +24,8 @@ DEFAULT_SLASH_COMMANDS = [
     SlashCommand("exit", "exit SWE-CLI"),
     SlashCommand("quit", "exit SWE-CLI (alias for /exit)"),
     SlashCommand("clear", "clear current session and start fresh"),
-    SlashCommand("history", "show command history"),
-    SlashCommand("sessions", "list all saved sessions"),
-    SlashCommand("resume", "resume a previous session"),
     SlashCommand("models", "switch active AI model"),
     # Execution
-    SlashCommand("run", "run a bash command"),
     SlashCommand("mode", "switch between NORMAL and PLAN mode"),
     # Advanced
     SlashCommand("init", "initialize codebase with AGENTS.md"),

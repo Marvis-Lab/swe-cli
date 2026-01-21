@@ -42,7 +42,6 @@ Examples:
   swecli                          # Start interactive CLI session
   swecli run ui                   # Start web UI (backend + frontend) and open browser
   swecli -p "create hello.py"     # Non-interactive mode
-  swecli -r abc123                # Resume session
   swecli mcp list                 # List MCP servers
   swecli mcp add myserver uvx mcp-server-example
         """
@@ -53,22 +52,6 @@ Examples:
         "-V",
         action="version",
         version="SWE-CLI 0.1.4",
-    )
-
-    parser.add_argument(
-        "--resume",
-        "-r",
-        metavar="SESSION_ID",
-        nargs="?",
-        const="__LIST__",
-        help="Resume a previous session by ID (shows list if no ID provided)",
-    )
-
-    parser.add_argument(
-        "--continue",
-        dest="continue_session",
-        action="store_true",
-        help="Resume the most recent session for the current repository",
     )
 
     parser.add_argument(
@@ -92,11 +75,6 @@ Examples:
         help="Enable verbose output with detailed logging",
     )
 
-    parser.add_argument(
-        "--list-sessions",
-        action="store_true",
-        help="List saved sessions and exit",
-    )
 
     # Add subparsers for commands
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
@@ -276,59 +254,13 @@ Examples:
         session_dir = Path(config.session_dir).expanduser()
         session_manager = SessionManager(session_dir)
 
-        if args.list_sessions:
-            _print_sessions(console, session_manager)
-            return
-
-        # Handle --resume without argument (show session list)
-        if args.resume == "__LIST__":
-            _print_sessions(console, session_manager)
-            return
-
-        if args.resume and args.continue_session:
-            console.print("[red]Error: Use either --resume or --continue, not both[/red]")
-            sys.exit(1)
-
-        resume_id = args.resume
-        if args.continue_session and not resume_id:
-            latest = session_manager.find_latest_session(working_dir)
-            if not latest:
-                console.print("[yellow]No previous session found for this repository[/yellow]")
-                sys.exit(1)
-            resume_id = latest.id
-            console.print(f"[green]Continuing session {resume_id}[/green]")
-
-        resumed_session = None
-        if resume_id:
-            try:
-                resumed_session = session_manager.load_session(resume_id)
-            except FileNotFoundError:
-                console.print(f"[red]Error: Session {resume_id} not found[/red]")
-                sys.exit(1)
-
-        if resumed_session and resumed_session.working_directory:
-            resolved = Path(resumed_session.working_directory).expanduser()
-            if resolved != working_dir:
-                working_dir = resolved
-                config_manager = ConfigManager(working_dir)
-                config = config_manager.load_config()
-                config_manager.ensure_directories()
-                session_dir = Path(config.session_dir).expanduser()
-                session_manager = SessionManager(session_dir)
-                session_manager.load_session(resume_id)
-
         # Non-interactive mode
         if args.prompt:
-            if not resume_id:
-                session_manager.create_session(working_directory=str(working_dir))
+            session_manager.create_session(working_directory=str(working_dir))
             _run_non_interactive(config_manager, session_manager, args.prompt)
             return
 
-        launch_textual_cli(
-            working_dir=working_dir,
-            resume_session=resume_id,
-            continue_session=args.continue_session if not resume_id else False,
-        )
+        launch_textual_cli(working_dir=working_dir)
         return
 
     except KeyboardInterrupt:
@@ -340,57 +272,6 @@ Examples:
             import traceback
             console.print(traceback.format_exc())
         sys.exit(1)
-
-
-def _print_sessions(console: Console, session_manager: SessionManager) -> None:
-    """Display saved sessions."""
-    sessions = session_manager.list_sessions()
-
-    if not sessions:
-        console.print("[yellow]No saved sessions found.[/yellow]")
-        return
-
-    from itertools import groupby
-    from operator import attrgetter
-    from rich.table import Table
-
-    sessions = [
-        meta
-        for meta in sessions
-        if not (meta.message_count == 0 and meta.total_tokens == 0)
-    ]
-
-    if not sessions:
-        console.print("[yellow]No completed sessions found.[/yellow]")
-        return
-
-    sessions.sort(key=lambda m: (m.working_directory or "", m.updated_at), reverse=True)
-
-    for directory, items in groupby(sessions, key=attrgetter("working_directory")):
-        dir_label = directory or "(unknown directory)"
-        table = Table(
-            title=f"Sessions for {dir_label}",
-            show_header=True,
-            header_style="bold cyan",
-        )
-        table.add_column("ID", style="cyan")
-        table.add_column("Updated")
-        table.add_column("Messages", justify="right")
-        table.add_column("Tokens", justify="right")
-        table.add_column("Summary")
-
-        for meta in list(items)[:5]:
-            updated = meta.updated_at.strftime("%Y-%m-%d %H:%M")
-            summary = meta.summary or "—"
-            table.add_row(
-                meta.id,
-                updated,
-                str(meta.message_count),
-                str(meta.total_tokens),
-                summary,
-            )
-
-        console.print(table)
 
 
 def _handle_config_command(args) -> None:

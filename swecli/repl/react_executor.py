@@ -459,6 +459,35 @@ class ReactExecutor:
         """
         tool_results_by_id: Dict[str, dict] = {}
         operation_cancelled = False
+        ui_callback = ctx.ui_callback
+
+        # Check if ALL tools are spawn_subagent (parallel agent scenario)
+        spawn_calls = [tc for tc in tool_calls if tc["function"]["name"] == "spawn_subagent"]
+        is_parallel_agents = len(spawn_calls) == len(tool_calls) and len(spawn_calls) > 1
+
+        # Build agent info mapping (tool_call_id -> agent info)
+        # Pass full agent info to UI for individual agent tracking
+        agent_name_map: Dict[str, str] = {}
+        if is_parallel_agents and ui_callback:
+            # Collect full agent info for each parallel agent
+            agent_infos: list[dict] = []
+            for tc in spawn_calls:
+                args = json.loads(tc["function"]["arguments"])
+                agent_type = args.get("subagent_type", "Agent")
+                description = args.get("description", "")
+                tool_call_id = tc["id"]
+                # Map tool_call_id to base type (for completion tracking)
+                agent_name_map[tool_call_id] = agent_type
+                # Collect full info for UI display
+                agent_infos.append({
+                    "agent_type": agent_type,
+                    "description": description,
+                    "tool_call_id": tool_call_id,
+                })
+            if hasattr(ui_callback, 'on_parallel_agents_start'):
+                import sys
+                print(f"[DEBUG] on_parallel_agents_start with agent_infos={agent_infos}", file=sys.stderr)
+                ui_callback.on_parallel_agents_start(agent_infos)
 
         with ThreadPoolExecutor(max_workers=MAX_CONCURRENT_TOOLS) as executor:
             # Submit all tasks
@@ -478,6 +507,21 @@ class ReactExecutor:
                 tool_results_by_id[tool_call["id"]] = result
                 if result.get("interrupted"):
                     operation_cancelled = True
+
+                # Track individual agent completion for parallel agents
+                if is_parallel_agents and ui_callback:
+                    tool_name = tool_call["function"]["name"]
+                    if tool_name == "spawn_subagent":
+                        # Pass tool_call_id for individual agent tracking
+                        tool_call_id = tool_call["id"]
+                        success = result.get("success", True) if isinstance(result, dict) else True
+                        if hasattr(ui_callback, 'on_parallel_agent_complete'):
+                            ui_callback.on_parallel_agent_complete(tool_call_id, success)
+
+        # Notify UI that all parallel agents are done
+        if is_parallel_agents and ui_callback:
+            if hasattr(ui_callback, 'on_parallel_agents_done'):
+                ui_callback.on_parallel_agents_done()
 
         return tool_results_by_id, operation_cancelled
 
@@ -591,20 +635,21 @@ class ReactExecutor:
         ui_callback=None,
     ) -> dict:
         """Execute a single tool call."""
-        
+
         tool_name = tool_call["function"]["name"]
         tool_args = json.loads(tool_call["function"]["arguments"])
+        tool_call_id = tool_call["id"]
         tool_call_display = format_tool_call(tool_name, tool_args)
-        
+
         tool_monitor = TaskMonitor()
         tool_monitor.start(tool_call_display, initial_tokens=0)
-        
+
         if self._tool_executor:
              self._tool_executor._current_task_monitor = tool_monitor
 
         progress = TaskProgressDisplay(self.console, tool_monitor)
         progress.start()
-        
+
         try:
             result = tool_registry.execute_tool(
                 tool_name,
@@ -614,7 +659,8 @@ class ReactExecutor:
                 undo_manager=undo_manager,
                 task_monitor=tool_monitor,
                 session_manager=self.session_manager,
-                ui_callback=ui_callback, 
+                ui_callback=ui_callback,
+                tool_call_id=tool_call_id,  # Pass for subagent parent tracking
             )
             return result
         finally:

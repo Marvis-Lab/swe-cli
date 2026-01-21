@@ -32,15 +32,11 @@ class HelpCommand(CommandHandler):
 
 ## Mode & Operations
 - `/mode <name>` - Switch mode: normal or plan
-- `/history` - Show operation history
 - `/init [path]` - Analyze codebase and generate repository guidelines
 - `/resolve-issue <url>` - Resolve a GitHub issue automatically
 
 ## Session Management
 - `/clear` - Clear current session context
-- `/sessions` - List all saved sessions
-- `/resume <id>` - Resume a previous session
-- `/changed-files` or `/changes` - Show files changed in current session
 
 ## Configuration
 - `/models` - Interactive model/provider selector (use ↑/↓ arrows to choose)

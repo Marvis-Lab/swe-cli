@@ -97,15 +97,37 @@ class UICallbackProtocol(Protocol):
         details: Optional[str] = None,
     ) -> None:
         """Called when ANY tool completes to display result.
-        
+
         REQUIRED: Every tool must show a result line using this method.
-        
+
         Args:
             tool_name: Name of the tool that completed
             success: Whether the tool succeeded
             message: Result message to display
             details: Optional additional details (shown dimmed)
         """
+        ...
+
+    def on_single_agent_start(
+        self, agent_type: str, description: str, tool_call_id: str
+    ) -> None:
+        """Called when a single subagent starts executing."""
+        ...
+
+    def on_single_agent_complete(self, tool_call_id: str, success: bool) -> None:
+        """Called when a single subagent completes."""
+        ...
+
+    def on_parallel_agents_start(self, agent_infos: list) -> None:
+        """Called when parallel agents start executing."""
+        ...
+
+    def on_parallel_agent_complete(self, tool_call_id: str, success: bool) -> None:
+        """Called when a parallel agent completes."""
+        ...
+
+    def on_parallel_agents_done(self) -> None:
+        """Called when all parallel agents have completed."""
         ...
 
 
@@ -200,6 +222,28 @@ class BaseUICallback:
         details: Optional[str] = None,
     ) -> None:
         """Called when ANY tool completes to display result."""
+        pass
+
+    def on_single_agent_start(
+        self, agent_type: str, description: str, tool_call_id: str
+    ) -> None:
+        """Called when a single subagent starts executing."""
+        pass
+
+    def on_single_agent_complete(self, tool_call_id: str, success: bool) -> None:
+        """Called when a single subagent completes."""
+        pass
+
+    def on_parallel_agents_start(self, agent_infos: list) -> None:
+        """Called when parallel agents start executing."""
+        pass
+
+    def on_parallel_agent_complete(self, tool_call_id: str, success: bool) -> None:
+        """Called when a parallel agent completes."""
+        pass
+
+    def on_parallel_agents_done(self) -> None:
+        """Called when all parallel agents have completed."""
         pass
 
 
@@ -309,6 +353,23 @@ class ForwardingUICallback(BaseUICallback):
         details: Optional[str] = None,
     ) -> None:
         self._forward('on_tool_complete', tool_name, success, message, details=details)
+
+    def on_single_agent_start(
+        self, agent_type: str, description: str, tool_call_id: str
+    ) -> None:
+        self._forward('on_single_agent_start', agent_type, description, tool_call_id)
+
+    def on_single_agent_complete(self, tool_call_id: str, success: bool) -> None:
+        self._forward('on_single_agent_complete', tool_call_id, success)
+
+    def on_parallel_agents_start(self, agent_infos: list) -> None:
+        self._forward('on_parallel_agents_start', agent_infos)
+
+    def on_parallel_agent_complete(self, tool_call_id: str, success: bool) -> None:
+        self._forward('on_parallel_agent_complete', tool_call_id, success)
+
+    def on_parallel_agents_done(self) -> None:
+        self._forward('on_parallel_agents_done')
 
 
 __all__ = ["UICallbackProtocol", "BaseUICallback", "ForwardingUICallback"]

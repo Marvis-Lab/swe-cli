@@ -15,26 +15,18 @@ def get_command_list() -> List[Dict[str, Any]]:
         {
             "category": "Operations",
             "commands": [
-                {
-                    "name": "/run",
-                    "args": "<command>",
-                    "description": "Execute a bash command safely",
-                },
                 {"name": "/mode", "args": "<name>", "description": "Switch mode: normal or plan"},
                 {
                     "name": "/init",
                     "args": "[path]",
                     "description": "Analyze codebase and generate AGENTS.md with repository guidelines",
                 },
-                {"name": "/history", "args": "", "description": "Show operation history"},
             ],
         },
         {
             "category": "Session Management",
             "commands": [
                 {"name": "/clear", "args": "", "description": "Clear current session context"},
-                {"name": "/sessions", "args": "", "description": "List all saved sessions"},
-                {"name": "/resume", "args": "<id>", "description": "Resume a previous session"},
             ],
         },
         {

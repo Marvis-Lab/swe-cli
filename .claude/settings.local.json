@@ -52,7 +52,14 @@
       "Bash(git -C /Users/nghibui/codes/swe-cli diff --cached --stat)",
       "Bash(git -C /Users/nghibui/codes/swe-cli diff swecli/ui_textual/widgets/conversation_log.py)",
       "Bash(git -C /Users/nghibui/codes/swe-cli diff swecli/core/agents/subagents/manager.py)",
-      "Bash(git -C /Users/nghibui/codes/swe-cli log --oneline -6)"
+      "Bash(git -C /Users/nghibui/codes/swe-cli log --oneline -6)",
+      "Bash(SWECLI_DEBUG=1 python -m swecli:*)",
+      "WebFetch(domain:www.anthropic.com)",
+      "Bash([ -n \"$OPENAI_API_KEY\" ])",
+      "Bash(ruff check:*)",
+      "Bash(mypy:*)",
+      "Bash(SWECLI_LOG_LEVEL=DEBUG python:*)",
+      "Bash(gtimeout 60 python:*)"
     ],
     "deny": [],
     "ask": []
