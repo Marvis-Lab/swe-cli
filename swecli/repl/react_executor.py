@@ -16,6 +16,17 @@ from swecli.ui_textual.utils.tool_display import format_tool_call
 from swecli.ui_textual.components.task_progress import TaskProgressDisplay
 from swecli.core.utils.tool_result_summarizer import summarize_tool_result
 
+
+def _debug_log(message: str) -> None:
+    """Write debug message to /tmp/swecli_react_debug.log."""
+    from datetime import datetime
+
+    log_file = "/tmp/swecli_react_debug.log"
+    timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+    with open(log_file, "a") as f:
+        f.write(f"[{timestamp}] {message}\n")
+
+
 if TYPE_CHECKING:
     from rich.console import Console
     from swecli.core.context_engineering.history import SessionManager
@@ -186,19 +197,13 @@ class ReactExecutor:
         Returns True if the last tool result indicates subagent completion.
         Used to skip thinking phase AND inject stop signal.
         """
-        import logging
-
-        _logger = logging.getLogger(__name__)
-
         for msg in reversed(messages):
             if msg.get("role") == "tool":
                 content = msg.get("content", "")
                 is_subagent_complete = (
                     "[completion_status=success]" in content or "[SYNC COMPLETE]" in content
                 )
-                _logger.debug(
-                    f"[SUBAGENT_CHECK] Last tool result: is_subagent={is_subagent_complete}"
-                )
+                _debug_log(f"[SUBAGENT_CHECK] is_subagent={is_subagent_complete}")
                 return is_subagent_complete
             # Stop searching if we hit a user message (new turn)
             if msg.get("role") == "user" and "<thinking_trace>" not in msg.get("content", ""):
@@ -220,11 +225,8 @@ class ReactExecutor:
         # Check if last tool was subagent completion
         subagent_just_completed = self._check_subagent_completion(ctx.messages)
 
-        # Log decision point
-        import logging
-
-        _logger = logging.getLogger(__name__)
-        _logger.debug(
+        # Log decision point to file
+        _debug_log(
             f"[ITERATION] thinking_visible={thinking_visible}, "
             f"subagent_completed={subagent_just_completed}, "
             f"msg_count={len(ctx.messages)}"
@@ -245,7 +247,7 @@ class ReactExecutor:
 
         # STOP SIGNAL: After subagent completion, tell agent to just summarize
         if subagent_just_completed:
-            _logger.debug("[ITERATION] Injecting stop signal after subagent completion")
+            _debug_log("[ITERATION] Injecting stop signal after subagent completion")
             ctx.messages.append(
                 {
                     "role": "user",
@@ -281,7 +283,7 @@ class ReactExecutor:
         content, tool_calls, reasoning_content = self._parse_llm_response(response)
 
         # Log what the LLM decided to do
-        _logger.debug(
+        _debug_log(
             f"[LLM_DECISION] content_len={len(content)}, "
             f"tool_calls={[tc['function']['name'] for tc in (tool_calls or [])]}"
         )
