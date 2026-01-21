@@ -17,6 +17,7 @@ from swecli.ui_textual.style_tokens import (
     PANEL_BORDER,
     SUBTLE,
 )
+from swecli.ui_textual.utils.output_summarizer import summarize_output, get_expansion_hint
 
 
 @dataclass
@@ -394,3 +395,52 @@ class TerminalBoxRenderer:
         result.append(self.render_bottom_border(config))
 
         return result
+
+    # --- Collapsible output rendering ---
+
+    def render_collapsed_summary(
+        self,
+        output_lines: List[str],
+        depth: int = 0,
+        output_type: str = "bash",
+    ) -> Text:
+        """Render a collapsed summary line for long output.
+
+        Shows an intelligent summary with expansion hint instead of full content.
+
+        Args:
+            output_lines: Full output lines to summarize.
+            depth: Nesting depth for indentation.
+            output_type: Type of output for smarter summaries.
+
+        Returns:
+            Text object containing the summary line.
+        """
+        indent = "  " * depth
+        summary = summarize_output(output_lines, output_type)
+        hint = get_expansion_hint()
+
+        # Build summary line: "⎿  {summary} (ctrl+o to expand)"
+        result = Text(f"{indent}    \u23bf  ", style=GREY)
+        result.append(summary, style=SUBTLE)
+        result.append(f" {hint}", style=f"{SUBTLE} italic")
+
+        return result
+
+    def should_collapse_output(self, line_count: int, depth: int = 0) -> bool:
+        """Determine if output should be shown collapsed.
+
+        Args:
+            line_count: Number of output lines.
+            depth: Nesting depth (affects threshold).
+
+        Returns:
+            True if output should be collapsed by default.
+        """
+        # Collapse threshold: 10 lines for main agent, 6 for subagents
+        if depth == 0:
+            threshold = self.MAIN_AGENT_HEAD_LINES + self.MAIN_AGENT_TAIL_LINES
+        else:
+            threshold = self.SUBAGENT_HEAD_LINES + self.SUBAGENT_TAIL_LINES
+
+        return line_count > threshold

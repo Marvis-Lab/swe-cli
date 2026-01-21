@@ -44,6 +44,7 @@ class ConversationLog(RichLog):
         self._last_assistant_rendered: str | None = None
         self._spinner_active = False
         self._approval_start: int | None = None
+        self._ask_user_start: int | None = None
         self._debug_enabled = False  # Enable debug messages by default
         self._protected_lines: set[int] = set()  # Lines that should not be truncated
         self.MAX_PROTECTED_LINES = 200
@@ -217,8 +218,34 @@ class ConversationLog(RichLog):
         if self._approval_start < len(self.lines):
              del self.lines[self._approval_start:]
              self.refresh()
-        
+
         self._approval_start = None
+
+    def render_ask_user_prompt(self, renderables: list[Any]) -> None:
+        """Render the ask-user prompt panel.
+
+        Args:
+            renderables: List of Rich renderables to display
+        """
+        # Clear existing if any
+        if self._ask_user_start is not None:
+            self.clear_ask_user_prompt()
+
+        self._ask_user_start = len(self.lines)
+
+        for renderable in renderables:
+            self.write(renderable)
+
+    def clear_ask_user_prompt(self) -> None:
+        """Remove the ask-user prompt from the log."""
+        if self._ask_user_start is None:
+            return
+
+        if self._ask_user_start < len(self.lines):
+            del self.lines[self._ask_user_start:]
+            self.refresh()
+
+        self._ask_user_start = None
 
     def add_tool_call(self, display: Text | str, *_: Any) -> None:
         self._tool_renderer.add_tool_call(display)
@@ -375,6 +402,24 @@ class ConversationLog(RichLog):
     def has_active_parallel_group(self) -> bool:
         """Check if there's an active parallel agent group."""
         return self._tool_renderer.has_active_parallel_group()
+
+    # --- Collapsible Output Methods ---
+
+    def toggle_output_expansion(self) -> bool:
+        """Toggle the most recent collapsible output region.
+
+        Returns:
+            True if a region was toggled, False if none found.
+        """
+        return self._tool_renderer.toggle_most_recent_collapsible()
+
+    def has_collapsible_output(self) -> bool:
+        """Check if there are any collapsible output regions.
+
+        Returns:
+            True if at least one collapsible region exists.
+        """
+        return self._tool_renderer.has_collapsible_output()
 
     def _truncate_from(self, index: int) -> None:
         if index >= len(self.lines):

@@ -17,11 +17,13 @@ from swecli.ui_textual.widgets.status_bar import ModelFooter, StatusBar
 from swecli.ui_textual.widgets.todo_panel import TodoPanel
 from swecli.ui_textual.components import TipsManager
 from swecli.ui_textual.controllers.approval_prompt_controller import ApprovalPromptController
+from swecli.ui_textual.controllers.ask_user_prompt_controller import AskUserPromptController
 from swecli.ui_textual.controllers.autocomplete_popup_controller import AutocompletePopupController
 from swecli.ui_textual.controllers.command_router import CommandRouter
 from swecli.ui_textual.controllers.message_controller import MessageController
 from swecli.ui_textual.controllers.model_picker_controller import ModelPickerController
 from swecli.ui_textual.controllers.agent_creator_controller import AgentCreatorController
+from swecli.ui_textual.controllers.skill_creator_controller import SkillCreatorController
 from swecli.ui_textual.controllers.spinner_controller import SpinnerController
 from swecli.ui_textual.managers.console_buffer_manager import ConsoleBufferManager
 from swecli.ui_textual.managers.message_history import MessageHistory
@@ -111,7 +113,9 @@ class SWECLIChatApp(App):
         self._tips_manager = TipsManager()
         self._model_picker: ModelPickerController = ModelPickerController(self)
         self._agent_creator: AgentCreatorController = AgentCreatorController(self)
+        self._skill_creator: SkillCreatorController = SkillCreatorController(self)
         self._approval_controller = ApprovalPromptController(self)
+        self._ask_user_controller = AskUserPromptController(self)
         self._spinner = SpinnerController(self, self._tips_manager, todo_handler=self.todo_handler)
         self.spinner_service = SpinnerService(self)
         self.spinner_service.set_tips_manager(self._tips_manager)
@@ -390,6 +394,23 @@ class SWECLIChatApp(App):
         """Confirm current wizard step."""
         await self._agent_creator.confirm()
 
+    # Skill Creator Wizard Methods
+    def _skill_wizard_move(self, delta: int) -> None:
+        """Navigate selection in skill wizard."""
+        self._skill_creator.move(delta)
+
+    def _skill_wizard_back(self) -> None:
+        """Go back in skill wizard."""
+        self._skill_creator.back()
+
+    def _skill_wizard_cancel(self) -> None:
+        """Cancel the skill wizard."""
+        self._skill_creator.cancel()
+
+    async def _skill_wizard_confirm(self) -> None:
+        """Confirm current skill wizard step."""
+        await self._skill_creator.confirm()
+
     async def show_approval_modal(self, command: str, working_dir: str) -> tuple[bool, str, str]:
         """Display an inline approval prompt inside the conversation log."""
         return await self._approval_controller.start(command, working_dir)
@@ -405,6 +426,27 @@ class SWECLIChatApp(App):
 
     def _approval_cancel(self) -> None:
         self._approval_controller.cancel()
+
+    # Ask-User prompt methods
+    def _ask_user_move(self, delta: int) -> None:
+        """Move selection in ask-user prompt."""
+        if self._ask_user_controller.active:
+            self._ask_user_controller.move(delta)
+
+    def _ask_user_toggle(self) -> None:
+        """Toggle selection for multi-select questions (Space)."""
+        if self._ask_user_controller.active:
+            self._ask_user_controller.toggle_selection()
+
+    def _ask_user_confirm(self) -> None:
+        """Confirm selection in ask-user prompt."""
+        if self._ask_user_controller.active:
+            self._ask_user_controller.confirm()
+
+    def _ask_user_cancel(self) -> None:
+        """Cancel/skip ask-user prompt."""
+        if self._ask_user_controller.active:
+            self._ask_user_controller.cancel()
 
     async def process_message(self, message: str) -> None:
         """Send the user message to the backend for processing."""
@@ -688,14 +730,22 @@ class SWECLIChatApp(App):
             pass
 
     def action_toggle_parallel_expansion(self) -> None:
-        """Toggle parallel agent display expansion (Ctrl+O).
+        """Toggle parallel agent or collapsible output expansion (Ctrl+O).
 
-        Toggles between expanded view (showing all agent tool calls)
-        and collapsed view (showing just the summary header).
+        Priority order:
+        1. If there's an active parallel agent group, toggle its expansion
+        2. Otherwise, if there's collapsible output, toggle it
         """
+        # First priority: parallel agent groups
         if hasattr(self.conversation, "has_active_parallel_group"):
             if self.conversation.has_active_parallel_group():
                 self.conversation.toggle_parallel_expansion()
+                return
+
+        # Second priority: collapsible output regions
+        if hasattr(self.conversation, "has_collapsible_output"):
+            if self.conversation.has_collapsible_output():
+                self.conversation.toggle_output_expansion()
 
 
 def create_chat_app(

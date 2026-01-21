@@ -31,6 +31,8 @@ from swecli.ui_textual.widgets.terminal_box_renderer import (
 )
 from swecli.ui_textual.widgets.conversation.protocols import RichLogInterface
 from swecli.ui_textual.widgets.conversation.spacing_manager import SpacingManager
+from swecli.ui_textual.models.collapsible_output import CollapsibleOutput
+from swecli.ui_textual.utils.output_summarizer import summarize_output, get_expansion_hint
 
 # Tree connector characters
 TREE_BRANCH = "├─"
@@ -189,6 +191,11 @@ class DefaultToolRenderer:
 
         # Helper renderer
         self._box_renderer = TerminalBoxRenderer(self._get_box_width)
+
+        # Collapsible output tracking: line_index -> CollapsibleOutput
+        self._collapsible_outputs: Dict[int, CollapsibleOutput] = {}
+        # Track most recent collapsible output for quick access
+        self._most_recent_collapsible: Optional[int] = None
 
     def cleanup(self) -> None:
         """Stop all timers and clear state."""
@@ -1505,7 +1512,7 @@ class DefaultToolRenderer:
         working_dir: str = ".",
         depth: int = 0,
     ) -> None:
-        """Render bash output with minimal style matching Edit display."""
+        """Render bash output with collapsible support for long output."""
         lines = output.rstrip("\n").splitlines()
 
         # Apply truncation based on depth
@@ -1516,27 +1523,46 @@ class DefaultToolRenderer:
             head_count = self._box_renderer.SUBAGENT_HEAD_LINES
             tail_count = self._box_renderer.SUBAGENT_TAIL_LINES
 
-        head_lines, tail_lines, hidden_count = self._box_renderer.truncate_lines_head_tail(
-            lines, head_count, tail_count
-        )
+        max_lines = head_count + tail_count
+        should_collapse = len(lines) > max_lines
 
         indent = "  " * depth
 
-        # Output lines with ⎿ prefix for first line, spaces for rest
-        is_first = True
-        for line in head_lines:
-            self._write_bash_output_line(line, indent, is_error, is_first)
-            is_first = False
+        if should_collapse:
+            # Store full content and render collapsed summary
+            start_line = len(self.log.lines)
 
-        if hidden_count > 0:
-            hidden_text = Text(
-                f"{indent}       ... {hidden_count} lines hidden ...", style=f"{SUBTLE} italic"
+            # Write collapsed summary line
+            summary = summarize_output(lines, "bash")
+            hint = get_expansion_hint()
+            summary_line = Text(f"{indent}    \u23bf  ", style=GREY)
+            summary_line.append(summary, style=SUBTLE)
+            summary_line.append(f" {hint}", style=f"{SUBTLE} italic")
+            self.log.write(summary_line)
+
+            end_line = len(self.log.lines) - 1
+
+            # Track collapsible region
+            collapsible = CollapsibleOutput(
+                start_line=start_line,
+                end_line=end_line,
+                full_content=lines,
+                summary=summary,
+                is_expanded=False,
+                output_type="bash",
+                command=command,
+                working_dir=working_dir,
+                is_error=is_error,
+                depth=depth,
             )
-            self.log.write(hidden_text)
-
-        for line in tail_lines:
-            self._write_bash_output_line(line, indent, is_error, is_first)
-            is_first = False
+            self._collapsible_outputs[start_line] = collapsible
+            self._most_recent_collapsible = start_line
+        else:
+            # Small output - render normally without collapse
+            is_first = True
+            for line in lines:
+                self._write_bash_output_line(line, indent, is_error, is_first)
+                is_first = False
 
         # Add blank line for spacing after output
         self._spacing.after_bash_output_box()
@@ -1577,17 +1603,15 @@ class DefaultToolRenderer:
         self._write_bash_output_line(line, "", is_stderr, is_first)
 
     def close_streaming_bash_box(self, is_error: bool, exit_code: int) -> None:
-        """Close streaming bash output, applying truncation if needed."""
-        # Check if truncation is needed (main agent uses MAIN_AGENT limits)
+        """Close streaming bash output, collapsing if it exceeds threshold."""
         content_lines = [line for line, _ in self._streaming_box_content_lines]
         head_count = self._box_renderer.MAIN_AGENT_HEAD_LINES
         tail_count = self._box_renderer.MAIN_AGENT_TAIL_LINES
         max_lines = head_count + tail_count
 
         if len(content_lines) > max_lines and self._streaming_box_top_line is not None:
-            # Rebuild with truncation
-            self._rebuild_streaming_box_with_truncation(is_error, content_lines)
-        # No bottom border needed for minimal style
+            # Rebuild with collapsed summary instead of truncation
+            self._rebuild_streaming_box_as_collapsed(is_error, content_lines)
 
         # Reset state
         self._streaming_box_header_line = None
@@ -1596,6 +1620,172 @@ class DefaultToolRenderer:
         self._streaming_box_command = ""
         self._streaming_box_working_dir = "."
         self._streaming_box_content_lines = []
+
+    def _rebuild_streaming_box_as_collapsed(
+        self,
+        is_error: bool,
+        content_lines: list[str],
+    ) -> None:
+        """Rebuild streaming output as a collapsed summary."""
+        if self._streaming_box_top_line is None:
+            return
+
+        # Remove all lines from top of output to current position
+        self._truncate_from(self._streaming_box_top_line)
+
+        start_line = len(self.log.lines)
+
+        # Write collapsed summary line
+        summary = summarize_output(content_lines, "bash")
+        hint = get_expansion_hint()
+        summary_line = Text(f"    \u23bf  ", style=GREY)
+        summary_line.append(summary, style=SUBTLE)
+        summary_line.append(f" {hint}", style=f"{SUBTLE} italic")
+        self.log.write(summary_line)
+
+        end_line = len(self.log.lines) - 1
+
+        # Track collapsible region
+        collapsible = CollapsibleOutput(
+            start_line=start_line,
+            end_line=end_line,
+            full_content=content_lines,
+            summary=summary,
+            is_expanded=False,
+            output_type="bash",
+            command=self._streaming_box_command,
+            working_dir=self._streaming_box_working_dir,
+            is_error=is_error,
+            depth=0,
+        )
+        self._collapsible_outputs[start_line] = collapsible
+        self._most_recent_collapsible = start_line
+
+    # --- Collapsible Output Toggle Methods ---
+
+    def toggle_most_recent_collapsible(self) -> bool:
+        """Toggle the most recent collapsible output region.
+
+        Returns:
+            True if a region was toggled, False if none found.
+        """
+        if self._most_recent_collapsible is None:
+            return False
+
+        collapsible = self._collapsible_outputs.get(self._most_recent_collapsible)
+        if collapsible is None:
+            return False
+
+        return self._toggle_collapsible(collapsible)
+
+    def toggle_output_at_line(self, line_index: int) -> bool:
+        """Toggle collapsible output containing the given line.
+
+        Args:
+            line_index: Line index in the conversation log.
+
+        Returns:
+            True if a region was toggled, False if none found.
+        """
+        # Find collapsible region containing this line
+        for start, collapsible in self._collapsible_outputs.items():
+            if collapsible.contains_line(line_index):
+                return self._toggle_collapsible(collapsible)
+        return False
+
+    def _toggle_collapsible(self, collapsible: CollapsibleOutput) -> bool:
+        """Toggle a specific collapsible output region.
+
+        Args:
+            collapsible: CollapsibleOutput to toggle.
+
+        Returns:
+            True on success.
+        """
+        if collapsible.is_expanded:
+            self._collapse_output(collapsible)
+        else:
+            self._expand_output(collapsible)
+        return True
+
+    def _expand_output(self, collapsible: CollapsibleOutput) -> None:
+        """Expand a collapsed output region to show full content."""
+        # Remove the summary line(s)
+        self._truncate_from(collapsible.start_line)
+
+        indent = "  " * collapsible.depth
+        new_start = len(self.log.lines)
+
+        # Render full content
+        is_first = True
+        for line in collapsible.full_content:
+            self._write_bash_output_line(line, indent, collapsible.is_error, is_first)
+            is_first = False
+
+        # Update collapsible state
+        collapsible.is_expanded = True
+        new_end = len(self.log.lines) - 1
+
+        # Update tracking (move to new position if changed)
+        if collapsible.start_line in self._collapsible_outputs:
+            del self._collapsible_outputs[collapsible.start_line]
+        collapsible.start_line = new_start
+        collapsible.end_line = new_end
+        self._collapsible_outputs[new_start] = collapsible
+        self._most_recent_collapsible = new_start
+
+        self.log.refresh()
+
+    def _collapse_output(self, collapsible: CollapsibleOutput) -> None:
+        """Collapse an expanded output region to show just summary."""
+        # Remove the expanded content
+        self._truncate_from(collapsible.start_line)
+
+        indent = "  " * collapsible.depth
+        new_start = len(self.log.lines)
+
+        # Write collapsed summary
+        hint = get_expansion_hint()
+        summary_line = Text(f"{indent}    \u23bf  ", style=GREY)
+        summary_line.append(collapsible.summary, style=SUBTLE)
+        summary_line.append(f" {hint}", style=f"{SUBTLE} italic")
+        self.log.write(summary_line)
+
+        # Update collapsible state
+        collapsible.is_expanded = False
+        new_end = len(self.log.lines) - 1
+
+        # Update tracking
+        if collapsible.start_line in self._collapsible_outputs:
+            del self._collapsible_outputs[collapsible.start_line]
+        collapsible.start_line = new_start
+        collapsible.end_line = new_end
+        self._collapsible_outputs[new_start] = collapsible
+        self._most_recent_collapsible = new_start
+
+        self.log.refresh()
+
+    def has_collapsible_output(self) -> bool:
+        """Check if there are any collapsible output regions.
+
+        Returns:
+            True if at least one collapsible region exists.
+        """
+        return len(self._collapsible_outputs) > 0
+
+    def get_collapsible_at_line(self, line_index: int) -> Optional[CollapsibleOutput]:
+        """Get collapsible output at a specific line.
+
+        Args:
+            line_index: Line index to check.
+
+        Returns:
+            CollapsibleOutput if found, None otherwise.
+        """
+        for collapsible in self._collapsible_outputs.values():
+            if collapsible.contains_line(line_index):
+                return collapsible
+        return None
 
     def add_nested_bash_output_box(
         self,
