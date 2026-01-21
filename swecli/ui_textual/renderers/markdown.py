@@ -8,7 +8,7 @@ from typing import List, Tuple
 from rich.console import RenderableType
 from rich.text import Text
 
-from swecli.ui_textual.style_tokens import SUBTLE, PRIMARY, GREEN_BRIGHT, ACCENT
+from swecli.ui_textual.style_tokens import SUBTLE, PRIMARY, GREEN_BRIGHT, ACCENT, TEXT_MUTED
 
 
 def render_markdown_text_segment(content: str, *, leading: bool = False) -> Tuple[List[RenderableType], bool]:
@@ -86,10 +86,14 @@ def render_markdown_text_segment(content: str, *, leading: bool = False) -> Tupl
 
         heading_match = re.match(r"^(#{1,6})\s+(.*)", stripped)
         if heading_match:
+            # Add blank line before headings for visual separation
+            blank_line()
             level = len(heading_match.group(1))
             title = heading_match.group(2).strip()
-            style = "bold underline" if level == 1 else "bold"
-            emit(Text(title, style=style))
+            style = "bold" if level == 1 else "bold"
+            # Add 2 extra spaces (4 total) before headings to distinguish from bullet content
+            heading_text = Text("  " + title, style=style)
+            emit(heading_text)
             index += 1
             continue
 
@@ -117,7 +121,9 @@ def render_markdown_text_segment(content: str, *, leading: bool = False) -> Tupl
             symbol = "  - " if indent_level == 0 else "    - "
             bullet_line.append("  " * indent_level + symbol)
             bullet_line.append_text(rendered)
-            emit(bullet_line, allow_leading=False)
+            # Allow leading bullet only for first bullet at root level
+            allow_leading_for_bullet = leading and not leading_consumed and indent_level == 0
+            emit(bullet_line, allow_leading=allow_leading_for_bullet)
             index += 1
             continue
 
@@ -134,7 +140,9 @@ def render_markdown_text_segment(content: str, *, leading: bool = False) -> Tupl
             else:
                 ordered_line.append("  " * indent_level + "– ")
             ordered_line.append_text(rendered)
-            emit(ordered_line, allow_leading=False)
+            # Allow leading bullet only for first ordered item at root level
+            allow_leading_for_ordered = leading and not leading_consumed and indent_level == 0
+            emit(ordered_line, allow_leading=allow_leading_for_ordered)
             index += 1
             continue
 
@@ -168,7 +176,11 @@ def render_markdown_text_segment(content: str, *, leading: bool = False) -> Tupl
 
 
 def _render_inline_markdown(text: str) -> Text:
-    """Render inline markdown markers within a single line."""
+    """Render inline markdown markers within a single line.
+
+    Args:
+        text: The text to render.
+    """
 
     result = Text()
     link_pattern = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
@@ -186,7 +198,7 @@ def _render_inline_markdown(text: str) -> Text:
             elif token.startswith(("*", "_")):
                 result.append(inner, style="italic")
             elif token.startswith("`"):
-                result.append(inner, style=GREEN_BRIGHT)
+                result.append(inner, style=TEXT_MUTED)
             else:
                 result.append(inner)
             cursor = token_match.end()

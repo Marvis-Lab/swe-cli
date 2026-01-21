@@ -25,6 +25,7 @@ BLUE_TASK = "#2596be"       # Background task indicator
 GREEN_BRIGHT = "#00ff00"    # Auto mode, success indicators
 GREEN_LIGHT = "#89d185"     # Plan mode indicator
 GREEN_PROMPT = "#7ee787"    # Terminal prompt ($)
+TEXT_MUTED = "#5dbd61"      # Inline code (darker green)
 
 # Oranges
 ORANGE = "#ff8c00"          # Normal mode indicator
