@@ -268,6 +268,9 @@ class TextualRunner:
             # Wire up agent creator with config manager for path resolution
             if hasattr(self.app, "_agent_creator"):
                 self.app._agent_creator.set_config_manager(self.config_manager)
+            # Wire up skill creator with config manager for path resolution
+            if hasattr(self.app, "_skill_creator"):
+                self.app._skill_creator.set_config_manager(self.config_manager)
             self._history_hydrator.start_async_hydration(self.app)
             if downstream_on_ready:
                 downstream_on_ready()
@@ -581,8 +584,6 @@ Work through each implementation step in order. Mark each todo item as 'in_progr
                     # Force refresh to ensure immediate visual update
                     if hasattr(self.app.conversation, "refresh"):
                         self.app.conversation.refresh()
-                    if hasattr(self.app, "record_assistant_message"):
-                        self.app.record_assistant_message(msg.content)
                     if hasattr(self.app, "record_assistant_message"):
                         self.app.record_assistant_message(msg.content)
 
