@@ -37,9 +37,21 @@ class DefaultMessageRenderer:
         #   add_user_message -> adds leading blank line  <- DOUBLE SPACING
         #
         # With this check, we only add a blank line if the previous line has content.
-        if self.log.lines and hasattr(self.log.lines[-1], "plain"):
-            last_plain = self.log.lines[-1].plain.strip() if self.log.lines[-1].plain else ""
-            if last_plain:
+        #
+        # NOTE: Lines can be either Text objects (.plain) or Strip objects (.text).
+        # - Text objects: from Rich library, have .plain attribute
+        # - Strip objects: from Textual library, have .text attribute (used by spinner results)
+        if self.log.lines:
+            last_line = self.log.lines[-1]
+            # Get content from either Text (.plain) or Strip (.text)
+            if hasattr(last_line, "plain"):
+                last_content = last_line.plain.strip() if last_line.plain else ""
+            elif hasattr(last_line, "text"):
+                last_content = last_line.text.strip() if last_line.text else ""
+            else:
+                last_content = ""
+
+            if last_content:
                 self.log.write(Text(""))
         self.log.write(Text(f"› {message}", style=f"bold {PRIMARY}"))
         # Only add trailing blank line for non-command messages
