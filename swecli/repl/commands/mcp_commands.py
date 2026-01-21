@@ -97,7 +97,7 @@ class MCPCommands(CommandHandler):
         self.print_line("[cyan]/mcp list[/cyan]       List configured MCP servers")
         self.print_continuation("[cyan]/mcp connect[/cyan]    Connect to a server")
         self.print_continuation("[cyan]/mcp tools[/cyan]      Show available tools")
-        self.console.print("")  # Empty line for visual separation
+        self.print_spacing()
 
     def _error_no_server_name(self) -> CommandResult:
         """Return error for missing server name."""
@@ -141,9 +141,8 @@ class MCPCommands(CommandHandler):
     def connect(self, server_name: str) -> CommandResult:
         """Connect to a specific MCP server."""
         if self.mcp_manager.is_connected(server_name):
-            self.console.print("")  # Empty line for visual separation
-            self.console.print(f"[cyan]⏺[/cyan] MCP ({server_name})")
-            self.console.print(f"  ⎿  [yellow]Already connected[/yellow]")
+            self.print_command_header("MCP", server_name)
+            self.print_warning("Already connected")
             return CommandResult(success=True, message="Already connected")
 
         # Use same spinner mechanism as regular prompts
@@ -161,20 +160,18 @@ class MCPCommands(CommandHandler):
             progress.stop()
             task_monitor.stop()
             elapsed = task_monitor.get_elapsed_seconds()
-            self.console.print("")  # Empty line for visual separation
-            self.console.print(f"[red]⏺[/red] MCP ({server_name}) ({elapsed}s)")
-            self.console.print(f"  ⎿  [red]Error: {e}[/red]")
+            self.print_command_header(f"MCP ({server_name})", f"{elapsed}s")
+            self.print_error(f"Error: {e}")
             return CommandResult(success=False, message=str(e))
 
         progress.stop()
-        self.console.print("")  # Empty line for visual separation
         stats = task_monitor.stop()
         elapsed = stats["elapsed_seconds"]
 
         if success:
             tools = self.mcp_manager.get_server_tools(server_name)
-            self.console.print(f"[green]⏺[/green] MCP ({server_name}) ({elapsed}s)")
-            self.console.print(f"  ⎿  [green]Connected ({len(tools)} tools)[/green]")
+            self.print_command_header(f"MCP ({server_name})", f"{elapsed}s")
+            self.print_success(f"Connected ({len(tools)} tools)")
 
             # Refresh runtime tooling
             if self.refresh_runtime:
@@ -182,21 +179,20 @@ class MCPCommands(CommandHandler):
 
             return CommandResult(success=True, message=f"Connected to {server_name}")
         else:
-            self.console.print(f"[red]⏺[/red] MCP ({server_name}) ({elapsed}s)")
-            self.console.print(f"  ⎿  [red]Connection failed[/red]")
+            self.print_command_header(f"MCP ({server_name})", f"{elapsed}s")
+            self.print_error("Connection failed")
             return CommandResult(success=False, message="Connection failed")
 
     def disconnect(self, server_name: str) -> CommandResult:
         """Disconnect from a specific MCP server."""
-        self.console.print("")  # Empty line for visual separation
-        self.console.print(f"[cyan]⏺[/cyan] MCP ({server_name})")
+        self.print_command_header("MCP", server_name)
         if not self.mcp_manager.is_connected(server_name):
-            self.console.print(f"  ⎿  [yellow]Not connected[/yellow]")
+            self.print_warning("Not connected")
             return CommandResult(success=True, message="Not connected")
 
         try:
             self.mcp_manager.disconnect_sync(server_name)
-            self.console.print(f"  ⎿  [green]Disconnected[/green]")
+            self.print_success("Disconnected")
 
             # Refresh runtime tooling
             if self.refresh_runtime:
@@ -204,7 +200,7 @@ class MCPCommands(CommandHandler):
 
             return CommandResult(success=True, message=f"Disconnected from {server_name}")
         except Exception as e:
-            self.console.print(f"  ⎿  [red]Error: {e}[/red]")
+            self.print_error(f"Error: {e}")
             return CommandResult(success=False, message=str(e))
 
     def show_tools(self, server_name: Optional[str]) -> CommandResult:
@@ -255,21 +251,20 @@ class MCPCommands(CommandHandler):
             self.print_error(f"Server '{server_name}' not found in configuration")
             return CommandResult(success=False, message="Server not found")
 
-        self.console.print("")  # Empty line for visual separation
-        self.console.print(f"[cyan]⏺[/cyan] MCP test ({server_name})")
-        self.console.print("  ⎿  Testing connection...")
+        self.print_command_header("MCP test", server_name)
+        self.print_info("Testing connection...")
 
         try:
             # Try to connect (use sync version to avoid event loop issues in chat UI)
             success = self.mcp_manager.connect_sync(server_name)
             if success:
                 tools = self.mcp_manager.get_server_tools(server_name)
-                self.console.print("  ⎿  [green]Connection successful[/green]")
-                self.console.print(f"  ⎿  Discovered {len(tools)} tools")
+                self.print_success("Connection successful")
+                self.print_info(f"Discovered {len(tools)} tools")
 
                 # List first few tools
                 if tools:
-                    self.console.print("  ⎿  Sample tools:")
+                    self.print_info("Sample tools:")
                     for tool in tools[:5]:
                         self.console.print(f"      - {tool['name']}")
                     if len(tools) > 5:
@@ -277,13 +272,13 @@ class MCPCommands(CommandHandler):
 
                 return CommandResult(success=True, message="Test passed")
             else:
-                self.console.print("  ⎿  [red]Connection failed[/red]")
+                self.print_error("Connection failed")
                 return CommandResult(success=False, message="Connection failed")
         except Exception as e:
-            self.console.print(f"  ⎿  [red]Test failed: {e}[/red]")
+            self.print_error(f"Test failed: {e}")
             import traceback
 
-            self.console.print(f"  ⎿  [dim]{traceback.format_exc()}[/dim]")
+            self.print_continuation(traceback.format_exc())
             return CommandResult(success=False, message=str(e))
 
     def debug(self) -> CommandResult:
@@ -335,7 +330,7 @@ class MCPCommands(CommandHandler):
             else:
                 self.console.print("\nAgent has no system_prompt attribute")
 
-        self.console.print("")
+        self.print_spacing()
         return CommandResult(success=True)
 
     def status(self) -> CommandResult:
@@ -368,7 +363,7 @@ class MCPCommands(CommandHandler):
                     f"  Enabled but disconnected: {', '.join(f'[yellow]{name}[/yellow]' for name in disconnected_enabled)}"
                 )
 
-        self.console.print("")
+        self.print_spacing()
         return CommandResult(success=True)
 
     def enable(self, server_name: str) -> CommandResult:
@@ -387,9 +382,7 @@ class MCPCommands(CommandHandler):
             success = self.mcp_manager.enable_server(server_name)
             if success:
                 self.print_success(f"Enabled auto-start for '{server_name}'")
-                self.console.print(
-                    "  ⎿  [dim]Server will connect automatically on next startup[/dim]"
-                )
+                self.print_info("Server will connect automatically on next startup")
                 return CommandResult(success=True, message=f"Enabled {server_name}")
             else:
                 self.print_error(f"Failed to enable '{server_name}'")
@@ -414,9 +407,7 @@ class MCPCommands(CommandHandler):
             success = self.mcp_manager.disable_server(server_name)
             if success:
                 self.print_success(f"Disabled auto-start for '{server_name}'")
-                self.console.print(
-                    "  ⎿  [dim]Server will not connect automatically on next startup[/dim]"
-                )
+                self.print_info("Server will not connect automatically on next startup")
                 return CommandResult(success=True, message=f"Disabled {server_name}")
             else:
                 self.print_error(f"Failed to disable '{server_name}'")
@@ -492,9 +483,8 @@ class MCPCommands(CommandHandler):
     def reload(self) -> CommandResult:
         """Reload MCP configuration from files."""
         try:
-            self.console.print("")  # Empty line for visual separation
-            self.console.print("[cyan]⏺[/cyan] MCP reload")
-            self.console.print("  ⎿  Reloading configuration...")
+            self.print_command_header("MCP reload")
+            self.print_info("Reloading configuration...")
 
             # Reload configuration
             config = self.mcp_manager.load_configuration()
@@ -503,15 +493,15 @@ class MCPCommands(CommandHandler):
             servers = self.mcp_manager.list_servers()
             enabled = [name for name, cfg in servers.items() if cfg.enabled]
 
-            self.console.print("  ⎿  [green]Configuration reloaded[/green]")
-            self.console.print(f"  ⎿  Found {len(servers)} server(s), {len(enabled)} enabled")
+            self.print_success("Configuration reloaded")
+            self.print_info(f"Found {len(servers)} server(s), {len(enabled)} enabled")
 
             # Refresh runtime tooling
             if self.refresh_runtime:
                 self.refresh_runtime()
-                self.console.print("  ⎿  [dim]Agent tools refreshed[/dim]")
+                self.print_info("Agent tools refreshed")
 
             return CommandResult(success=True, message="Config reloaded")
         except Exception as e:
-            self.console.print(f"  ⎿  [red]Error reloading configuration: {e}[/red]")
+            self.print_error(f"Error reloading configuration: {e}")
             return CommandResult(success=False, message=str(e))

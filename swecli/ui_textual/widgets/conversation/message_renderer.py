@@ -16,6 +16,7 @@ from swecli.ui_textual.style_tokens import (
     THINKING_ICON,
 )
 from swecli.ui_textual.widgets.conversation.protocols import RichLogInterface
+from swecli.ui_textual.widgets.conversation.spacing_manager import SpacingManager
 
 
 class DefaultMessageRenderer:
@@ -24,40 +25,15 @@ class DefaultMessageRenderer:
     def __init__(self, log: RichLogInterface, app_callback_interface: Any = None):
         self.log = log
         self.app = app_callback_interface
+        self._spacing = SpacingManager(log)
         self._last_assistant_rendered: str | None = None
 
     def add_user_message(self, message: str) -> None:
         """Render a user message."""
-        # Add blank line before user prompt ONLY if previous line has content.
-        # This prevents double spacing when the previous message (assistant, thinking, etc.)
-        # already added a trailing blank line.
-        #
-        # Example flow WITHOUT this check:
-        #   add_assistant_message -> adds trailing blank line
-        #   add_user_message -> adds leading blank line  <- DOUBLE SPACING
-        #
-        # With this check, we only add a blank line if the previous line has content.
-        #
-        # NOTE: Lines can be either Text objects (.plain) or Strip objects (.text).
-        # - Text objects: from Rich library, have .plain attribute
-        # - Strip objects: from Textual library, have .text attribute (used by spinner results)
-        if self.log.lines:
-            last_line = self.log.lines[-1]
-            # Get content from either Text (.plain) or Strip (.text)
-            if hasattr(last_line, "plain"):
-                last_content = last_line.plain.strip() if last_line.plain else ""
-            elif hasattr(last_line, "text"):
-                last_content = last_line.text.strip() if last_line.text else ""
-            else:
-                last_content = ""
-
-            if last_content:
-                self.log.write(Text(""))
+        self._spacing.before_user_message()
         self.log.write(Text(f"› {message}", style=f"bold {PRIMARY}"))
-        # Only add trailing blank line for non-command messages
-        # Commands control their own spacing via print_command_header()
-        if not message.strip().startswith("/"):
-            self.log.write(Text(""))
+        is_command = message.strip().startswith("/")
+        self._spacing.after_user_message(is_command)
 
     def add_assistant_message(self, message: str) -> None:
         """Render an assistant message, parsing markdown and code blocks."""
@@ -65,11 +41,7 @@ class DefaultMessageRenderer:
         if normalized and normalized == self._last_assistant_rendered:
             return
 
-        # Add blank line before message if previous line has content (for spacing)
-        if self.log.lines and hasattr(self.log.lines[-1], "plain"):
-            last_plain = self.log.lines[-1].plain.strip() if self.log.lines[-1].plain else ""
-            if last_plain:
-                self.log.write(Text(""))
+        self._spacing.before_assistant_message()
 
         self._last_assistant_rendered = normalized
         segments = self._split_code_blocks(message)
@@ -99,10 +71,14 @@ class DefaultMessageRenderer:
                     text_output = True
                     leading_used = True
 
-        self.log.write(Text(""))
+        # NOTE: We intentionally do NOT add a trailing blank line here.
+        # Spacing is handled by the NEXT element via before_* methods.
+        # This prevents double spacing when assistant message is followed by a tool call.
+        self._spacing.after_assistant_message()
 
     def add_system_message(self, message: str) -> None:
         """Render a system message."""
+        self._spacing.before_system_message()
         self.log.write(Text(message, style=f"{SUBTLE} italic"))
 
     def add_error(self, message: str) -> None:
@@ -114,7 +90,7 @@ class DefaultMessageRenderer:
         bullet = Text("⦿ ", style=f"bold {ERROR}")
         bullet.append(message, style=ERROR)
         self.log.write(bullet)
-        self.log.write(Text(""))
+        self._spacing.after_error()
 
     def add_command_result(self, lines: list[str], is_error: bool = False) -> None:
         """Render command result lines with tree continuation prefix.
@@ -129,7 +105,7 @@ class DefaultMessageRenderer:
         style = ERROR if is_error else SUBTLE
         for line in lines:
             self.log.write(Text(f"  ⎿  {line}", style=style))
-        self.log.write(Text(""))  # Trailing blank line for spacing
+        self._spacing.after_command_result()
 
     def add_thinking_block(self, content: str) -> None:
         """Render thinking content with dimmed blur effect (60% opacity).
@@ -144,12 +120,7 @@ class DefaultMessageRenderer:
         if not content or not content.strip():
             return
 
-        # Add blank line before thinking only if previous line has content
-        # (avoids double spacing when add_user_message already added a blank line)
-        if self.log.lines and hasattr(self.log.lines[-1], "plain"):
-            last_plain = self.log.lines[-1].plain.strip() if self.log.lines[-1].plain else ""
-            if last_plain:
-                self.log.write(Text(""))
+        self._spacing.before_thinking()
 
         lines = content.strip().split("\n")
         text = Text()
@@ -167,7 +138,7 @@ class DefaultMessageRenderer:
             text.append(f"\n  {line}", style=blur_style)
 
         self.log.write(text)
-        self.log.write(Text(""))  # Blank line after thinking
+        self._spacing.after_thinking()
 
     # --- Helpers ---
 

@@ -65,12 +65,13 @@ class CommandHandler(ABC):
         """Print command header with ⏺ symbol.
 
         Adds a blank line before the header for visual separation from command input.
+        This follows the unified spacing standard: unconditional blank before command headers.
 
         Args:
             command_name: Name of the command
             params: Optional parameters to display
         """
-        self.console.print("")  # Empty line for visual separation
+        self.console.print("")  # Unconditional blank before command header (spacing standard)
         if params:
             self.console.print(f"[cyan]⏺[/cyan] {command_name} ({params})")
         else:
@@ -134,3 +135,11 @@ class CommandHandler(ABC):
             message: Message to display
         """
         self.console.print(f"{RESULT_PREFIX}{message}")
+
+    def print_spacing(self) -> None:
+        """Print a blank line for visual separation.
+
+        This follows the unified spacing standard: adds a trailing blank
+        after structural elements (errors, command results, etc.).
+        """
+        self.console.print("")

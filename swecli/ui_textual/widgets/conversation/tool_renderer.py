@@ -30,6 +30,7 @@ from swecli.ui_textual.widgets.terminal_box_renderer import (
     TerminalBoxRenderer,
 )
 from swecli.ui_textual.widgets.conversation.protocols import RichLogInterface
+from swecli.ui_textual.widgets.conversation.spacing_manager import SpacingManager
 
 # Tree connector characters
 TREE_BRANCH = "├─"
@@ -110,6 +111,7 @@ class DefaultToolRenderer:
     def __init__(self, log: RichLogInterface, app_callback_interface: Any = None):
         self.log = log
         self.app = app_callback_interface
+        self._spacing = SpacingManager(log)
 
         # Tool execution state
         self._tool_display: Text | None = None
@@ -212,15 +214,7 @@ class DefaultToolRenderer:
     # --- Standard Tool Calls ---
 
     def add_tool_call(self, display: Text | str, *_: Any) -> None:
-        # Add blank line if needed (check logic from ConversationLog,
-        # but simpler to just enforce spacing standards or assume Log handles it?
-        # ConversationLog checked _last_line_has_content. We might need access to that or pass it in.
-        # For now, we'll blindly assume some spacing management or access via log lines if robust.
-        # But log lines access is expensive if large. Let's just write and rely on log to space?
-        # The prompt says 'slowly', so let's try to be faithful.)
-
-        if self.log.lines and getattr(self.log.lines[-1], "plain", "").strip():
-            self.log.write(Text(""))
+        self._spacing.before_tool_call()
 
         if isinstance(display, Text):
             self._tool_display = display.copy()
@@ -279,8 +273,7 @@ class DefaultToolRenderer:
         """Add a tool result to the log.
 
         Note: We intentionally do NOT add a trailing blank line here.
-        Spacing is handled by the NEXT element (e.g., add_thinking_block)
-        which checks if the last line has content and adds a blank line if needed.
+        Spacing is handled by the NEXT element via before_* methods.
         This prevents double spacing.
         """
         try:
@@ -293,6 +286,8 @@ class DefaultToolRenderer:
             self._write_edit_result(header, diff_lines)
         else:
             self._write_generic_tool_result(result_plain)
+
+        self._spacing.after_tool_result()
 
     def add_tool_result_continuation(self, lines: list[str]) -> None:
         """Add continuation lines for tool result (no ⎿ prefix, just space indentation).
@@ -337,8 +332,7 @@ class DefaultToolRenderer:
         self.log._pending_spacing_line = None
 
         # Add blank line at end for spacing before next tool
-        # Use Text(" ") to ensure visible blank line (Text("") may not render)
-        self.log.write(Text(" "))
+        self._spacing.after_tool_result_continuation()
 
     # --- Nested Tool Calls ---
 
@@ -438,8 +432,7 @@ class DefaultToolRenderer:
                     return  # DON'T write individual tool line when collapsed
 
         # Expanded mode: write the tool call line
-        if self.log.lines and getattr(self.log.lines[-1], "plain", "").strip():
-            self.log.write(Text(""))
+        self._spacing.before_nested_tool_call()
 
         # Build tree-style indentation
         formatted = Text()
@@ -738,8 +731,7 @@ class DefaultToolRenderer:
                 - description: Short description of agent's task
                 - tool_call_id: Unique ID for tracking this agent
         """
-        if self.log.lines and getattr(self.log.lines[-1], "plain", "").strip():
-            self.log.write(Text(""))
+        self._spacing.before_parallel_agents()
 
         # Write header line
         header = Text()
@@ -1037,7 +1029,7 @@ class DefaultToolRenderer:
         self._update_parallel_header()
 
         # Add blank line for spacing before next content
-        self.log.write(Text(""))
+        self._spacing.after_parallel_agents()
 
         # Clear parallel group
         self._parallel_group = None
@@ -1084,8 +1076,7 @@ class DefaultToolRenderer:
             description: Task description
             tool_call_id: Unique ID for tracking
         """
-        if self.log.lines and getattr(self.log.lines[-1], "plain", "").strip():
-            self.log.write(Text(""))
+        self._spacing.before_single_agent()
 
         # Header line: "⠋ Explore(description)" - Rotating spinner
         header = Text()
@@ -1235,7 +1226,7 @@ class DefaultToolRenderer:
             self.log.refresh_line(agent.tool_line)
 
         # Add blank line for spacing before next content
-        self.log.write(Text(""))
+        self._spacing.after_single_agent()
 
         self._single_agent = None
 
@@ -1548,7 +1539,7 @@ class DefaultToolRenderer:
             is_first = False
 
         # Add blank line for spacing after output
-        self.log.write(Text(""))
+        self._spacing.after_bash_output_box()
 
     def _write_bash_output_line(
         self, line: str, indent: str, is_error: bool, is_first: bool = False
