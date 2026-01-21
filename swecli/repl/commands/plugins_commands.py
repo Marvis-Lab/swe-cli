@@ -1,5 +1,6 @@
 """Command handler for /plugins command to manage plugins and marketplaces."""
 
+import sys
 from typing import Any
 
 from rich.console import Console
@@ -24,16 +25,24 @@ class PluginsCommands(CommandHandler):
         self,
         console: Console,
         config_manager: Any,
+        *,
+        is_tui: bool = False,
     ):
         """Initialize plugins command handler.
 
         Args:
             console: Rich console for output
             config_manager: Configuration manager
+            is_tui: Whether running inside the TUI (disables interactive prompts)
         """
         super().__init__(console)
         self.config_manager = config_manager
         self.plugin_manager = PluginManager(config_manager.working_dir)
+        self._is_tui = is_tui
+
+    def _can_prompt_interactively(self) -> bool:
+        """Check if interactive prompts are available (not in TUI)."""
+        return not self._is_tui and sys.stdin.isatty()
 
     def handle(self, args: str) -> CommandResult:
         """Handle /plugins command and subcommands.
@@ -72,30 +81,12 @@ class PluginsCommands(CommandHandler):
 
     def _show_menu(self) -> CommandResult:
         """Show available plugins commands."""
-        self.print_line("[bold]Install:[/bold]")
-        self.print_continuation(
-            "[cyan]/plugins install <url>[/cyan]           Install plugin from URL"
-        )
-        self.print_continuation(
-            "[cyan]/plugins install <url> --project[/cyan] Install to project scope"
-        )
-        self.console.print()
-        self.print_line("[bold]Manage:[/bold]")
-        self.print_continuation(
-            "[cyan]/plugins list[/cyan]                    List installed plugins"
-        )
-        self.print_continuation(
-            "[cyan]/plugins sync <name>[/cyan]             Update a plugin"
-        )
-        self.print_continuation(
-            "[cyan]/plugins uninstall <name>[/cyan]        Uninstall a plugin"
-        )
-        self.print_continuation(
-            "[cyan]/plugins enable <name>[/cyan]           Enable a plugin"
-        )
-        self.print_continuation(
-            "[cyan]/plugins disable <name>[/cyan]          Disable a plugin"
-        )
+        self.print_line("[cyan]/plugins list[/cyan]                    List installed plugins")
+        self.print_continuation("[cyan]/plugins install <url>[/cyan]           Install plugin from URL")
+        self.print_continuation("[cyan]/plugins uninstall <name>[/cyan]        Uninstall a plugin")
+        self.print_continuation("[cyan]/plugins sync <name>[/cyan]             Update a plugin")
+        self.print_continuation("[cyan]/plugins enable <name>[/cyan]           Enable a plugin")
+        self.print_continuation("[cyan]/plugins disable <name>[/cyan]          Disable a plugin")
         self.console.print()
 
         return CommandResult(success=True)
@@ -254,22 +245,36 @@ class PluginsCommands(CommandHandler):
                 self.print_error(str(e))
                 return CommandResult(success=False, message=str(e))
 
-    def _remove_marketplace(self, name: str) -> CommandResult:
+    def _remove_marketplace(self, args: str) -> CommandResult:
         """Remove a marketplace.
 
         Args:
-            name: Marketplace name
+            args: Marketplace name and optional flags (--force/-f)
 
         Returns:
             CommandResult with execution status
         """
+        # Parse --force flag
+        parts = args.split()
+        name = ""
+        force = False
+        for part in parts:
+            if part in ("--force", "-f"):
+                force = True
+            elif not name:
+                name = part
+
         if not name:
-            self.print_error("Marketplace name required: /plugins marketplace remove <name>")
+            self.print_error(
+                "Marketplace name required: /plugins marketplace remove <name> [--force]"
+            )
             return CommandResult(success=False, message="Name required")
 
-        if not Confirm.ask(f"Remove marketplace '{name}'?"):
-            self.print_info("Cancelled")
-            return CommandResult(success=False, message="Cancelled")
+        # Skip confirmation if --force or non-interactive (TUI)
+        if not force and self._can_prompt_interactively():
+            if not Confirm.ask(f"Remove marketplace '{name}'?"):
+                self.print_info("Cancelled")
+                return CommandResult(success=False, message="Cancelled")
 
         try:
             self.plugin_manager.remove_marketplace(name)
@@ -444,31 +449,43 @@ class PluginsCommands(CommandHandler):
             self.print_error(str(e))
             return CommandResult(success=False, message=str(e))
 
-    def _uninstall_plugin(self, spec: str) -> CommandResult:
+    def _uninstall_plugin(self, args: str) -> CommandResult:
         """Uninstall a plugin or bundle.
 
         Args:
-            spec: Plugin spec (<plugin>@<marketplace>) or bundle name
+            args: Plugin spec (<plugin>@<marketplace>) or bundle name, with optional --force/-f
 
         Returns:
             CommandResult with execution status
         """
+        # Parse --force flag
+        parts = args.split()
+        spec = ""
+        force = False
+        for part in parts:
+            if part in ("--force", "-f"):
+                force = True
+            elif not spec:
+                spec = part
+
         if not spec:
             self.print_error(
-                "Usage: /plugins uninstall <name> or /plugins uninstall <plugin>@<marketplace>"
+                "Usage: /plugins uninstall <name> [--force] or /plugins uninstall <plugin>@<marketplace> [--force]"
             )
             return CommandResult(success=False, message="Name required")
 
         # Check if it's a bundle (no @ in spec)
         if "@" not in spec:
-            return self._uninstall_bundle(spec)
+            return self._uninstall_bundle(spec, force=force)
 
         # Traditional marketplace plugin uninstall
         plugin_name, marketplace = spec.rsplit("@", 1)
 
-        if not Confirm.ask(f"Uninstall plugin '{plugin_name}' from '{marketplace}'?"):
-            self.print_info("Cancelled")
-            return CommandResult(success=False, message="Cancelled")
+        # Skip confirmation if --force or non-interactive (TUI)
+        if not force and self._can_prompt_interactively():
+            if not Confirm.ask(f"Uninstall plugin '{plugin_name}' from '{marketplace}'?"):
+                self.print_info("Cancelled")
+                return CommandResult(success=False, message="Cancelled")
 
         # Try both scopes
         for scope in ["project", "user"]:
@@ -483,18 +500,21 @@ class PluginsCommands(CommandHandler):
         self.print_error(f"Plugin '{plugin_name}' not found in any scope")
         return CommandResult(success=False, message="Plugin not found")
 
-    def _uninstall_bundle(self, name: str) -> CommandResult:
+    def _uninstall_bundle(self, name: str, force: bool = False) -> CommandResult:
         """Uninstall a bundle.
 
         Args:
             name: Bundle name
+            force: Skip confirmation prompt
 
         Returns:
             CommandResult with execution status
         """
-        if not Confirm.ask(f"Uninstall bundle '{name}'?"):
-            self.print_info("Cancelled")
-            return CommandResult(success=False, message="Cancelled")
+        # Skip confirmation if --force or non-interactive (TUI)
+        if not force and self._can_prompt_interactively():
+            if not Confirm.ask(f"Uninstall bundle '{name}'?"):
+                self.print_info("Cancelled")
+                return CommandResult(success=False, message="Cancelled")
 
         try:
             self.plugin_manager.uninstall_bundle(name)

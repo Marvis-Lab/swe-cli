@@ -33,6 +33,17 @@ from swecli.ui_textual.components.console_animations import Spinner
 from swecli.ui_textual.components import StatusLine, NotificationCenter
 from swecli.ui_textual.autocomplete import SwecliCompleter
 from swecli.ui_textual.formatters_internal.output_formatter import OutputFormatter
+from swecli.ui_textual.style_tokens import (
+    CYAN,
+    ERROR,
+    PT_BG_BLACK,
+    PT_BG_SELECTED,
+    PT_GREEN,
+    PT_GREY,
+    PT_META_GREY,
+    PT_ORANGE,
+    WARNING,
+)
 
 # Command handlers
 from swecli.repl.commands import (
@@ -43,6 +54,8 @@ from swecli.repl.commands import (
     ConfigCommands,
     ToolCommands,
     AgentsCommands,
+    SkillsCommands,
+    PluginsCommands,
 )
 
 # UI components
@@ -61,15 +74,23 @@ from swecli.repl.query_processor import QueryProcessor
 class REPL:
     """Interactive REPL for AI-powered coding assistance."""
 
-    def __init__(self, config_manager: ConfigManager, session_manager: SessionManager):
+    def __init__(
+        self,
+        config_manager: ConfigManager,
+        session_manager: SessionManager,
+        *,
+        is_tui: bool = False,
+    ):
         """Initialize REPL.
 
         Args:
             config_manager: Configuration manager
             session_manager: Session manager
+            is_tui: Whether running inside the TUI (disables interactive prompts)
         """
         self.config_manager = config_manager
         self.session_manager = session_manager
+        self.is_tui = is_tui
         self.config = config_manager.get_config()
         self.console = Console()
 
@@ -188,14 +209,14 @@ class REPL:
 
         # Elegant autocomplete styling
         autocomplete_style = Style.from_dict({
-            'completion-menu': 'bg:#000000',
+            'completion-menu': f'bg:{PT_BG_BLACK}',
             'completion-menu.completion': '#FFFFFF',
-            'completion-menu.completion.current': 'bg:#2A2A2A #FFFFFF',
-            'completion-menu.meta': '#808080',
+            'completion-menu.completion.current': f'bg:{PT_BG_SELECTED} #FFFFFF',
+            'completion-menu.meta': PT_META_GREY,
             'completion-menu.completion.current.meta': '#A0A0A0',
-            'mode-normal': 'bold #ff9f43',
-            'mode-plan': 'bold #2ecc71',
-            'toolbar-text': '#aaaaaa',
+            'mode-normal': f'bold {PT_ORANGE}',
+            'mode-plan': f'bold {PT_GREEN}',
+            'toolbar-text': PT_GREY,
         })
 
         self.prompt_session: PromptSession[str] = PromptSession(
@@ -258,6 +279,17 @@ class REPL:
             self.console,
             self.config_manager,
             subagent_manager=self.runtime_suite.subagent_manager if hasattr(self.runtime_suite, 'subagent_manager') else None,
+        )
+
+        self.skills_commands = SkillsCommands(
+            self.console,
+            self.config_manager,
+        )
+
+        self.plugins_commands = PluginsCommands(
+            self.console,
+            self.config_manager,
+            is_tui=self.is_tui,
         )
 
     def _init_query_processor(self):
@@ -411,7 +443,7 @@ class REPL:
                 self._process_query(user_input)
 
             except KeyboardInterrupt:
-                self.console.print("\n[yellow]Exiting...[/yellow]")
+                self.console.print(f"\n[{WARNING}]Exiting...[/{WARNING}]")
                 self.running = False
                 break
             except EOFError:
@@ -437,16 +469,16 @@ class REPL:
             elif "Essential Commands:" in line:
                 self.console.print(f"[bold white]{line}[/bold white]")
             elif "/help" in line or "/mode" in line:
-                styled = line.replace("/help", "[cyan]/help[/cyan]")
-                styled = styled.replace("/mode plan", "[cyan]/mode plan[/cyan]")
-                styled = styled.replace("/mode normal", "[cyan]/mode normal[/cyan]")
+                styled = line.replace("/help", f"[{CYAN}]/help[/{CYAN}]")
+                styled = styled.replace("/mode plan", f"[{CYAN}]/mode plan[/{CYAN}]")
+                styled = styled.replace("/mode normal", f"[{CYAN}]/mode normal[/{CYAN}]")
                 self.console.print(styled)
             elif "Shortcuts:" in line:
                 styled = f"[bold white]{line.split(':')[0]}:[/bold white]"
                 rest = line.split(':', 1)[1] if ':' in line else ""
-                styled += rest.replace("Shift+Tab", "[yellow]Shift+Tab[/yellow]")
-                styled = styled.replace("@file", "[yellow]@file[/yellow]")
-                styled = styled.replace("↑↓", "[yellow]↑↓[/yellow]")
+                styled += rest.replace("Shift+Tab", f"[{WARNING}]Shift+Tab[/{WARNING}]")
+                styled = styled.replace("@file", f"[{WARNING}]@file[/{WARNING}]")
+                styled = styled.replace("↑↓", f"[{WARNING}]↑↓[/{WARNING}]")
                 self.console.print(styled)
             elif "Session:" in line:
                 mode = self.mode_manager.current_mode.value.upper()
@@ -547,8 +579,12 @@ class REPL:
             self.tool_commands.paper2code(command)
         elif cmd == "/agents":
             self.agents_commands.handle(args)
+        elif cmd == "/skills":
+            self.skills_commands.handle(args)
+        elif cmd == "/plugins":
+            self.plugins_commands.handle(args)
         else:
-            self.console.print(f"  ⎿  [red]Unknown command[/red]")
+            self.console.print(f"  ⎿  [{ERROR}]Unknown command[/{ERROR}]")
             self.console.print("  ⎿  Type /help for available commands")
             self.console.print("")  # Blank line for spacing
 
@@ -580,11 +616,11 @@ class REPL:
         try:
             self.mcp_manager.disconnect_all_sync()
         except Exception as e:
-            self.console.print(f"[yellow]Warning: Error disconnecting MCP servers: {e}[/yellow]")
+            self.console.print(f"[{WARNING}]Warning: Error disconnecting MCP servers: {e}[/{WARNING}]")
 
         # Save current session
         if self.session_manager.current_session:
             self.session_manager.save_session()
 
         # No cleanup needed for Pydantic AI agent
-        self.console.print("\n[cyan]Goodbye![/cyan]")
+        self.console.print(f"\n[{CYAN}]Goodbye![/{CYAN}]")

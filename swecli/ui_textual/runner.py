@@ -164,7 +164,7 @@ class TextualRunner:
             self.session_manager = session_manager or SessionManager(session_root)
             self.session_manager.create_session(working_directory=str(self.working_dir))
 
-            self.repl = REPL(self.config_manager, self.session_manager)
+            self.repl = REPL(self.config_manager, self.session_manager, is_tui=True)
             self.repl.mode_manager.set_mode(OperationMode.NORMAL)
             self.repl.approval_manager = ChatApprovalManager(self.repl.console)
 
