@@ -74,7 +74,7 @@ class TextualUICallback:
             content: The reasoning/thinking text from the model
         """
         # Check visibility from chat_app (single source of truth) or fallback to local state
-        if self.chat_app and hasattr(self.chat_app, '_thinking_visible'):
+        if self.chat_app and hasattr(self.chat_app, "_thinking_visible"):
             if not self.chat_app._thinking_visible:
                 return  # Skip display if thinking is hidden
         elif not self._thinking_visible:
@@ -88,11 +88,11 @@ class TextualUICallback:
             self._run_on_ui(self.chat_app._stop_local_spinner)
 
         # Display thinking block with special styling
-        if hasattr(self.conversation, 'add_thinking_block'):
+        if hasattr(self.conversation, "add_thinking_block"):
             self._run_on_ui(self.conversation.add_thinking_block, content)
 
         # Restart spinner for the action phase
-        if self.chat_app and hasattr(self.chat_app, '_start_local_spinner'):
+        if self.chat_app and hasattr(self.chat_app, "_start_local_spinner"):
             self._run_on_ui(self.chat_app._start_local_spinner)
 
     def toggle_thinking_visibility(self) -> bool:
@@ -104,7 +104,7 @@ class TextualUICallback:
             New visibility state (True = visible)
         """
         # Toggle app state (single source of truth) if available
-        if self.chat_app and hasattr(self.chat_app, '_thinking_visible'):
+        if self.chat_app and hasattr(self.chat_app, "_thinking_visible"):
             self.chat_app._thinking_visible = not self.chat_app._thinking_visible
             self._thinking_visible = self.chat_app._thinking_visible
             return self.chat_app._thinking_visible
@@ -137,10 +137,10 @@ class TextualUICallback:
                 self._run_on_ui(self.chat_app._stop_local_spinner)
 
             # Display the assistant's thinking/message
-            if hasattr(self.conversation, 'add_assistant_message'):
+            if hasattr(self.conversation, "add_assistant_message"):
                 self._run_on_ui(self.conversation.add_assistant_message, content)
                 # Force refresh to ensure immediate visual update
-                if hasattr(self.conversation, 'refresh'):
+                if hasattr(self.conversation, "refresh"):
                     self._run_on_ui(self.conversation.refresh)
 
     def on_message(self, message: str) -> None:
@@ -149,7 +149,7 @@ class TextualUICallback:
         Args:
             message: The message to display
         """
-        if hasattr(self.conversation, 'add_system_message'):
+        if hasattr(self.conversation, "add_system_message"):
             self._run_on_ui(self.conversation.add_system_message, message)
 
     def on_progress_start(self, message: str) -> None:
@@ -159,16 +159,16 @@ class TextualUICallback:
             message: The progress message to display with spinner
         """
         # Use SpinnerService for unified spinner management
-        if self._app is not None and hasattr(self._app, 'spinner_service'):
+        if self._app is not None and hasattr(self._app, "spinner_service"):
             self._progress_spinner_id = self._app.spinner_service.start(message)
         else:
             # Fallback to direct calls if SpinnerService not available
             from rich.text import Text
 
             display_text = Text(message, style=PRIMARY)
-            if hasattr(self.conversation, 'add_tool_call') and self._app is not None:
+            if hasattr(self.conversation, "add_tool_call") and self._app is not None:
                 self._app.call_from_thread(self.conversation.add_tool_call, display_text)
-            if hasattr(self.conversation, 'start_tool_execution') and self._app is not None:
+            if hasattr(self.conversation, "start_tool_execution") and self._app is not None:
                 self._app.call_from_thread(self.conversation.start_tool_execution)
 
     def on_progress_update(self, message: str) -> None:
@@ -181,14 +181,18 @@ class TextualUICallback:
             message: New progress message to display
         """
         # Use SpinnerService for unified spinner management
-        if self._progress_spinner_id and self._app is not None and hasattr(self._app, 'spinner_service'):
+        if (
+            self._progress_spinner_id
+            and self._app is not None
+            and hasattr(self._app, "spinner_service")
+        ):
             self._app.spinner_service.update(self._progress_spinner_id, message)
         else:
             # Fallback to direct calls if SpinnerService not available
             from rich.text import Text
 
             display_text = Text(message, style=PRIMARY)
-            if hasattr(self.conversation, 'update_progress_text'):
+            if hasattr(self.conversation, "update_progress_text"):
                 self._run_on_ui(self.conversation.update_progress_text, display_text)
 
     def on_progress_complete(self, message: str = "", success: bool = True) -> None:
@@ -199,7 +203,11 @@ class TextualUICallback:
             success: Whether the operation succeeded (affects bullet color)
         """
         # Use SpinnerService for unified spinner management
-        if self._progress_spinner_id and self._app is not None and hasattr(self._app, 'spinner_service'):
+        if (
+            self._progress_spinner_id
+            and self._app is not None
+            and hasattr(self._app, "spinner_service")
+        ):
             self._app.spinner_service.stop(self._progress_spinner_id, success, message)
             self._progress_spinner_id = ""
         else:
@@ -207,7 +215,7 @@ class TextualUICallback:
             from rich.text import Text
 
             # Stop spinner (shows green/red bullet based on success)
-            if hasattr(self.conversation, 'stop_tool_execution'):
+            if hasattr(self.conversation, "stop_tool_execution"):
                 self._run_on_ui(lambda: self.conversation.stop_tool_execution(success))
 
             # Show result line (if message provided)
@@ -222,7 +230,7 @@ class TextualUICallback:
         Displays the interrupt message directly by replacing the blank line after user prompt.
         """
         # Stop any active spinners via SpinnerService
-        if self._app is not None and hasattr(self._app, 'spinner_service'):
+        if self._app is not None and hasattr(self._app, "spinner_service"):
             if self._tool_spinner_id:
                 self._app.spinner_service.stop(self._tool_spinner_id, success=False)
                 self._tool_spinner_id = ""
@@ -231,7 +239,7 @@ class TextualUICallback:
                 self._progress_spinner_id = ""
 
         # Stop spinner first - this removes spinner lines but leaves the blank line after user prompt
-        if hasattr(self.conversation, 'stop_spinner'):
+        if hasattr(self.conversation, "stop_spinner"):
             self._run_on_ui(self.conversation.stop_spinner)
         if self.chat_app and hasattr(self.chat_app, "_stop_local_spinner"):
             self._run_on_ui(self.chat_app._stop_local_spinner)
@@ -243,7 +251,7 @@ class TextualUICallback:
             from rich.text import Text
 
             # Check if we have lines and last line is blank
-            if hasattr(self.conversation, 'lines') and len(self.conversation.lines) > 0:
+            if hasattr(self.conversation, "lines") and len(self.conversation.lines) > 0:
                 # Check if last line is blank
                 last_line = self.conversation.lines[-1]
 
@@ -252,24 +260,28 @@ class TextualUICallback:
                 is_blank = False
 
                 # Check if it's a Strip object with empty content
-                if hasattr(last_line, '_segments'):
+                if hasattr(last_line, "_segments"):
                     segments = last_line._segments
                     if len(segments) == 0:
                         is_blank = True
-                    elif len(segments) == 1 and segments[0].text == '':
+                    elif len(segments) == 1 and segments[0].text == "":
                         is_blank = True
-                elif hasattr(last_line, 'plain'):
+                elif hasattr(last_line, "plain"):
                     # Fallback for Text objects
                     if last_line.plain.strip() == "":
                         is_blank = True
 
                 if is_blank:
                     # Use _truncate_from to properly remove the blank line and update widget state
-                    if hasattr(self.conversation, '_truncate_from'):
+                    if hasattr(self.conversation, "_truncate_from"):
                         self.conversation._truncate_from(len(self.conversation.lines) - 1)
 
             # Now write the interrupt message using shared utility
-            from swecli.ui_textual.utils.interrupt_utils import create_interrupt_text, THINKING_INTERRUPT_MESSAGE
+            from swecli.ui_textual.utils.interrupt_utils import (
+                create_interrupt_text,
+                THINKING_INTERRUPT_MESSAGE,
+            )
+
             interrupt_line = create_interrupt_text(THINKING_INTERRUPT_MESSAGE)
             self.conversation.write(interrupt_line)
 
@@ -331,6 +343,11 @@ class TextualUICallback:
             agent_key = tool_call_id or subagent_type
             self._current_single_agent_id = agent_key  # Store for completion
 
+            # Stop thinking spinner if still active (shows "Plotting...", etc.)
+            if self._current_thinking:
+                self._run_on_ui(self.conversation.stop_spinner)
+                self._current_thinking = False
+
             # Stop any local spinner
             if self.chat_app and hasattr(self.chat_app, "_stop_local_spinner"):
                 self._run_on_ui(self.chat_app._stop_local_spinner)
@@ -355,7 +372,7 @@ class TextualUICallback:
             display_text = build_tool_call_text(tool_name, display_args)
 
             # Use SpinnerService for unified spinner management
-            if self._app is not None and hasattr(self._app, 'spinner_service'):
+            if self._app is not None and hasattr(self._app, "spinner_service"):
                 # Bash commands don't need placeholders - their output is rendered separately
                 is_bash = tool_name in ("bash_execute", "run_command")
                 spinner_id = self._app.spinner_service.start(display_text, skip_placeholder=is_bash)
@@ -364,9 +381,9 @@ class TextualUICallback:
                 self._tool_spinner_ids[key] = spinner_id
             else:
                 # Fallback to direct calls if SpinnerService not available
-                if hasattr(self.conversation, 'add_tool_call') and self._app is not None:
+                if hasattr(self.conversation, "add_tool_call") and self._app is not None:
                     self._app.call_from_thread(self.conversation.add_tool_call, display_text)
-                if hasattr(self.conversation, 'start_tool_execution') and self._app is not None:
+                if hasattr(self.conversation, "start_tool_execution") and self._app is not None:
                     self._app.call_from_thread(self.conversation.start_tool_execution)
 
     def on_tool_result(
@@ -396,7 +413,7 @@ class TextualUICallback:
                 self.on_thinking(thinking_content)
 
             # Restart spinner - model continues processing after think
-            if self.chat_app and hasattr(self.chat_app, '_start_local_spinner'):
+            if self.chat_app and hasattr(self.chat_app, "_start_local_spinner"):
                 self._run_on_ui(self.chat_app._start_local_spinner)
             return  # Don't show as standard tool result
 
@@ -412,17 +429,17 @@ class TextualUICallback:
         # These are already shown by the approval controller interrupt message
         if isinstance(result, dict) and result.get("interrupted"):
             # Still stop the spinner
-            if spinner_id and self._app is not None and hasattr(self._app, 'spinner_service'):
+            if spinner_id and self._app is not None and hasattr(self._app, "spinner_service"):
                 self._app.spinner_service.stop(spinner_id, False, "Interrupted")
             return
 
         # Skip displaying spawn_subagent results - the command handler shows its own result
         if tool_name == "spawn_subagent":
-            if spinner_id and self._app is not None and hasattr(self._app, 'spinner_service'):
+            if spinner_id and self._app is not None and hasattr(self._app, "spinner_service"):
                 self._app.spinner_service.stop(spinner_id, success)
             # For single agent spawns, mark as complete
             if self._in_parallel_agent_group:
-                agent_key = getattr(self, '_current_single_agent_id', None)
+                agent_key = getattr(self, "_current_single_agent_id", None)
                 if agent_key:
                     self.on_single_agent_complete(agent_key, success)
                 self._in_parallel_agent_group = False
@@ -435,18 +452,21 @@ class TextualUICallback:
 
             if background_task_id:
                 # Background task - show special message (Claude Code style)
-                if spinner_id and self._app is not None and hasattr(self._app, 'spinner_service'):
-                    self._app.spinner_service.stop(spinner_id, success, f"Running in background ({background_task_id})")
+                if spinner_id and self._app is not None and hasattr(self._app, "spinner_service"):
+                    self._app.spinner_service.stop(
+                        spinner_id, success, f"Running in background ({background_task_id})"
+                    )
                 return
 
             # Quick command - stop spinner first, then show bash output box
-            if spinner_id and self._app is not None and hasattr(self._app, 'spinner_service'):
+            if spinner_id and self._app is not None and hasattr(self._app, "spinner_service"):
                 self._app.spinner_service.stop(spinner_id, success, "")
 
             is_error = not result.get("success", True)
 
-            if hasattr(self.conversation, 'add_bash_output_box'):
+            if hasattr(self.conversation, "add_bash_output_box"):
                 import os
+
                 command = self._normalize_arguments(tool_args).get("command", "")
                 working_dir = os.getcwd()
                 # Use "output" key (combined stdout+stderr from process_handlers),
@@ -516,11 +536,11 @@ class TextualUICallback:
 
         # Stop spinner WITH the first summary line (for parallel tool display)
         first_summary = summary_lines[0] if summary_lines else ""
-        if spinner_id and self._app is not None and hasattr(self._app, 'spinner_service'):
+        if spinner_id and self._app is not None and hasattr(self._app, "spinner_service"):
             self._app.spinner_service.stop(spinner_id, success, first_summary)
         else:
             # Fallback to direct calls if SpinnerService not available
-            if hasattr(self.conversation, 'stop_tool_execution'):
+            if hasattr(self.conversation, "stop_tool_execution"):
                 self._run_on_ui(lambda: self.conversation.stop_tool_execution(success))
 
         # Write tool result continuation (e.g., diff lines for edit_file)
@@ -529,7 +549,9 @@ class TextualUICallback:
             self._run_on_ui(self.conversation.add_tool_result_continuation, collected_lines)
 
         if summary_lines and self.chat_app and hasattr(self.chat_app, "record_tool_summary"):
-            self._run_on_ui(self.chat_app.record_tool_summary, tool_name, normalized_args, summary_lines.copy())
+            self._run_on_ui(
+                self.chat_app.record_tool_summary, tool_name, normalized_args, summary_lines.copy()
+            )
 
         # Auto-refresh todo panel after todo tool execution
         if tool_name in {"write_todos", "update_todo", "complete_todo"}:
@@ -555,7 +577,7 @@ class TextualUICallback:
         normalized_args = self._normalize_arguments(tool_args)
 
         # Display nested tool call with indentation (BLOCKING to ensure timer starts before tool executes)
-        if hasattr(self.conversation, 'add_nested_tool_call') and self._app is not None:
+        if hasattr(self.conversation, "add_nested_tool_call") and self._app is not None:
             display_text = build_tool_call_text(tool_name, normalized_args)
             self._app.call_from_thread(
                 self.conversation.add_nested_tool_call,
@@ -589,12 +611,14 @@ class TextualUICallback:
             result = {"success": True, "output": result}
 
         # Collect for session storage (always, even in collapsed mode)
-        self._pending_nested_calls.append(ToolCall(
-            id=f"nested_{len(self._pending_nested_calls)}",
-            name=tool_name,
-            parameters=tool_args,
-            result=result,
-        ))
+        self._pending_nested_calls.append(
+            ToolCall(
+                id=f"nested_{len(self._pending_nested_calls)}",
+                name=tool_name,
+                parameters=tool_args,
+                result=result,
+            )
+        )
 
         # Skip ALL display when in collapsed parallel mode
         # The header shows aggregated stats, individual tool results are hidden
@@ -606,7 +630,7 @@ class TextualUICallback:
         if isinstance(result, dict) and result.get("interrupted"):
             # Still update the tool call status to show it was interrupted
             # Use BLOCKING call_from_thread to ensure display updates before next tool
-            if hasattr(self.conversation, 'complete_nested_tool_call') and self._app is not None:
+            if hasattr(self.conversation, "complete_nested_tool_call") and self._app is not None:
                 self._app.call_from_thread(
                     self.conversation.complete_nested_tool_call,
                     tool_name,
@@ -620,7 +644,7 @@ class TextualUICallback:
         # Update the nested tool call status to complete (for ALL tools including bash)
         # Use BLOCKING call_from_thread to ensure each tool's completion is displayed
         # before the next tool starts (fixes "all at once" display issue)
-        if hasattr(self.conversation, 'complete_nested_tool_call') and self._app is not None:
+        if hasattr(self.conversation, "complete_nested_tool_call") and self._app is not None:
             success = result.get("success", False) if isinstance(result, dict) else True
             self._app.call_from_thread(
                 self.conversation.complete_nested_tool_call,
@@ -663,7 +687,7 @@ class TextualUICallback:
             if stderr.strip():
                 output = (output + "\n" + stderr.strip()) if output else stderr.strip()
 
-            if hasattr(self.conversation, 'add_nested_bash_output_box'):
+            if hasattr(self.conversation, "add_nested_bash_output_box"):
                 # Signature: (output, is_error, command, working_dir, depth)
                 self._run_on_ui(
                     self.conversation.add_nested_bash_output_box,
@@ -703,7 +727,7 @@ class TextualUICallback:
         # This avoids ANSI code stripping that happens in add_nested_tool_sub_results
         if tool_name == "edit_file" and result.get("success"):
             diff_text = result.get("diff", "")
-            if diff_text and hasattr(self.conversation, 'add_edit_diff_result'):
+            if diff_text and hasattr(self.conversation, "add_edit_diff_result"):
                 # Show summary line first
                 file_path = tool_args.get("file_path", "unknown")
                 lines_added = result.get("lines_added", 0) or 0
@@ -744,12 +768,13 @@ class TextualUICallback:
         # Debug logging for missing content
         if not lines:
             import logging
+
             logging.getLogger(__name__).debug(
                 f"No display lines for nested {tool_name}: result keys={list(result.keys()) if isinstance(result, dict) else 'not dict'}"
             )
 
         # Display each line with proper nesting
-        if lines and hasattr(self.conversation, 'add_nested_tool_sub_results'):
+        if lines and hasattr(self.conversation, "add_nested_tool_sub_results"):
             self._run_on_ui(self.conversation.add_nested_tool_sub_results, lines, depth)
 
     def _display_todo_sub_results(self, todos: list, depth: int) -> None:
@@ -774,10 +799,12 @@ class TextualUICallback:
             symbol = {"pending": "○", "in_progress": "▶", "completed": "✓"}.get(status, "○")
             items.append((symbol, title))
 
-        if items and hasattr(self.conversation, 'add_todo_sub_results'):
+        if items and hasattr(self.conversation, "add_todo_sub_results"):
             self._run_on_ui(self.conversation.add_todo_sub_results, items, depth)
 
-    def _display_todo_update_result(self, args: Dict[str, Any], todo_data: Dict[str, Any], depth: int) -> None:
+    def _display_todo_update_result(
+        self, args: Dict[str, Any], todo_data: Dict[str, Any], depth: int
+    ) -> None:
         """Display what was updated in the todo.
 
         Args:
@@ -799,7 +826,7 @@ class TextualUICallback:
         else:
             line = f"○ {title}"
 
-        if hasattr(self.conversation, 'add_todo_sub_result'):
+        if hasattr(self.conversation, "add_todo_sub_result"):
             self._run_on_ui(self.conversation.add_todo_sub_result, line, depth)
 
     def _display_todo_complete_result(self, todo_data: Dict[str, Any], depth: int) -> None:
@@ -814,7 +841,7 @@ class TextualUICallback:
         if not title:
             return
 
-        if hasattr(self.conversation, 'add_todo_sub_result'):
+        if hasattr(self.conversation, "add_todo_sub_result"):
             self._run_on_ui(self.conversation.add_todo_sub_result, f"✓ {title}", depth)
 
     def _normalize_arguments(self, tool_args: Any) -> Dict[str, Any]:
@@ -894,7 +921,7 @@ class TextualUICallback:
         does not guarantee execution order.
         """
         if self._app is not None:
-            loop = getattr(self._app, '_loop', None)
+            loop = getattr(self._app, "_loop", None)
             if loop is not None:
                 loop.call_soon_threadsafe(lambda: func(*args, **kwargs))
             else:
@@ -908,13 +935,13 @@ class TextualUICallback:
         Returns:
             True if an interrupt is pending and we should skip UI updates
         """
-        if self.chat_app and hasattr(self.chat_app, 'runner'):
+        if self.chat_app and hasattr(self.chat_app, "runner"):
             runner = self.chat_app.runner
-            if hasattr(runner, 'query_processor'):
+            if hasattr(runner, "query_processor"):
                 query_processor = runner.query_processor
-                if hasattr(query_processor, 'task_monitor'):
+                if hasattr(query_processor, "task_monitor"):
                     task_monitor = query_processor.task_monitor
-                    if task_monitor and hasattr(task_monitor, 'should_interrupt'):
+                    if task_monitor and hasattr(task_monitor, "should_interrupt"):
                         return task_monitor.should_interrupt()
         return False
 
@@ -930,7 +957,7 @@ class TextualUICallback:
             return
 
         # Display debug message in conversation (non-blocking)
-        if hasattr(self.conversation, 'add_debug_message'):
+        if hasattr(self.conversation, "add_debug_message"):
             self._run_on_ui_non_blocking(self.conversation.add_debug_message, message, prefix)
 
     def _refresh_todo_panel(self) -> None:
@@ -940,6 +967,7 @@ class TextualUICallback:
 
         try:
             from swecli.ui_textual.widgets.todo_panel import TodoPanel
+
             panel = self.chat_app.query_one("#todo-panel", TodoPanel)
             self._run_on_ui(panel.refresh_display)
         except Exception:
@@ -954,10 +982,10 @@ class TextualUICallback:
         details: Optional[str] = None,
     ) -> None:
         """Called when ANY tool completes to display result.
-        
+
         This is the standardized method for showing tool completion results.
         Every tool should call this to display its pass/fail status.
-        
+
         Args:
             tool_name: Name of the tool that completed
             success: Whether the tool succeeded
@@ -968,19 +996,19 @@ class TextualUICallback:
             ToolResultFormatter,
             ResultType,
         )
-        
+
         formatter = ToolResultFormatter()
-        
+
         # Determine result type based on success
         result_type = ResultType.SUCCESS if success else ResultType.ERROR
-        
+
         # Format the result using centralized formatter
         result_text = formatter.format_result(
             message,
             result_type,
             secondary=details,
         )
-        
+
         # Display in conversation
         self._run_on_ui(self.conversation.write, result_text)
 
@@ -997,18 +1025,30 @@ class TextualUICallback:
         """
         print(f"[DEBUG] on_parallel_agents_start: {agent_infos}", file=sys.stderr)
 
+        # Stop thinking spinner if still active (shows "Plotting...", etc.)
+        if self._current_thinking:
+            self._run_on_ui(self.conversation.stop_spinner)
+            self._current_thinking = False
+
+        # Stop any local spinner
+        if self.chat_app and hasattr(self.chat_app, "_stop_local_spinner"):
+            self._run_on_ui(self.chat_app._stop_local_spinner)
+
         # Set flag SYNCHRONOUSLY before async UI update to prevent race conditions
         # This ensures on_tool_call sees the flag immediately
         self._in_parallel_agent_group = True
 
-        if hasattr(self.conversation, 'on_parallel_agents_start') and self._app is not None:
+        if hasattr(self.conversation, "on_parallel_agents_start") and self._app is not None:
             print(f"[DEBUG] Calling conversation.on_parallel_agents_start", file=sys.stderr)
             self._app.call_from_thread(
                 self.conversation.on_parallel_agents_start,
                 agent_infos,
             )
         else:
-            print(f"[DEBUG] Missing on_parallel_agents_start or app: has_method={hasattr(self.conversation, 'on_parallel_agents_start')}, _app={self._app}", file=sys.stderr)
+            print(
+                f"[DEBUG] Missing on_parallel_agents_start or app: has_method={hasattr(self.conversation, 'on_parallel_agents_start')}, _app={self._app}",
+                file=sys.stderr,
+            )
 
     def on_parallel_agent_complete(self, tool_call_id: str, success: bool) -> None:
         """Called when a parallel agent completes.
@@ -1017,7 +1057,7 @@ class TextualUICallback:
             tool_call_id: Unique tool call ID of the agent that completed
             success: Whether the agent succeeded
         """
-        if hasattr(self.conversation, 'on_parallel_agent_complete') and self._app is not None:
+        if hasattr(self.conversation, "on_parallel_agent_complete") and self._app is not None:
             self._app.call_from_thread(
                 self.conversation.on_parallel_agent_complete,
                 tool_call_id,
@@ -1029,7 +1069,7 @@ class TextualUICallback:
         # Clear flag SYNCHRONOUSLY to allow normal tool call display to resume
         self._in_parallel_agent_group = False
 
-        if hasattr(self.conversation, 'on_parallel_agents_done') and self._app is not None:
+        if hasattr(self.conversation, "on_parallel_agents_done") and self._app is not None:
             self._app.call_from_thread(self.conversation.on_parallel_agents_done)
 
     def on_single_agent_start(self, agent_type: str, description: str, tool_call_id: str) -> None:
@@ -1040,7 +1080,7 @@ class TextualUICallback:
             description: Task description
             tool_call_id: Unique ID for tracking
         """
-        if hasattr(self.conversation, 'on_single_agent_start') and self._app is not None:
+        if hasattr(self.conversation, "on_single_agent_start") and self._app is not None:
             self._app.call_from_thread(
                 self.conversation.on_single_agent_start,
                 agent_type,
@@ -1055,7 +1095,7 @@ class TextualUICallback:
             tool_call_id: Unique ID of the agent that completed
             success: Whether the agent succeeded
         """
-        if hasattr(self.conversation, 'on_single_agent_complete') and self._app is not None:
+        if hasattr(self.conversation, "on_single_agent_complete") and self._app is not None:
             self._app.call_from_thread(
                 self.conversation.on_single_agent_complete,
                 tool_call_id,
@@ -1068,7 +1108,7 @@ class TextualUICallback:
         Returns:
             New expansion state (True = expanded)
         """
-        if hasattr(self.conversation, 'toggle_parallel_expansion'):
+        if hasattr(self.conversation, "toggle_parallel_expansion"):
             return self.conversation.toggle_parallel_expansion()
         return True
 
@@ -1078,6 +1118,6 @@ class TextualUICallback:
         Returns:
             True if a parallel group is currently active
         """
-        if hasattr(self.conversation, 'has_active_parallel_group'):
+        if hasattr(self.conversation, "has_active_parallel_group"):
             return self.conversation.has_active_parallel_group()
         return False
