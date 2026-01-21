@@ -7,7 +7,14 @@ from rich.text import Text
 from textual.widgets import RichLog
 
 from swecli.ui_textual.renderers import render_markdown_text_segment
-from swecli.ui_textual.style_tokens import ERROR, PRIMARY, SUBTLE, PANEL_BORDER, THINKING, THINKING_ICON
+from swecli.ui_textual.style_tokens import (
+    ERROR,
+    PRIMARY,
+    SUBTLE,
+    PANEL_BORDER,
+    THINKING,
+    THINKING_ICON,
+)
 from swecli.ui_textual.widgets.conversation.protocols import RichLogInterface
 
 
@@ -21,13 +28,22 @@ class DefaultMessageRenderer:
 
     def add_user_message(self, message: str) -> None:
         """Render a user message."""
-        # Always add blank line before user prompt if there's any previous content
-        # This ensures spacing after command results, tool outputs, etc.
-        if self.log.lines:
-            self.log.write(Text(""))
+        # Add blank line before user prompt ONLY if previous line has content.
+        # This prevents double spacing when the previous message (assistant, thinking, etc.)
+        # already added a trailing blank line.
+        #
+        # Example flow WITHOUT this check:
+        #   add_assistant_message -> adds trailing blank line
+        #   add_user_message -> adds leading blank line  <- DOUBLE SPACING
+        #
+        # With this check, we only add a blank line if the previous line has content.
+        if self.log.lines and hasattr(self.log.lines[-1], "plain"):
+            last_plain = self.log.lines[-1].plain.strip() if self.log.lines[-1].plain else ""
+            if last_plain:
+                self.log.write(Text(""))
         self.log.write(Text(f"› {message}", style=f"bold {PRIMARY}"))
         # Only add trailing blank line for non-command messages
-        # Commands output directly below without spacing
+        # Commands control their own spacing via print_command_header()
         if not message.strip().startswith("/"):
             self.log.write(Text(""))
 
@@ -38,7 +54,7 @@ class DefaultMessageRenderer:
             return
 
         # Add blank line before message if previous line has content (for spacing)
-        if self.log.lines and hasattr(self.log.lines[-1], 'plain'):
+        if self.log.lines and hasattr(self.log.lines[-1], "plain"):
             last_plain = self.log.lines[-1].plain.strip() if self.log.lines[-1].plain else ""
             if last_plain:
                 self.log.write(Text(""))
@@ -51,7 +67,7 @@ class DefaultMessageRenderer:
         for _, segment in enumerate(segments):
             if segment["type"] == "code":
                 # Delegate back to log or implement write_code_block here?
-                # Ideally, this logic should be self-contained. 
+                # Ideally, this logic should be self-contained.
                 # But _write_code_block is currently in ConversationLog.
                 # For now, let's implement the logic here directly or copy it.
                 # Since we want to extract, we should move the logic here.
@@ -118,12 +134,12 @@ class DefaultMessageRenderer:
 
         # Add blank line before thinking only if previous line has content
         # (avoids double spacing when add_user_message already added a blank line)
-        if self.log.lines and hasattr(self.log.lines[-1], 'plain'):
+        if self.log.lines and hasattr(self.log.lines[-1], "plain"):
             last_plain = self.log.lines[-1].plain.strip() if self.log.lines[-1].plain else ""
             if last_plain:
                 self.log.write(Text(""))
 
-        lines = content.strip().split('\n')
+        lines = content.strip().split("\n")
         text = Text()
 
         # Simulate 60% opacity with dim + darker color for blur effect
@@ -147,10 +163,10 @@ class DefaultMessageRenderer:
         """Render a code block segment."""
         from rich.panel import Panel
         from rich.syntax import Syntax
-        
+
         language = segment.get("language") or "text"
         code = segment.get("content", "")
-        
+
         # Create syntax object
         syntax = Syntax(
             code,
@@ -160,7 +176,7 @@ class DefaultMessageRenderer:
             word_wrap=True,
             padding=1,
         )
-        
+
         # Wrap in panel
         panel = Panel(
             syntax,
