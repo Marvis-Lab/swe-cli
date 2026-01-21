@@ -276,6 +276,13 @@ class DefaultToolRenderer:
             self._render_tool_spinner_frame()
 
     def add_tool_result(self, result: str) -> None:
+        """Add a tool result to the log.
+
+        Note: We intentionally do NOT add a trailing blank line here.
+        Spacing is handled by the NEXT element (e.g., add_thinking_block)
+        which checks if the last line has content and adds a blank line if needed.
+        This prevents double spacing.
+        """
         try:
             result_plain = Text.from_markup(result).plain
         except Exception:
@@ -286,8 +293,6 @@ class DefaultToolRenderer:
             self._write_edit_result(header, diff_lines)
         else:
             self._write_generic_tool_result(result_plain)
-
-        self.log.write(Text(""))
 
     def add_tool_result_continuation(self, lines: list[str]) -> None:
         """Add continuation lines for tool result (no ⎿ prefix, just space indentation).
