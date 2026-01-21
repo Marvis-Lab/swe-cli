@@ -135,6 +135,9 @@ class MessageController:
     def _set_processing_state(self, active: bool) -> None:
         app = self.app
         if active == app._is_processing:
+            # Even if already in the target state, ensure spinner reflects it
+            if active:
+                app._start_local_spinner()
             return
 
         app._is_processing = active
