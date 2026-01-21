@@ -1038,6 +1038,9 @@ class DefaultToolRenderer:
         self._parallel_group.completed = True
         self._update_parallel_header()
 
+        # Add blank line for spacing before next content
+        self.log.write(Text(""))
+
         # Clear parallel group
         self._parallel_group = None
 
