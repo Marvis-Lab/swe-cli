@@ -400,16 +400,6 @@ def format_tool_call(tool_name: str, tool_args: Mapping[str, Any]) -> str:
             # Tree mode: just show path (default behavior)
             return f"{verb}({path})"
 
-    # Enhanced formatting for list_directory tool - show depth
-    elif tool_name == "list_directory" and tool_args:
-        verb, _ = get_tool_display_parts(tool_name)
-        path = tool_args.get("path", ".")
-        max_depth = tool_args.get("max_depth")
-
-        if max_depth and max_depth != 2:
-            return f"{verb}({path}, depth: {max_depth})"
-        return f"{verb}({path})"
-
     # Default formatting for other tools
     verb, label = get_tool_display_parts(tool_name)
     summary = summarize_tool_arguments(tool_name, tool_args)
