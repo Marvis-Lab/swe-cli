@@ -366,7 +366,7 @@ def generate_embeddings(
             # Multiple texts
             return [item.embedding for item in response.data]
 
-    except Exception as e:
+    except Exception:
         # Fallback: return random embeddings for testing
         # In production, this should raise the error
         import random

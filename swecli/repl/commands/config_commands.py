@@ -191,7 +191,7 @@ class ConfigCommands(CommandHandler):
 
         # Verify provider matches
         if found_provider_id != provider_id:
-            self.print_error(f"Model provider mismatch")
+            self.print_error("Model provider mismatch")
             return CommandResult(success=False, message="Provider mismatch")
 
         # Check API key for new provider (silently - user will get error when they try to use it)
@@ -270,7 +270,7 @@ class ConfigCommands(CommandHandler):
             thinking_provider = config.model_thinking_provider.capitalize() if config.model_thinking_provider else "Unknown"
             lines.append(f"  ⎿  Thinking: {thinking_provider}/{thinking_name}")
         else:
-            lines.append(f"  ⎿  Thinking: Not set (falls back to Normal)")
+            lines.append("  ⎿  Thinking: Not set (falls back to Normal)")
 
         # VLM model (if configured)
         if config.model_vlm:
@@ -278,7 +278,7 @@ class ConfigCommands(CommandHandler):
             vlm_provider = config.model_vlm_provider.capitalize() if config.model_vlm_provider else "Unknown"
             lines.append(f"  ⎿  Vision: {vlm_provider}/{vlm_name}")
         else:
-            lines.append(f"  ⎿  Vision: Not set (vision tasks unavailable)")
+            lines.append("  ⎿  Vision: Not set (vision tasks unavailable)")
 
         # Create the message in tool result format
         full_message = "\n".join(lines)

@@ -6,21 +6,16 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
-from rich.console import Group
-from rich.panel import Panel
-from rich.syntax import Syntax
 from rich.text import Text
 from textual.strip import Strip
 from textual.timer import Timer
 
 from swecli.ui_textual.constants import TOOL_ERROR_SENTINEL
 from swecli.ui_textual.style_tokens import (
-    BLUE_PATH,
     CYAN,
     ERROR,
     GREEN_BRIGHT,
     GREEN_GRADIENT,
-    GREEN_PROMPT,
     GREY,
     PRIMARY,
     SUBTLE,
@@ -1622,7 +1617,7 @@ class DefaultToolRenderer:
         # Write collapsed summary line - summary text can wrap
         summary = summarize_output(content_lines, "bash")
         hint = get_expansion_hint()
-        summary_line = Text(f"    \u23bf  ", style=GREY)
+        summary_line = Text("    \u23bf  ", style=GREY)
         summary_line.append(summary, style=SUBTLE)
         summary_line.append(f" {hint}", style=f"{SUBTLE} italic")
         self.log.write(summary_line, wrap=True)

@@ -4,7 +4,6 @@ import re
 from typing import Any
 
 from rich.text import Text
-from textual.widgets import RichLog
 
 from swecli.ui_textual.renderers import render_markdown_text_segment
 from swecli.ui_textual.style_tokens import (

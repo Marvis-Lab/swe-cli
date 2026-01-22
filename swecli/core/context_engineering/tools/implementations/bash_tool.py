@@ -75,7 +75,7 @@ class BashTool(BaseTool):
         Args:
             config: Application configuration
             working_dir: Working directory for command execution
-            task_manager: Optional BackgroundTaskManager for tracking background tasks
+            task_manager: Optional task manager for tracking background tasks
         """
         self.config = config
         self.working_dir = working_dir
