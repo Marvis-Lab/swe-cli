@@ -315,8 +315,8 @@ Confirm that the desired outcome was achieved.
 
         if skill_count == 0:
             self.print_info("No skills found.")
-            self.print_continuation(f"Create one with [cyan]/skills create[/cyan]")
-            self.print_continuation(f"Or install plugins with [cyan]/plugins install[/cyan]")
+            self.print_continuation("Create one with [cyan]/skills create[/cyan]")
+            self.print_continuation("Or install plugins with [cyan]/plugins install[/cyan]")
             self.console.print()
         else:
             self.console.print(table)

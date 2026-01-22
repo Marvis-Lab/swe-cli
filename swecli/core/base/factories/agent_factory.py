@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any, TYPE_CHECKING
 
 from swecli.core.agents import SwecliAgent

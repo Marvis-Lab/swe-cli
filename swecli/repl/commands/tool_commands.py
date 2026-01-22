@@ -1,17 +1,13 @@
 """Command handlers for tool-related commands (/init, /resolve-github-issue, /paper2code)."""
 
-import asyncio
-from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from rich.console import Console
 
 from swecli.core.runtime.approval import ApprovalManager
 from swecli.core.runtime import ModeManager
 from swecli.core.context_engineering.history import SessionManager, UndoManager
-from swecli.core.runtime.services import RuntimeService
-from swecli.models.operation import Operation, OperationType
 from swecli.models.agent_deps import AgentDependencies
 from swecli.repl.commands.base import CommandHandler, CommandResult
 

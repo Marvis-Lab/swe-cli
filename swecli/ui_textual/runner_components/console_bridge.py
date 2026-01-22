@@ -7,8 +7,7 @@ them into the Textual conversation UI.
 from __future__ import annotations
 
 import asyncio
-import queue
-from typing import Any, Optional
+from typing import Any
 
 from rich.ansi import AnsiDecoder
 from rich.text import Text

@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import Any, TYPE_CHECKING
 
 from rich.console import RenderableType
-from rich.text import Text
 
 from swecli.ui_textual.components.skill_creator_panels import (
     create_location_panel,

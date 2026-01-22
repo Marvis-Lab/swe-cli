@@ -5,18 +5,14 @@ import threading
 import time
 from typing import Any
 
-from rich.console import Console
 from rich.text import Text
-from textual.geometry import Size
 from textual.strip import Strip
 
 from swecli.ui_textual.style_tokens import GREY
 from swecli.ui_textual.widgets.conversation.protocols import RichLogInterface
 
-from textual.strip import Strip
 
-from swecli.ui_textual.style_tokens import GREY, BLUE_BRIGHT
-from swecli.ui_textual.widgets.conversation.protocols import RichLogInterface
+from swecli.ui_textual.style_tokens import BLUE_BRIGHT
 
 
 class DefaultSpinnerManager:

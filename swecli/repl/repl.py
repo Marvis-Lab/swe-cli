@@ -1,8 +1,6 @@
 """Interactive REPL for SWE-CLI."""
 
-from datetime import datetime
-from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 
 from prompt_toolkit import PromptSession
 from prompt_toolkit.history import FileHistory
@@ -21,8 +19,6 @@ from swecli.core.context_engineering.history import SessionManager, UndoManager
 from swecli.core.runtime.monitoring import ErrorHandler
 from swecli.core.runtime.services import RuntimeService
 from swecli.models.message import ChatMessage, Role
-from swecli.models.operation import Operation, OperationType
-from swecli.models.agent_deps import AgentDependencies
 from swecli.core.context_engineering.tools.implementations import (
     FileOperations,
     WriteTool,

@@ -155,7 +155,7 @@ class AgentsCommands(CommandHandler):
             agent_file.write_text(content, encoding="utf-8")
 
             self.print_success(f"Created agent: {agent_file}")
-            self.console.print(f"  Edit the file to customize the system prompt.")
+            self.console.print("  Edit the file to customize the system prompt.")
 
             return CommandResult(
                 success=True,

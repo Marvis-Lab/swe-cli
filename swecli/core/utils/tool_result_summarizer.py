@@ -33,13 +33,13 @@ def summarize_tool_result(tool_name: str, result: Any, error: str | None = None)
         return f"✓ Read file ({lines} lines, {chars} chars)"
 
     if tool_name in ("write_file", "Write"):
-        return f"✓ File written successfully"
+        return "✓ File written successfully"
 
     if tool_name in ("edit_file", "Edit"):
-        return f"✓ File edited successfully"
+        return "✓ File edited successfully"
 
     if tool_name in ("delete_file", "Delete"):
-        return f"✓ File deleted"
+        return "✓ File deleted"
 
     # Search operations
     if tool_name in ("search", "Grep"):
@@ -66,11 +66,11 @@ def summarize_tool_result(tool_name: str, result: Any, error: str | None = None)
 
     # Web operations
     if tool_name in ("fetch_url", "Fetch", "capture_web_screenshot"):
-        return f"✓ Content fetched successfully"
+        return "✓ Content fetched successfully"
 
     # Image operations
     if tool_name in ("analyze_image", "Analyze", "capture_screenshot"):
-        return f"✓ Image processed successfully"
+        return "✓ Image processed successfully"
 
     # Thinking tool - return directive, not content (content would contaminate LLM response)
     # The actual thinking is displayed in UI via _thinking_content key
