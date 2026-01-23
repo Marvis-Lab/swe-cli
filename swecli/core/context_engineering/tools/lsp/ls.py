@@ -1529,81 +1529,81 @@ class SolidLanguageServer(ABC):
         :return: The container symbol (if found) or None.
         """
         # checking if the line is empty, unfortunately ugly and duplicating code, but I don't want to refactor
-        with self.open_file(relative_file_path):
+        with self.open_file(relative_file_path) as file_buffer:
             absolute_file_path = str(PurePath(self.repository_root_path, relative_file_path))
-            content = FileUtils.read_file(absolute_file_path, self._encoding)
+            content = file_buffer.contents
             if content.split("\n")[line].strip() == "":
                 log.error(f"Passing empty lines to request_container_symbol is currently not supported, {relative_file_path=}, {line=}")
                 return None
 
-        document_symbols = self.request_document_symbols(relative_file_path)
+            document_symbols = self.request_document_symbols(relative_file_path, file_buffer=file_buffer)
 
-        # make jedi and pyright api compatible
-        # the former has no location, the later has no range
-        # we will just always add location of the desired format to all symbols
-        for symbol in document_symbols.iter_symbols():
-            if "location" not in symbol:
-                range = symbol["range"]
-                location = ls_types.Location(
-                    uri=f"file:/{absolute_file_path}",
-                    range=range,
-                    absolutePath=absolute_file_path,
-                    relativePath=relative_file_path,
-                )
-                symbol["location"] = location
+            # make jedi and pyright api compatible
+            # the former has no location, the later has no range
+            # we will just always add location of the desired format to all symbols
+            for symbol in document_symbols.iter_symbols():
+                if "location" not in symbol:
+                    range = symbol["range"]
+                    location = ls_types.Location(
+                        uri=f"file:/{absolute_file_path}",
+                        range=range,
+                        absolutePath=absolute_file_path,
+                        relativePath=relative_file_path,
+                    )
+                    symbol["location"] = location
+                else:
+                    location = symbol["location"]
+                    assert "range" in location
+                    location["absolutePath"] = absolute_file_path
+                    location["relativePath"] = relative_file_path
+                    location["uri"] = Path(absolute_file_path).as_uri()
+
+            # Allowed container kinds, currently only for Python
+            container_symbol_kinds = {ls_types.SymbolKind.Method, ls_types.SymbolKind.Function, ls_types.SymbolKind.Class}
+
+            def is_position_in_range(line: int, range_d: ls_types.Range) -> bool:
+                start = range_d["start"]
+                end = range_d["end"]
+
+                column_condition = True
+                if strict:
+                    line_condition = end["line"] >= line > start["line"]
+                    if column is not None and line == start["line"]:
+                        column_condition = column > start["character"]
+                else:
+                    line_condition = end["line"] >= line >= start["line"]
+                    if column is not None and line == start["line"]:
+                        column_condition = column >= start["character"]
+                return line_condition and column_condition
+
+            # Only consider containers that are not one-liners (otherwise we may get imports)
+            candidate_containers = [
+                s
+                for s in document_symbols.iter_symbols()
+                if s["kind"] in container_symbol_kinds and s["location"]["range"]["start"]["line"] != s["location"]["range"]["end"]["line"]
+            ]
+            var_containers = [s for s in document_symbols.iter_symbols() if s["kind"] == ls_types.SymbolKind.Variable]
+            candidate_containers.extend(var_containers)
+
+            if not candidate_containers:
+                return None
+
+            # From the candidates, find those whose range contains the given position.
+            containing_symbols = []
+            for symbol in candidate_containers:
+                s_range = symbol["location"]["range"]
+                if not is_position_in_range(line, s_range):
+                    continue
+                containing_symbols.append(symbol)
+
+            if containing_symbols:
+                # Return the one with the greatest starting position (i.e. the innermost container).
+                containing_symbol = max(containing_symbols, key=lambda s: s["location"]["range"]["start"]["line"])
+                if include_body:
+                    containing_symbol["body"] = self.retrieve_symbol_body(containing_symbol, file_buffer=file_buffer)
+                return containing_symbol
             else:
-                location = symbol["location"]
-                assert "range" in location
-                location["absolutePath"] = absolute_file_path
-                location["relativePath"] = relative_file_path
-                location["uri"] = Path(absolute_file_path).as_uri()
-
-        # Allowed container kinds, currently only for Python
-        container_symbol_kinds = {ls_types.SymbolKind.Method, ls_types.SymbolKind.Function, ls_types.SymbolKind.Class}
-
-        def is_position_in_range(line: int, range_d: ls_types.Range) -> bool:
-            start = range_d["start"]
-            end = range_d["end"]
-
-            column_condition = True
-            if strict:
-                line_condition = end["line"] >= line > start["line"]
-                if column is not None and line == start["line"]:
-                    column_condition = column > start["character"]
-            else:
-                line_condition = end["line"] >= line >= start["line"]
-                if column is not None and line == start["line"]:
-                    column_condition = column >= start["character"]
-            return line_condition and column_condition
-
-        # Only consider containers that are not one-liners (otherwise we may get imports)
-        candidate_containers = [
-            s
-            for s in document_symbols.iter_symbols()
-            if s["kind"] in container_symbol_kinds and s["location"]["range"]["start"]["line"] != s["location"]["range"]["end"]["line"]
-        ]
-        var_containers = [s for s in document_symbols.iter_symbols() if s["kind"] == ls_types.SymbolKind.Variable]
-        candidate_containers.extend(var_containers)
-
-        if not candidate_containers:
-            return None
-
-        # From the candidates, find those whose range contains the given position.
-        containing_symbols = []
-        for symbol in candidate_containers:
-            s_range = symbol["location"]["range"]
-            if not is_position_in_range(line, s_range):
-                continue
-            containing_symbols.append(symbol)
-
-        if containing_symbols:
-            # Return the one with the greatest starting position (i.e. the innermost container).
-            containing_symbol = max(containing_symbols, key=lambda s: s["location"]["range"]["start"]["line"])
-            if include_body:
-                containing_symbol["body"] = self.retrieve_symbol_body(containing_symbol)
-            return containing_symbol
-        else:
-            return None
+                return None
 
     def request_container_of_symbol(
         self, symbol: ls_types.UnifiedSymbolInformation, include_body: bool = False
