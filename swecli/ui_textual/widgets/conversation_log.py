@@ -183,9 +183,65 @@ class ConversationLog(RichLog):
         # Debounce: wait 100ms before re-rendering
         self._resize_timer = self.set_timer(0.1, self._rerender_blocks)
 
+    def _has_active_line_tracking(self) -> bool:
+        """Check if any component has active state that tracks line indices.
+
+        When line indices are being actively tracked (spinners, tool calls, etc.),
+        re-rendering would corrupt these indices and cause display issues.
+
+        Returns:
+            True if re-rendering should be skipped to avoid corruption
+        """
+        # Check spinner manager
+        sm = self._spinner_manager
+        if sm._spinner_active:
+            return True
+        if sm._spinner_start is not None:
+            return True
+
+        # Check tool renderer active states
+        tr = self._tool_renderer
+
+        # Active tool call
+        if tr._tool_call_start is not None:
+            return True
+
+        # Active nested tools
+        if tr._nested_tools:
+            return True
+        if tr._nested_tool_line is not None:
+            return True
+
+        # Active parallel agent group
+        if tr._parallel_group is not None:
+            return True
+
+        # Active single agent
+        if tr._single_agent is not None:
+            return True
+
+        # Active streaming bash box
+        if tr._streaming_box_header_line is not None:
+            return True
+
+        # Active approval prompt
+        if self._approval_start is not None:
+            return True
+
+        # Active ask-user prompt
+        if self._ask_user_start is not None:
+            return True
+
+        return False
+
     def _rerender_blocks(self) -> None:
         """Re-render all wrappable, unlocked blocks at current width."""
         self._resize_timer = None
+
+        # CRITICAL: Skip re-rendering if any component has active line tracking
+        # to avoid corrupting stored line indices
+        if self._has_active_line_tracking():
+            return
 
         width = self.scrollable_content_region.width
         if width <= 0:
