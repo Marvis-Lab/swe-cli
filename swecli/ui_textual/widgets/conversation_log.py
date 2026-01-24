@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from typing import Any, List, Optional, TYPE_CHECKING
 
 from rich.console import Console, Group, RenderableType
@@ -22,15 +21,7 @@ from swecli.ui_textual.widgets.conversation.spinner_manager import DefaultSpinne
 from swecli.ui_textual.widgets.conversation.message_renderer import DefaultMessageRenderer
 from swecli.ui_textual.widgets.conversation.tool_renderer import DefaultToolRenderer
 from swecli.ui_textual.widgets.conversation.scroll_controller import DefaultScrollController
-
-
-@dataclass
-class LineSource:
-    """Tracks the source renderable for a line for resize re-rendering."""
-
-    source: RenderableType  # Original Rich renderable
-    wrap: bool  # Whether this content should wrap on resize
-    line_indices: list[int] = field(default_factory=list)  # Line indices this source maps to
+from swecli.ui_textual.widgets.conversation.block_registry import BlockRegistry, ContentBlock
 
 
 class ConversationLog(RichLog):
@@ -38,9 +29,6 @@ class ConversationLog(RichLog):
 
     can_focus = True
     ALLOW_SELECT = True
-
-    # Maximum number of line sources to track (memory cap)
-    MAX_LINE_SOURCES = 2000
 
     def __init__(self, **kwargs):
         super().__init__(
@@ -64,15 +52,15 @@ class ConversationLog(RichLog):
         self._protected_lines: set[int] = set()  # Lines that should not be truncated
         self.MAX_PROTECTED_LINES = 200
 
-        # Source tracking for resize re-rendering
-        self._line_sources: list[LineSource] = []
+        # Block-based tracking for resize re-rendering
+        self._block_registry = BlockRegistry()
         self._last_render_width: int = 0
         self._resize_timer: Optional[Timer] = None
-        
+
     def refresh_line(self, y: int) -> None:
         """Refresh a specific line by invalidating cache and repainting."""
         # Aggressively clear cache to ensure spinner animation updates
-        if hasattr(self, '_line_cache'):
+        if hasattr(self, "_line_cache"):
             self._line_cache.clear()
         self.refresh()
 
@@ -84,9 +72,9 @@ class ConversationLog(RichLog):
         shrink: bool = True,
         scroll_end: bool | None = None,
         animate: bool = False,
-        wrap: bool | None = None,
+        wrappable: bool = True,
     ) -> "Self":
-        """Write content, storing source for potential re-rendering on resize.
+        """Write content, registering as a block for resize handling.
 
         Args:
             content: Rich renderable to write
@@ -95,17 +83,15 @@ class ConversationLog(RichLog):
             shrink: Whether to shrink to fit content
             scroll_end: Whether to scroll to end after write
             animate: Whether to animate scroll
-            wrap: Whether this content should re-wrap on resize.
-                  If None, uses self.wrap (True by default).
-                  Pass False for fixed-width content (terminal boxes, diffs, spinners).
+            wrappable: Whether this content should re-wrap on resize.
+                       Defaults to True for prose text.
+                       Pass False for fixed-width content (terminal boxes, diffs, spinners).
 
         Returns:
             Self for chaining
         """
-        # Determine if this content should wrap (default from self.wrap)
-        should_wrap = wrap if wrap is not None else self.wrap
+        import uuid
 
-        # Track line count before write to map source to lines
         lines_before = len(self.lines)
 
         # Call parent write
@@ -118,33 +104,35 @@ class ConversationLog(RichLog):
             animate=animate,
         )
 
-        # Track line count after write
         lines_after = len(self.lines)
 
-        # Store source for re-rendering (only for wrappable content)
-        if should_wrap:
-            line_indices = list(range(lines_before, lines_after))
-            self._line_sources.append(
-                LineSource(source=content, wrap=True, line_indices=line_indices)
-            )
-            # Prune old sources if we exceed the memory cap
-            self._prune_old_line_sources()
-        else:
-            # For non-wrappable content, store None source to maintain index mapping
-            line_indices = list(range(lines_before, lines_after))
-            self._line_sources.append(
-                LineSource(source=content, wrap=False, line_indices=line_indices)
-            )
-            self._prune_old_line_sources()
+        # Register this write as a content block
+        block = ContentBlock(
+            block_id=str(uuid.uuid4()),
+            source=content,
+            is_wrappable=wrappable,
+            start_line=lines_before,
+            line_count=lines_after - lines_before,
+        )
+        self._block_registry.register(block)
 
         return result
 
-    def _prune_old_line_sources(self) -> None:
-        """Remove oldest line sources if we exceed MAX_LINE_SOURCES."""
-        if len(self._line_sources) > self.MAX_LINE_SOURCES:
-            # Remove oldest sources
-            to_remove = len(self._line_sources) - self.MAX_LINE_SOURCES
-            self._line_sources = self._line_sources[to_remove:]
+    def lock_block(self, block_id: str) -> None:
+        """Lock a block to prevent re-rendering during animation.
+
+        Args:
+            block_id: Unique identifier of the block to lock
+        """
+        self._block_registry.lock_block(block_id)
+
+    def unlock_block(self, block_id: str) -> None:
+        """Unlock a block to allow re-rendering.
+
+        Args:
+            block_id: Unique identifier of the block to unlock
+        """
+        self._block_registry.unlock_block(block_id)
 
     def on_mount(self) -> None:
         if self.app:
@@ -163,11 +151,10 @@ class ConversationLog(RichLog):
             self._resize_timer = None
 
     def on_resize(self, event: Resize) -> None:
-        """Handle terminal resize by re-rendering wrappable content.
+        """Handle terminal resize by re-rendering wrappable blocks.
 
-        Unlike the default RichLog behavior which just clears caches,
-        we actually re-render stored source renderables at the new width
-        to properly reflow text content.
+        Uses the BlockRegistry to track which content blocks should be
+        re-rendered at the new width.
         """
         super().on_resize(event)
 
@@ -184,64 +171,108 @@ class ConversationLog(RichLog):
         if self._resize_timer is not None:
             self._resize_timer.stop()
         # Debounce: wait 100ms before re-rendering
-        self._resize_timer = self.set_timer(0.1, self._rerender_wrappable_content)
+        self._resize_timer = self.set_timer(0.1, self._rerender_blocks)
 
-    def _rerender_wrappable_content(self) -> None:
-        """Re-render all wrappable content at current width."""
+    def _rerender_blocks(self) -> None:
+        """Re-render all wrappable, unlocked blocks at current width."""
         self._resize_timer = None
 
         width = self.scrollable_content_region.width
         if width <= 0:
             return
 
-        # Create console at new width for rendering
         console = Console(width=width, force_terminal=True, no_color=False)
 
-        # Track which lines we've updated to avoid duplicates
-        updated_lines: set[int] = set()
-
-        for source_entry in self._line_sources:
-            if not source_entry.wrap:
-                # Skip non-wrappable content (terminal boxes, diffs, etc.)
+        # Process blocks in order, adjusting indices as we go
+        cumulative_delta = 0
+        for block in self._block_registry.get_all_blocks():
+            if not block.is_wrappable or block.is_locked:
+                # Just adjust for previous deltas
+                block.start_line += cumulative_delta
                 continue
 
-            if not source_entry.line_indices:
-                continue
+            # Adjust start for previous deltas
+            block.start_line += cumulative_delta
 
-            # Get the first line index for this source
-            first_line_idx = source_entry.line_indices[0]
-            if first_line_idx in updated_lines:
-                continue
+            # Re-render this block
+            new_strips = self._render_source_to_strips(block.source, console)
+            old_count = block.line_count
+            new_count = len(new_strips)
 
-            # Check if line indices are still valid
-            if first_line_idx >= len(self.lines):
-                continue
+            # Replace lines
+            start = block.start_line
+            if start < len(self.lines):
+                # Delete old lines
+                end = min(start + old_count, len(self.lines))
+                del self.lines[start:end]
+                # Insert new lines
+                for i, strip in enumerate(new_strips):
+                    self.lines.insert(start + i, strip)
 
-            # Re-render the source at new width
-            try:
-                # Render to segments using the console at new width
-                segments = list(console.render(source_entry.source))
-                new_strip = Strip(segments)
-
-                # Update the line in place
-                # Note: If the content wraps to multiple lines now, we only update the first
-                # This is a simplification - full multi-line handling would be more complex
-                self.lines[first_line_idx] = new_strip
-                updated_lines.add(first_line_idx)
-            except Exception:
-                # If rendering fails, leave the line as-is
-                pass
+            # Update block and track delta
+            block.line_count = new_count
+            delta = new_count - old_count
+            cumulative_delta += delta
 
         # Clear cache and refresh
         if hasattr(self, "_line_cache"):
             self._line_cache.clear()
         self.refresh()
 
+    def _render_source_to_strips(self, source: RenderableType, console: Console) -> list[Strip]:
+        """Render a source renderable to Strip objects.
+
+        Args:
+            source: Rich renderable to render
+            console: Console configured with target width
+
+        Returns:
+            List of Strip objects, one per line
+        """
+        from rich.segment import Segment
+
+        # Render the source to segments
+        segments = list(console.render(source))
+
+        # Split segments into lines based on newlines
+        strips: list[Strip] = []
+        current_line_segments: list[Segment] = []
+
+        for segment in segments:
+            text = segment.text
+            style = segment.style
+
+            if "\n" in text:
+                # Split on newlines
+                parts = text.split("\n")
+                for i, part in enumerate(parts):
+                    if part:
+                        current_line_segments.append(Segment(part, style))
+                    if i < len(parts) - 1:
+                        # End of line
+                        strips.append(Strip(current_line_segments))
+                        current_line_segments = []
+            else:
+                current_line_segments.append(segment)
+
+        # Don't forget the last line if it doesn't end with newline
+        if current_line_segments:
+            strips.append(Strip(current_line_segments))
+
+        # Ensure at least one strip
+        if not strips:
+            strips.append(Strip([]))
+
+        return strips
+
     def clear(self) -> "Self":
         """Clear all content."""
         self._protected_lines.clear()
-        self._line_sources.clear()
+        self._block_registry.clear()
         self._last_render_width = 0
+        if self._resize_timer is not None:
+            self._resize_timer.stop()
+            self._resize_timer = None
         return super().clear()
 
     def set_debug_enabled(self, enabled: bool) -> None:
@@ -281,11 +312,11 @@ class ConversationLog(RichLog):
         """Remove protected lines that are out of bounds."""
         if not self._protected_lines:
             return
-        
+
         # Filter out indices larger than current line count
         max_idx = len(self.lines) - 1
         valid_lines = {idx for idx in self._protected_lines if idx <= max_idx}
-        
+
         if len(valid_lines) != len(self._protected_lines):
             self._protected_lines = valid_lines
 
@@ -295,7 +326,7 @@ class ConversationLog(RichLog):
 
     def scroll_partial_page(self, direction: int) -> None:
         """Scroll a fraction of the viewport.
-        
+
         Args:
            direction: -1 for up, 1 for down
         """
@@ -306,12 +337,13 @@ class ConversationLog(RichLog):
 
     def on_mouse_scroll_up(self, event: MouseScrollUp) -> None:
         self._scroll_controller.on_mouse_scroll_up(event)
-    
+
     def on_mouse_down(self, event: MouseDown) -> None:
         self._scroll_controller.on_mouse_down(event)
 
     def on_mouse_move(self, event: MouseMove) -> None:
         self._scroll_controller.on_mouse_move(event)
+
     def on_mouse_up(self, event: MouseUp) -> None:
         self._scroll_controller.on_mouse_up(event)
 
@@ -368,8 +400,8 @@ class ConversationLog(RichLog):
             return
 
         if self._approval_start < len(self.lines):
-             del self.lines[self._approval_start:]
-             self.refresh()
+            del self.lines[self._approval_start :]
+            self.refresh()
 
         self._approval_start = None
 
@@ -394,7 +426,7 @@ class ConversationLog(RichLog):
             return
 
         if self._ask_user_start < len(self.lines):
-            del self.lines[self._ask_user_start:]
+            del self.lines[self._ask_user_start :]
             self.refresh()
 
         self._ask_user_start = None
@@ -452,9 +484,7 @@ class ConversationLog(RichLog):
         working_dir: str = ".",
         depth: int = 0,
     ) -> None:
-        self._tool_renderer.add_bash_output_box(
-            output, is_error, command, working_dir, depth
-        )
+        self._tool_renderer.add_bash_output_box(output, is_error, command, working_dir, depth)
 
     def start_streaming_bash_box(self, command: str = "", working_dir: str = ".") -> None:
         self._tool_renderer.start_streaming_bash_box(command, working_dir)
@@ -474,7 +504,7 @@ class ConversationLog(RichLog):
         depth: int = 1,
     ) -> None:
         self._tool_renderer.add_nested_bash_output_box(
-             output, is_error, command, working_dir, depth
+            output, is_error, command, working_dir, depth
         )
 
     def add_nested_tool_call(
@@ -486,7 +516,9 @@ class ConversationLog(RichLog):
     ) -> None:
         self._tool_renderer.add_nested_tool_call(display, depth, parent, tool_id)
 
-    def add_nested_tool_sub_results(self, lines: list, depth: int, is_last_parent: bool = True) -> None:
+    def add_nested_tool_sub_results(
+        self, lines: list, depth: int, is_last_parent: bool = True
+    ) -> None:
         """Add tool result lines for nested subagent tools."""
         self._tool_renderer.add_nested_tool_sub_results(lines, depth, is_last_parent)
 
@@ -582,7 +614,9 @@ class ConversationLog(RichLog):
         if protected_in_range:
             # Don't truncate protected lines - find the first non-protected line after index
             # or skip truncation entirely if all lines after index are protected
-            non_protected = [i for i in range(index, len(self.lines)) if i not in self._protected_lines]
+            non_protected = [
+                i for i in range(index, len(self.lines)) if i not in self._protected_lines
+            ]
             if not non_protected:
                 return  # All lines after index are protected, skip truncation
             # Only delete non-protected lines
@@ -592,8 +626,11 @@ class ConversationLog(RichLog):
         else:
             del self.lines[index:]
 
-        if hasattr(self, '_line_cache'):
-             self._line_cache.clear()
+        if hasattr(self, "_line_cache"):
+            self._line_cache.clear()
+
+        # Remove blocks that start at or after the truncation point
+        self._block_registry.remove_blocks_from(index)
 
         # Update protected line indices after deletion
         new_protected = set()
@@ -626,8 +663,8 @@ class ConversationLog(RichLog):
     def start_spinner(self, message: Text | str) -> None:
         """Show thinking spinner (delegated to SpinnerManager)."""
         if self._debug_enabled:
-             # Keep debug logging if useful, or move to manager?
-             pass
+            # Keep debug logging if useful, or move to manager?
+            pass
         self._spinner_manager.start_spinner(message)
 
     def update_spinner(self, message: Text | str) -> None:

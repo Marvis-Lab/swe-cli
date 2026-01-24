@@ -310,7 +310,7 @@ class DefaultToolRenderer:
                 self.log.lines[spacing_line] = text_to_strip(formatted)
             else:
                 # Tool result continuation lines preserve formatting, don't re-wrap
-                self.log.write(formatted, wrap=False)
+                self.log.write(formatted, wrappable=False)
 
         # Clear the pending spacing line
         self.log._pending_spacing_line = None
@@ -427,7 +427,7 @@ class DefaultToolRenderer:
         formatted.append(" (0s)", style=GREY)
 
         # Nested tool lines have tree structure and are updated in-place, don't re-wrap
-        self.log.write(formatted, scroll_end=True, animate=False, wrap=False)
+        self.log.write(formatted, scroll_end=True, animate=False, wrappable=False)
 
         # Generate tool_id if not provided
         if not tool_id:
@@ -718,7 +718,7 @@ class DefaultToolRenderer:
         header = Text()
         header.append("⠋ ", style=CYAN)  # Rotating spinner for header
         header.append(f"Running {len(agent_infos)} agents… ")
-        self.log.write(header, scroll_end=True, animate=False, wrap=False)
+        self.log.write(header, scroll_end=True, animate=False, wrappable=False)
         header_line = len(self.log.lines) - 1
 
         # Create agents dict keyed by tool_call_id
@@ -735,7 +735,7 @@ class DefaultToolRenderer:
             agent_row.append("   ⏺ ", style=GREEN_BRIGHT)  # Gradient bullet for agent rows
             agent_row.append(description)
             agent_row.append(" · 0 tools", style=GREY)
-            self.log.write(agent_row, scroll_end=True, animate=False, wrap=False)
+            self.log.write(agent_row, scroll_end=True, animate=False, wrappable=False)
             agent_line = len(self.log.lines) - 1
 
             # Status row: "      ⎿  Initializing...." (no tree connector for agent row)
@@ -743,7 +743,7 @@ class DefaultToolRenderer:
             status_row = Text()
             status_row.append("      ⎿  ", style=GREY)
             status_row.append("Initializing....", style=SUBTLE)
-            self.log.write(status_row, scroll_end=True, animate=False, wrap=False)
+            self.log.write(status_row, scroll_end=True, animate=False, wrappable=False)
             status_line_num = len(self.log.lines) - 1
 
             agents[tool_call_id] = AgentInfo(
@@ -1039,7 +1039,7 @@ class DefaultToolRenderer:
                 text.append(stats.current_tool, style=SUBTLE)
 
             # Parallel agent summaries have tree structure, don't re-wrap
-            self.log.write(text, scroll_end=True, animate=False, wrap=False)
+            self.log.write(text, scroll_end=True, animate=False, wrappable=False)
 
     def toggle_parallel_expansion(self) -> bool:
         """Toggle the expand/collapse state of parallel agent display.
@@ -1069,7 +1069,7 @@ class DefaultToolRenderer:
         header.append(f"{agent_type}(", style=CYAN)
         header.append(description, style=PRIMARY)
         header.append(")", style=CYAN)
-        self.log.write(header, scroll_end=True, animate=False, wrap=False)
+        self.log.write(header, scroll_end=True, animate=False, wrappable=False)
         header_line = len(self.log.lines) - 1
 
         # Status line: "   ⏺ 0 tools" - Gradient flashing bullet
@@ -1077,7 +1077,7 @@ class DefaultToolRenderer:
         status_row = Text()
         status_row.append("   ⏺ ", style=GREEN_BRIGHT)  # Will be animated with gradient
         status_row.append("0 tools", style=GREY)
-        self.log.write(status_row, scroll_end=True, animate=False, wrap=False)
+        self.log.write(status_row, scroll_end=True, animate=False, wrappable=False)
         status_line_num = len(self.log.lines) - 1
 
         # Current tool line: "      ⎿  Initializing..."
@@ -1085,7 +1085,7 @@ class DefaultToolRenderer:
         tool_row = Text()
         tool_row.append("      ⎿  ", style=GREY)
         tool_row.append("Initializing...", style=SUBTLE)
-        self.log.write(tool_row, scroll_end=True, animate=False, wrap=False)
+        self.log.write(tool_row, scroll_end=True, animate=False, wrappable=False)
         tool_line_num = len(self.log.lines) - 1
 
         self._single_agent = SingleAgentInfo(
@@ -1254,7 +1254,7 @@ class DefaultToolRenderer:
             hidden_text = Text(
                 f"       ... {hidden_count} lines hidden ...", style=f"{SUBTLE} italic"
             )
-            self.log.write(hidden_text)
+            self.log.write(hidden_text, wrappable=False)
 
         for line in tail_lines:
             self._write_bash_output_line(line, "", is_error, is_first)
@@ -1406,7 +1406,7 @@ class DefaultToolRenderer:
         formatted.append(" (0s)", style=GREY)
 
         # Tool call lines are updated in-place with spinners, don't re-wrap
-        self.log.write(formatted, wrap=False)
+        self.log.write(formatted, wrappable=False)
 
     # --- Tool Result Parsing Helpers ---
 
@@ -1437,7 +1437,7 @@ class DefaultToolRenderer:
 
     def _write_edit_result(self, header: str, diff_lines: list[str]) -> None:
         # Write header with ⎿ prefix to match other tool results - header can wrap
-        self.log.write(Text(f"    ⎿  {header}", style=SUBTLE), wrap=True)
+        self.log.write(Text(f"    ⎿  {header}", style=SUBTLE), wrappable=True)
 
         # Write diff lines with proper formatting - diff lines should NOT wrap
         # Lines come from _format_edit_file_result after ANSI stripping:
@@ -1456,7 +1456,7 @@ class DefaultToolRenderer:
                 formatted.append(line, style=ERROR)
             else:
                 formatted.append(line, style=SUBTLE)
-            self.log.write(formatted, wrap=False)
+            self.log.write(formatted, wrappable=False)
 
     def _write_generic_tool_result(self, text: str) -> None:
         lines = text.rstrip("\n").splitlines() or [text]
@@ -1481,9 +1481,8 @@ class DefaultToolRenderer:
             else:
                 # Use dim for normal, red for error
                 line.append(message, style=ERROR if is_error else SUBTLE)
-            # Tool result text - allow first line to wrap but not subsequent lines
-            # (preserves output formatting while allowing summary text to reflow)
-            self.log.write(line, wrap=(i == 0))
+            # Tool result text - don't re-wrap to preserve output formatting
+            self.log.write(line, wrappable=False)
 
     # --- Bash Box Output ---
 
@@ -1521,7 +1520,7 @@ class DefaultToolRenderer:
             summary_line = Text(f"{indent}    \u23bf  ", style=GREY)
             summary_line.append(summary, style=SUBTLE)
             summary_line.append(f" {hint}", style=f"{SUBTLE} italic")
-            self.log.write(summary_line, wrap=True)
+            self.log.write(summary_line, wrappable=False)
 
             end_line = len(self.log.lines) - 1
 
@@ -1560,7 +1559,7 @@ class DefaultToolRenderer:
         output_line = Text(prefix, style=GREY)
         output_line.append(normalized, style=ERROR if is_error else GREY)
         # Bash output preserves formatting, don't re-wrap
-        self.log.write(output_line, wrap=False)
+        self.log.write(output_line, wrappable=False)
 
     def start_streaming_bash_box(self, command: str = "", working_dir: str = ".") -> None:
         """Start streaming bash output with minimal style."""
@@ -1619,13 +1618,13 @@ class DefaultToolRenderer:
 
         start_line = len(self.log.lines)
 
-        # Write collapsed summary line - summary text can wrap
+        # Write collapsed summary line - don't re-wrap
         summary = summarize_output(content_lines, "bash")
         hint = get_expansion_hint()
         summary_line = Text(f"    \u23bf  ", style=GREY)
         summary_line.append(summary, style=SUBTLE)
         summary_line.append(f" {hint}", style=f"{SUBTLE} italic")
-        self.log.write(summary_line, wrap=True)
+        self.log.write(summary_line, wrappable=False)
 
         end_line = len(self.log.lines) - 1
 
@@ -1728,12 +1727,12 @@ class DefaultToolRenderer:
         indent = "  " * collapsible.depth
         new_start = len(self.log.lines)
 
-        # Write collapsed summary - summary text can wrap
+        # Write collapsed summary - don't re-wrap
         hint = get_expansion_hint()
         summary_line = Text(f"{indent}    \u23bf  ", style=GREY)
         summary_line.append(collapsible.summary, style=SUBTLE)
         summary_line.append(f" {hint}", style=f"{SUBTLE} italic")
-        self.log.write(summary_line, wrap=True)
+        self.log.write(summary_line, wrappable=False)
 
         # Update collapsible state
         collapsible.is_expanded = False
@@ -1800,7 +1799,7 @@ class DefaultToolRenderer:
         formatted.append("    ⎿  ", style=GREY)
         formatted.append(text, style=SUBTLE)
         # Todo sub-results have tree indentation structure, don't re-wrap
-        self.log.write(formatted, scroll_end=True, animate=False, wrap=False)
+        self.log.write(formatted, scroll_end=True, animate=False, wrappable=False)
 
     def add_todo_sub_results(self, items: list, depth: int, is_last_parent: bool = True) -> None:
         """Add multiple sub-result lines for todo list operations.
@@ -1821,7 +1820,7 @@ class DefaultToolRenderer:
             formatted.append(prefix, style=GREY)
             formatted.append(f"{symbol} {title}", style=SUBTLE)
             # Todo sub-results have tree indentation structure, don't re-wrap
-            self.log.write(formatted, scroll_end=True, animate=False, wrap=False)
+            self.log.write(formatted, scroll_end=True, animate=False, wrappable=False)
 
     def add_nested_tool_sub_results(
         self, lines: List[str], depth: int, is_last_parent: bool = True
@@ -1881,7 +1880,7 @@ class DefaultToolRenderer:
                 formatted.append(clean_line, style=SUBTLE)
 
             # Nested tool sub-results have tree indentation structure, don't re-wrap
-            self.log.write(formatted, scroll_end=True, animate=False, wrap=False)
+            self.log.write(formatted, scroll_end=True, animate=False, wrappable=False)
 
     def add_nested_tree_result(
         self,
@@ -1946,4 +1945,4 @@ class DefaultToolRenderer:
                 formatted.append(content.replace("\t", "    "), style=SUBTLE)
 
             # Diff lines have line numbers and fixed formatting, don't re-wrap
-            self.log.write(formatted, scroll_end=True, animate=False, wrap=False)
+            self.log.write(formatted, scroll_end=True, animate=False, wrappable=False)

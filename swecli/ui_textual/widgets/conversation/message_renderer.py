@@ -31,8 +31,8 @@ class DefaultMessageRenderer:
     def add_user_message(self, message: str) -> None:
         """Render a user message."""
         self._spacing.before_user_message()
-        # User messages should wrap on resize
-        self.log.write(Text(f"› {message}", style=f"bold {PRIMARY}"), wrap=True)
+        # User messages should wrap on resize (prose content)
+        self.log.write(Text(f"› {message}", style=f"bold {PRIMARY}"), wrappable=True)
         is_command = message.strip().startswith("/")
         self._spacing.after_user_message(is_command)
 
@@ -68,7 +68,7 @@ class DefaultMessageRenderer:
                 )
                 for renderable in renderables:
                     # Assistant prose text should wrap on resize
-                    self.log.write(renderable, wrap=True)
+                    self.log.write(renderable, wrappable=True)
                 if wrote:
                     text_output = True
                     leading_used = True
@@ -81,8 +81,8 @@ class DefaultMessageRenderer:
     def add_system_message(self, message: str) -> None:
         """Render a system message."""
         self._spacing.before_system_message()
-        # System messages should wrap on resize
-        self.log.write(Text(message, style=f"{SUBTLE} italic"), wrap=True)
+        # System messages should wrap on resize (prose content)
+        self.log.write(Text(message, style=f"{SUBTLE} italic"), wrappable=True)
 
     def add_error(self, message: str) -> None:
         """Render an error message."""
@@ -92,8 +92,8 @@ class DefaultMessageRenderer:
         # Ideally, rendering just renders. State changes like stopping spinner happen in the caller.
         bullet = Text("⦿ ", style=f"bold {ERROR}")
         bullet.append(message, style=ERROR)
-        # Error messages should wrap on resize
-        self.log.write(bullet, wrap=True)
+        # Error messages should wrap on resize (error text can reflow)
+        self.log.write(bullet, wrappable=True)
         self._spacing.after_error()
 
     def add_command_result(self, lines: list[str], is_error: bool = False) -> None:
@@ -108,8 +108,8 @@ class DefaultMessageRenderer:
         """
         style = ERROR if is_error else SUBTLE
         for line in lines:
-            # Command results can wrap on resize
-            self.log.write(Text(f"  ⎿  {line}", style=style), wrap=True)
+            # Command results can wrap on resize (text content)
+            self.log.write(Text(f"  ⎿  {line}", style=style), wrappable=True)
         self._spacing.after_command_result()
 
     def add_thinking_block(self, content: str) -> None:
@@ -142,8 +142,8 @@ class DefaultMessageRenderer:
         for line in lines[1:]:
             text.append(f"\n  {line}", style=blur_style)
 
-        # Thinking blocks should wrap on resize
-        self.log.write(text, wrap=True)
+        # Thinking blocks should wrap on resize (thinking content can reflow)
+        self.log.write(text, wrappable=True)
         self._spacing.after_thinking()
 
     # --- Helpers ---
@@ -175,7 +175,7 @@ class DefaultMessageRenderer:
             padding=(0, 1),
         )
         # Code blocks should NOT wrap on resize (preserve formatting)
-        self.log.write(panel, wrap=False)
+        self.log.write(panel, wrappable=False)
 
     def _split_code_blocks(self, message: str) -> list[dict[str, str]]:
         pattern = re.compile(r"```(\w+)?\n?(.*?)```", re.DOTALL)
