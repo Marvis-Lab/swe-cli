@@ -240,18 +240,9 @@ class SpinnerService:
         # Delegate to ConversationLog (BLOCKING to ensure line is added)
         # Track line number for this specific spinner
         def _start_on_ui():
-            # IMPORTANT: Always add blank line for visual separation from command input.
-            # This blank line appears BEFORE the spinner header (e.g., "⏺ MCP (github)").
-            # Without this, the spinner header appears immediately after the command input
-            # with no visual separation, making the output harder to read.
-            #
-            # Previously this was conditional: `if self._spinner_lines:` which only added
-            # a blank line when there were OTHER active spinners. This caused the first
-            # spinner (like /mcp connect) to have no blank line before its header.
-            # DO NOT revert this to a conditional check.
-            # Use Text(" ") to ensure visible blank line (Text("") may not render)
-            conversation.write(Text(" "))
-
+            # NOTE: Spacing before tool calls is handled by SpacingManager via add_tool_call().
+            # Do NOT add unconditional blank lines here - it causes double spacing when
+            # thinking blocks (which add trailing blanks) are followed by tool calls.
             if hasattr(conversation, "add_tool_call"):
                 conversation.add_tool_call(display_text)
             # DON'T call start_tool_execution() - we manage animation ourselves
