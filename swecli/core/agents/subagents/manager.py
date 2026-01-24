@@ -1437,20 +1437,30 @@ ALWAYS use relative paths (just the filename or relative path like src/file.py).
                 "cancelled": True,
             }
 
-        # Format answers for agent consumption
-        answer_lines = []
+        # Format answers for agent consumption (compact single line for clean UI display)
+        # Get headers from original questions for better formatting
+        answer_parts = []
         for idx, ans in answers.items():
             if isinstance(ans, list):
                 ans_text = ", ".join(str(a) for a in ans)
             else:
                 ans_text = str(ans)
-            answer_lines.append(f"Question {idx}: {ans_text}")
+            # Try to get header from question, fall back to Q#
+            q_idx = int(idx) if idx.isdigit() else 0
+            header = f"Q{q_idx + 1}"
+            if q_idx < len(questions):
+                q = questions[q_idx]
+                if hasattr(q, "header") and q.header:
+                    header = q.header
+            answer_parts.append(f"[{header}]={ans_text}")
 
-        answer_text = "\n".join(answer_lines) if answer_lines else "No answers provided"
+        total = len(questions)
+        answered = len(answers)
+        answer_summary = ", ".join(answer_parts) if answer_parts else "No answers"
 
         return {
             "success": True,
-            "content": f"User answered:\n{answer_text}",
+            "content": f"Received {answered}/{total} answers: {answer_summary}",
             "answers": answers,
             "cancelled": False,
         }

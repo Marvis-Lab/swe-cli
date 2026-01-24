@@ -425,6 +425,25 @@ class TextualUICallback:
         key = tool_call_id or f"_default_{id(tool_args)}"
         spinner_id = self._tool_spinner_ids.pop(key, None)
 
+        # Special handling for ask_user tool - the result placeholder gets removed when
+        # the ask_user panel is displayed (render_ask_user_prompt removes trailing blank lines).
+        # So we need to add the result line directly instead of relying on spinner_service.stop()
+        if tool_name == "ask_user" and isinstance(result, dict):
+            # Stop spinner without result message (placeholder was removed)
+            if spinner_id and self._app is not None and hasattr(self._app, "spinner_service"):
+                self._app.spinner_service.stop(spinner_id, success, "")
+
+            # Add result line directly with standard ⎿ prefix (2 spaces, matching spinner_service)
+            output = result.get("output", "")
+            if output and self._app is not None:
+                from rich.text import Text
+                from swecli.ui_textual.style_tokens import GREY
+
+                result_line = Text("  ⎿  ", style=GREY)
+                result_line.append(output, style=GREY)
+                self._run_on_ui(self.conversation.write, result_line)
+            return
+
         # Skip displaying interrupted operations
         # These are already shown by the approval controller interrupt message
         if isinstance(result, dict) and result.get("interrupted"):
@@ -434,9 +453,14 @@ class TextualUICallback:
             return
 
         # Skip displaying spawn_subagent results - the command handler shows its own result
+        # EXCEPT for ask-user which needs to show the answer summary
         if tool_name == "spawn_subagent":
+            normalized_args = self._normalize_arguments(tool_args)
+            subagent_type = normalized_args.get("subagent_type", "")
+
             if spinner_id and self._app is not None and hasattr(self._app, "spinner_service"):
                 self._app.spinner_service.stop(spinner_id, success)
+
             # For single agent spawns, mark as complete
             if self._in_parallel_agent_group:
                 agent_key = getattr(self, "_current_single_agent_id", None)
@@ -444,6 +468,18 @@ class TextualUICallback:
                     self.on_single_agent_complete(agent_key, success)
                 self._in_parallel_agent_group = False
                 self._current_single_agent_id = None
+
+            # For ask-user, show the result summary with ⎿ prefix
+            # This is done AFTER completion to add the result line below the header
+            if subagent_type == "ask-user" and isinstance(result, dict):
+                content = result.get("content", "")
+                if content and self._app is not None:
+                    # Add result line with ⎿ prefix
+                    self._run_on_ui(
+                        self.conversation.add_tool_result,
+                        content,
+                    )
+
             return
 
         # Bash commands: handle background vs immediate differently

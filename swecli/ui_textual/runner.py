@@ -298,6 +298,24 @@ class TextualRunner:
         # Store thinking handler reference for action_toggle_thinking to sync with query_processor
         self.app._thinking_handler = getattr(self.repl.tool_registry, "thinking_handler", None)
 
+        # Wire up ask_user_tool callback to UI controller
+        if hasattr(self.repl, "ask_user_tool") and self.repl.ask_user_tool:
+            ask_user_tool = self.repl.ask_user_tool
+
+            def _ask_user_ui_callback(questions):
+                """Bridge sync callback to async UI controller.
+
+                Called from background thread, schedules async controller on main loop.
+                """
+                future = asyncio.run_coroutine_threadsafe(
+                    self.app._ask_user_controller.start(questions),
+                    self._loop,
+                )
+                # Block calling thread until user responds
+                return future.result()
+
+            ask_user_tool.set_prompt_callback(_ask_user_ui_callback)
+
         if hasattr(self.repl, "config_commands"):
             self.repl.config_commands.chat_app = self.app
 

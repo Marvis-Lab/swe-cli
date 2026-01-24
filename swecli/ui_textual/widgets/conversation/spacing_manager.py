@@ -20,7 +20,7 @@ To achieve exactly 1 blank line between elements:
 
 3. LEADING BLANKS: All elements add leading blank IF previous line has content
    - This prevents double spacing
-   - Check looks at last few lines to handle trailing blanks correctly
+   - Check only looks at the LAST line (not past blanks) to respect structural trailing blanks
 
 4. ERROR CASES: Follow structural element rules
    - Command not found: trailing blank
@@ -58,24 +58,24 @@ class SpacingManager:
         self.log = log
 
     def _get_last_content(self) -> str:
-        """Get the content of the last non-empty line.
+        """Get the content of the last line (not looking past blanks).
+
+        Returns empty string if last line is blank, allowing structural
+        elements' trailing blanks to prevent double spacing.
 
         Handles both Text objects (.plain) and Strip objects (.text).
-        Looks at last few lines to handle cases where previous element
-        added a trailing blank.
 
         Returns:
-            The stripped content of the last non-empty line, or empty string
+            The stripped content of the last line, or empty string if blank
         """
         if not self.log.lines:
             return ""
 
-        # Check last few lines for content (in case trailing blank was added)
-        for line in reversed(self.log.lines[-5:]):
-            if hasattr(line, "plain") and line.plain:
-                return line.plain.strip() if line.plain else ""
-            elif hasattr(line, "text") and line.text:
-                return line.text.strip() if line.text else ""
+        last_line = self.log.lines[-1]
+        if hasattr(last_line, "plain"):
+            return last_line.plain.strip() if last_line.plain else ""
+        elif hasattr(last_line, "text"):
+            return last_line.text.strip() if last_line.text else ""
         return ""
 
     def needs_spacing_before(self) -> bool:

@@ -448,6 +448,16 @@ class SWECLIChatApp(App):
         if self._ask_user_controller.active:
             self._ask_user_controller.cancel()
 
+    def _ask_user_go_back(self) -> None:
+        """Navigate to previous question."""
+        if self._ask_user_controller.active:
+            self._ask_user_controller.go_back()
+
+    def _ask_user_go_forward(self) -> None:
+        """Navigate to next question."""
+        if self._ask_user_controller.active:
+            self._ask_user_controller.go_forward()
+
     async def process_message(self, message: str) -> None:
         """Send the user message to the backend for processing."""
         await self._message_controller.process(message)
