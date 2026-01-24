@@ -346,6 +346,9 @@ class ChatTextArea(TextArea):
                 # Allow other keys (typing) to pass through
                 await super()._on_key(event)
                 self.update_suggestion()
+                # Update live preview in the ask-user panel
+                if hasattr(ask_user_controller, "update_input_preview"):
+                    ask_user_controller.update_input_preview(self.text or "")
                 return
 
             # Normal ask-user mode - intercept navigation keys
@@ -361,7 +364,19 @@ class ChatTextArea(TextArea):
                 if hasattr(app, "_ask_user_move"):
                     app._ask_user_move(1)
                 return
-            if event.key == " ":
+            if event.key == "left":
+                event.stop()
+                event.prevent_default()
+                if hasattr(app, "_ask_user_go_back"):
+                    app._ask_user_go_back()
+                return
+            if event.key == "right":
+                event.stop()
+                event.prevent_default()
+                if hasattr(app, "_ask_user_go_forward"):
+                    app._ask_user_go_forward()
+                return
+            if event.key in {" ", "space"}:
                 # Space toggles multi-select
                 event.stop()
                 event.prevent_default()

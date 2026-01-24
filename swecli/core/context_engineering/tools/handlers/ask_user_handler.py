@@ -66,18 +66,12 @@ class AskUserHandler:
 
         # Format the answers for display
         answers = result.get("answers", {})
-        output_lines = ["User responses:"]
-
-        for key, value in answers.items():
-            if isinstance(value, list):
-                value_str = ", ".join(value)
-            else:
-                value_str = str(value)
-            output_lines.append(f"  Question {int(key) + 1}: {value_str}")
+        total_questions = len(questions)
+        answered_count = len(answers)
 
         return {
             "success": True,
-            "output": "\n".join(output_lines),
+            "output": f"Received {answered_count}/{total_questions} answers from user",
             "answers": answers,
             "cancelled": False,
         }

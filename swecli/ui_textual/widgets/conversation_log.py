@@ -425,6 +425,20 @@ class ConversationLog(RichLog):
         if self._ask_user_start is not None:
             self.clear_ask_user_prompt()
 
+        # Remove any trailing blank line to connect panel directly to spinner
+        # The panel is part of tool execution flow, no spacing needed
+        while self.lines:
+            last_line = self.lines[-1]
+            content = ""
+            if hasattr(last_line, "plain"):
+                content = last_line.plain.strip() if last_line.plain else ""
+            elif hasattr(last_line, "text"):
+                content = last_line.text.strip() if last_line.text else ""
+            if not content:
+                self.lines.pop()
+            else:
+                break
+
         self._ask_user_start = len(self.lines)
 
         for renderable in renderables:

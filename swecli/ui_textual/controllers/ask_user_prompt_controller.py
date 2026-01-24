@@ -47,6 +47,11 @@ class AskUserPromptController:
     def active(self) -> bool:
         return self._active
 
+    @property
+    def _is_submit_step(self) -> bool:
+        """Check if we're on the final Submit step."""
+        return self._current_question_idx == len(self._questions)
+
     async def start(self, questions: list[Question]) -> dict[str, Any] | None:
         """Display the ask-user prompt and wait for user responses.
 
@@ -119,6 +124,12 @@ class AskUserPromptController:
             # In Other mode, don't navigate - let user type
             return
 
+        if self._is_submit_step:
+            # Only 2 options: Submit (0) and Cancel (1)
+            self._selected_index = (self._selected_index + delta) % 2
+            self._render()
+            return
+
         current_q = self._questions[self._current_question_idx]
         num_options = len(current_q.options) + 1  # +1 for "Other"
 
@@ -129,6 +140,9 @@ class AskUserPromptController:
         """Toggle selection for multi-select questions (Space key)."""
         if not self._active:
             return
+
+        if self._is_submit_step:
+            return  # No multi-select on Submit step
 
         current_q = self._questions[self._current_question_idx]
         if not current_q.multi_select:
@@ -147,6 +161,16 @@ class AskUserPromptController:
     def confirm(self) -> None:
         """Confirm current selection."""
         if not self._active or not self._future or self._future.done():
+            return
+
+        # Handle Submit step
+        if self._is_submit_step:
+            conversation = self.app.conversation
+            conversation.clear_ask_user_prompt()
+            if self._selected_index == 0:  # Submit
+                self._future.set_result(self._answers if self._answers else None)
+            else:  # Cancel
+                self._future.set_result(None)
             return
 
         current_q = self._questions[self._current_question_idx]
@@ -191,23 +215,15 @@ class AskUserPromptController:
             else:
                 # Single select
                 if self._selected_index < len(current_q.options):
-                    self._answers[str(self._current_question_idx)] = (
-                        current_q.options[self._selected_index].label
-                    )
+                    self._answers[str(self._current_question_idx)] = current_q.options[
+                        self._selected_index
+                    ].label
 
-        # Move to next question or complete
+        # Move to next question or Submit step
         self._current_question_idx += 1
         self._selected_index = 0
         self._multi_selections = set()
-
-        if self._current_question_idx >= len(self._questions):
-            # All questions answered
-            conversation = self.app.conversation
-            conversation.clear_ask_user_prompt()
-            self._future.set_result(self._answers if self._answers else None)
-        else:
-            # Show next question
-            self._render()
+        self._render()  # This will render Submit step if idx == len(questions)
 
     def cancel(self) -> None:
         """Cancel/skip the ask-user prompt."""
@@ -235,6 +251,57 @@ class AskUserPromptController:
         # Input is captured in the input field, confirm() will read it
         return True
 
+    def update_input_preview(self, text: str) -> None:
+        """Update the panel to show live preview of typed text."""
+        if not self._active or not self._other_mode:
+            return
+        self._render()
+
+    def go_back(self) -> None:
+        """Navigate to previous question."""
+        if not self._active or self._current_question_idx == 0:
+            return
+
+        if self._other_mode:
+            self._other_mode = False
+            self.app.input_field.load_text("")
+
+        self._current_question_idx -= 1
+        self._selected_index = 0
+        self._multi_selections = set()
+
+        # Only restore multi-selections if going back to a question (not from Submit)
+        if self._current_question_idx < len(self._questions):
+            current_q = self._questions[self._current_question_idx]
+            if current_q.multi_select:
+                existing = self._answers.get(str(self._current_question_idx), [])
+                if isinstance(existing, list):
+                    for answer in existing:
+                        for idx, opt in enumerate(current_q.options):
+                            if opt.label == answer:
+                                self._multi_selections.add(idx)
+
+        self._render()
+
+    def go_forward(self) -> None:
+        """Navigate to next question or Submit step if current is answered."""
+        if not self._active:
+            return
+        if self._is_submit_step:
+            return  # Already at Submit, can't go further
+        if str(self._current_question_idx) not in self._answers:
+            return
+
+        if self._other_mode:
+            self._other_mode = False
+            self.app.input_field.load_text("")
+
+        # Allow moving to Submit step (idx can be len(questions))
+        self._current_question_idx += 1
+        self._selected_index = 0
+        self._multi_selections = set()
+        self._render()
+
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
@@ -256,8 +323,124 @@ class AskUserPromptController:
         self.app.input_field.focus()
         self.app.input_field.load_text("")
 
+    def _render_step_bar(self) -> Text:
+        """Render the step navigation bar showing progress."""
+        step_bar = Text()
+
+        # Left arrow
+        can_go_back = self._current_question_idx > 0
+        step_bar.append("← ", style="bright_cyan" if can_go_back else "dim")
+
+        # Each question step
+        for idx, q in enumerate(self._questions):
+            is_current = idx == self._current_question_idx
+            is_completed = str(idx) in self._answers
+
+            if is_completed and not is_current:
+                icon = "✔"
+                icon_style = "bright_green"
+            elif is_current:
+                icon = "●"
+                icon_style = "bright_cyan"
+            else:
+                icon = "☐"
+                icon_style = "dim"
+
+            label = q.header if q.header else f"Q{idx + 1}"
+            step_bar.append(icon, style=icon_style)
+            step_bar.append(" ", style="")
+            step_bar.append(label, style="bold white" if is_current else "dim")
+            step_bar.append("  ", style="")
+
+        # Submit indicator - show as current if on submit step
+        is_submit_current = self._is_submit_step
+        all_answered = len(self._answers) == len(self._questions)
+
+        if is_submit_current:
+            icon = "●"
+            icon_style = "bright_cyan"
+            label_style = "bold white"
+        elif all_answered:
+            icon = "✔"
+            icon_style = "bright_green"
+            label_style = "dim"
+        else:
+            icon = "☐"
+            icon_style = "dim"
+            label_style = "dim"
+
+        step_bar.append(icon, style=icon_style)
+        step_bar.append(" Submit", style=label_style)
+
+        # Right arrow - can go forward to Submit if current question answered
+        can_go_forward = str(
+            self._current_question_idx
+        ) in self._answers and self._current_question_idx < len(
+            self._questions
+        )  # Can go to Submit
+        step_bar.append(" →", style="bright_cyan" if can_go_forward else "dim")
+
+        return step_bar
+
+    def _render_submit_step(self) -> None:
+        """Render the final Submit confirmation step."""
+        all_answered = len(self._answers) == len(self._questions)
+
+        header = Text("Review your answers", style="bold white")
+
+        # Status message
+        if all_answered:
+            status = Text("✓ All questions answered", style="bright_green")
+        else:
+            answered_count = len(self._answers)
+            total_count = len(self._questions)
+            status = Text(
+                f"⚠ You have answered {answered_count}/{total_count} questions", style="yellow"
+            )
+
+        hint = Text("←/→ steps · ↑/↓ choose · Enter confirm · Esc cancel", style="dim")
+
+        # Options: Submit / Cancel
+        options = [
+            ("Submit answers", "Confirm and submit your responses"),
+            ("Cancel", "Discard all answers and exit"),
+        ]
+
+        option_lines = []
+        for idx, (label, desc) in enumerate(options):
+            is_active = idx == self._selected_index
+            pointer = "▸" if is_active else " "
+            line = Text()
+            line.append(pointer, style="bright_cyan" if is_active else "dim")
+            line.append(f" {idx + 1}. ", style="dim")
+            line.append(label, style="bold white" if is_active else "white")
+            line.append("\n      ", style="")
+            line.append(desc, style="dim")
+            option_lines.append(line)
+
+        body_parts = [self._render_step_bar(), Text(""), header, Text(""), status, hint, Text("")]
+        body_parts.extend(option_lines)
+
+        body = Group(*body_parts)
+
+        panel = Panel(
+            body,
+            title="Question",
+            border_style="bright_cyan",
+            padding=(1, 2),
+        )
+
+        conversation = self.app.conversation
+        conversation.render_ask_user_prompt([panel])
+        conversation.scroll_end(animate=False)
+
     def _render(self) -> None:
         if not self._active or not self._questions:
+            return
+
+        # Check if we're on the Submit step
+        if self._is_submit_step:
+            self._render_submit_step()
             return
 
         current_q = self._questions[self._current_question_idx]
@@ -286,9 +469,11 @@ class AskUserPromptController:
         if self._other_mode:
             hint = Text("Type your answer · Enter to confirm · Esc to go back", style="dim")
         elif current_q.multi_select:
-            hint = Text("↑/↓ move · Space toggle · Enter confirm · Esc skip", style="dim")
+            hint = Text(
+                "←/→ steps · ↑/↓ move · Space toggle · Enter confirm · Esc skip", style="dim"
+            )
         else:
-            hint = Text("↑/↓ choose · Enter confirm · Esc skip", style="dim")
+            hint = Text("←/→ steps · ↑/↓ choose · Enter confirm · Esc skip", style="dim")
 
         # Build option lines
         option_lines: list[Text] = []
@@ -321,7 +506,7 @@ class AskUserPromptController:
                 line.append(opt.description, style=desc_style)
             option_lines.append(line)
 
-        # Add "Other" option
+        # Add "Type something." option
         other_idx = len(current_q.options)
         is_other_active = other_idx == self._selected_index
 
@@ -329,21 +514,30 @@ class AskUserPromptController:
         other_pointer = "▸" if is_other_active else " "
         other_line.append(other_pointer, style="bright_cyan" if is_other_active else "dim")
         other_line.append(f" {other_idx + 1}. ", style="dim")
-        other_line.append("Other", style="bold white" if is_other_active else "white")
-        other_line.append(" — ", style="dim")
-        other_line.append("provide custom answer", style="dim")
+        other_line.append("Type something.", style="bold white" if is_other_active else "white")
+        other_line.append("\n      ", style="")
+        other_line.append("(Select and press Enter to type your own answer)", style="dim")
         option_lines.append(other_line)
 
-        # If in Other mode, show input prompt
+        # If in Other mode, show input prompt with live preview
         if self._other_mode:
             input_line = Text()
             input_line.append("    Enter your answer: ", style="bright_cyan")
-            input_line.append("(type below)", style="dim italic")
+            # Show current input text as live preview
+            current_text = (
+                self.app.input_field.text.strip() if hasattr(self.app, "input_field") else ""
+            )
+            if current_text:
+                input_line.append(current_text, style="bold white")
+                input_line.append("▎", style="bright_cyan blink")  # Cursor indicator
+            else:
+                input_line.append("(type below)", style="dim italic")
             option_lines.append(Text(""))
             option_lines.append(input_line)
 
         # Assemble body
-        body_parts = [header]
+        body_parts = [self._render_step_bar(), Text("")]
+        body_parts.append(header)
         if progress.plain:
             body_parts.append(progress)
         body_parts.append(hint)
