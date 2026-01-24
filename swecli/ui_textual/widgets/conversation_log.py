@@ -161,8 +161,18 @@ class ConversationLog(RichLog):
         # Get new content width
         new_width = self.scrollable_content_region.width
 
-        # Only re-render if width actually changed and is valid
-        if new_width != self._last_render_width and new_width > 0:
+        # Skip if width is invalid
+        if new_width <= 0:
+            return
+
+        # On first resize (startup), just record the width without re-rendering
+        # since content was just rendered at this width
+        if self._last_render_width == 0:
+            self._last_render_width = new_width
+            return
+
+        # Only re-render if width actually changed
+        if new_width != self._last_render_width:
             self._last_render_width = new_width
             self._schedule_rerender()
 
