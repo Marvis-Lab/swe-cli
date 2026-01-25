@@ -6,12 +6,9 @@ import asyncio
 import atexit
 import contextlib
 import os
-import queue
-import signal
 import sys
-import threading
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Callable, Optional
 
 
 def _reset_terminal_mouse_mode() -> None:
@@ -36,15 +33,12 @@ atexit.register(_reset_terminal_mouse_mode)
 
 
 from swecli.core.agents.components import extract_plan_from_response
-from swecli.ui_textual.style_tokens import ERROR
 from swecli.core.runtime import ConfigManager, OperationMode
 from swecli.core.context_engineering.history import SessionManager
 from swecli.models.message import ChatMessage, Role
 from swecli.repl.repl import REPL
 from swecli.ui_textual.managers.approval_manager import ChatApprovalManager
 from swecli.ui_textual.chat_app import create_chat_app
-from swecli.ui_textual.constants import TOOL_ERROR_SENTINEL
-from swecli.ui_textual.utils import build_tool_call_text
 from swecli.ui_textual.runner_components import (
     HistoryHydrator,
     ToolRenderer,
@@ -99,6 +93,8 @@ class TextualRunner:
         config_manager: Optional[ConfigManager] = None,
         session_manager: Optional[SessionManager] = None,
         auto_connect_mcp: bool = False,
+        continue_session: bool = False,
+        resume_session_id: Optional[str] = None,
     ) -> None:
         self.working_dir = Path(working_dir or Path.cwd()).resolve()
 
@@ -108,6 +104,8 @@ class TextualRunner:
             config_manager=config_manager,
             session_manager=session_manager,
             auto_connect_mcp=auto_connect_mcp,
+            continue_session=continue_session,
+            resume_session_id=resume_session_id,
         )
 
         # 2. Setup Runner Components
@@ -129,6 +127,8 @@ class TextualRunner:
         config_manager: Optional[ConfigManager],
         session_manager: Optional[SessionManager],
         auto_connect_mcp: bool,
+        continue_session: bool = False,
+        resume_session_id: Optional[str] = None,
     ) -> None:
         """Initialize the core SWE-CLI runtime (REPL, Config, Session)."""
         if repl is not None:
@@ -162,7 +162,35 @@ class TextualRunner:
 
             session_root = Path(self.config.session_dir).expanduser()
             self.session_manager = session_manager or SessionManager(session_root)
-            self.session_manager.create_session(working_directory=str(self.working_dir))
+
+            # Handle session resumption
+            session_loaded = False
+            if resume_session_id:
+                # Resume specific session by ID
+                try:
+                    self.session_manager.load_session(resume_session_id)
+                    session_loaded = True
+                except FileNotFoundError:
+                    # Session not found - will fall back to creating new session
+                    from rich.console import Console
+
+                    Console().print(
+                        f"[yellow]Session '{resume_session_id}' not found. Starting new session.[/yellow]"
+                    )
+            elif continue_session:
+                # Resume most recent session for this working directory
+                session = self.session_manager.load_latest_session(self.working_dir)
+                if session:
+                    session_loaded = True
+                else:
+                    from rich.console import Console
+
+                    Console().print(
+                        "[yellow]No previous session found for this directory. Starting new session.[/yellow]"
+                    )
+
+            if not session_loaded:
+                self.session_manager.create_session(working_directory=str(self.working_dir))
 
             self.repl = REPL(self.config_manager, self.session_manager, is_tui=True)
             self.repl.mode_manager.set_mode(OperationMode.NORMAL)
@@ -658,11 +686,18 @@ Work through each implementation step in order. Mark each todo item as 'in_progr
             self.mcp_controller.notify_manual_connect()
 
 
-def launch_textual_cli(message=None, **kwargs) -> None:
+def launch_textual_cli(
+    message=None,
+    continue_session: bool = False,
+    resume_session_id: Optional[str] = None,
+    **kwargs,
+) -> None:
     """Public helper for launching the Textual UI from external callers.
 
     Args:
         message: Optional message to process automatically
+        continue_session: If True, resume the most recent session for the working directory
+        resume_session_id: Specific session ID to resume
         **kwargs: Additional arguments passed to TextualRunner
     """
 
@@ -671,7 +706,11 @@ def launch_textual_cli(message=None, **kwargs) -> None:
         if auto_env in {"1", "true", "yes", "on"}:
             kwargs["auto_connect_mcp"] = True
 
-    runner = TextualRunner(**kwargs)
+    runner = TextualRunner(
+        continue_session=continue_session,
+        resume_session_id=resume_session_id,
+        **kwargs,
+    )
 
     # If a message is provided, enqueue it for processing
     if message:

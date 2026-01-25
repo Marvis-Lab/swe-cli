@@ -27,7 +27,9 @@ from swecli.core.context_engineering.tools.implementations import (
     WriteTool,
 )
 from swecli.core.context_engineering.tools.implementations.web_search_tool import WebSearchTool
-from swecli.core.context_engineering.tools.implementations.notebook_edit_tool import NotebookEditTool
+from swecli.core.context_engineering.tools.implementations.notebook_edit_tool import (
+    NotebookEditTool,
+)
 from swecli.core.context_engineering.tools.implementations.ask_user_tool import AskUserTool
 
 
@@ -46,7 +48,7 @@ Examples:
   swecli -p "create hello.py"     # Non-interactive mode
   swecli mcp list                 # List MCP servers
   swecli mcp add myserver uvx mcp-server-example
-        """
+        """,
     )
 
     parser.add_argument(
@@ -77,6 +79,20 @@ Examples:
         help="Enable verbose output with detailed logging",
     )
 
+    parser.add_argument(
+        "--continue",
+        "-c",
+        dest="continue_session",
+        action="store_true",
+        help="Resume the most recent session for the current working directory",
+    )
+
+    parser.add_argument(
+        "--resume",
+        "-r",
+        metavar="SESSION_ID",
+        help="Resume a specific session by its ID",
+    )
 
     # Add subparsers for commands
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
@@ -87,19 +103,15 @@ Examples:
         help="Manage SWE-CLI configuration",
         description="Configure AI providers, models, and other settings",
     )
-    config_subparsers = config_parser.add_subparsers(dest="config_command", help="Config operations")
+    config_subparsers = config_parser.add_subparsers(
+        dest="config_command", help="Config operations"
+    )
 
     # config setup
-    config_subparsers.add_parser(
-        "setup",
-        help="Run the interactive setup wizard"
-    )
+    config_subparsers.add_parser("setup", help="Run the interactive setup wizard")
 
     # config show
-    config_subparsers.add_parser(
-        "show",
-        help="Display current configuration"
-    )
+    config_subparsers.add_parser("show", help="Display current configuration")
 
     # MCP subcommand
     mcp_parser = subparsers.add_parser(
@@ -116,20 +128,16 @@ Examples:
   swecli mcp get myserver                            # Show server details
   swecli mcp enable myserver                         # Enable a server
   swecli mcp remove myserver                         # Remove a server
-        """
+        """,
     )
     mcp_subparsers = mcp_parser.add_subparsers(dest="mcp_command", help="MCP operations")
 
     # mcp list
-    mcp_subparsers.add_parser(
-        "list",
-        help="List all configured MCP servers with their status"
-    )
+    mcp_subparsers.add_parser("list", help="List all configured MCP servers with their status")
 
     # mcp get
     mcp_get = mcp_subparsers.add_parser(
-        "get",
-        help="Show detailed information about a specific MCP server"
+        "get", help="Show detailed information about a specific MCP server"
     )
     mcp_get.add_argument("name", help="Name of the MCP server")
 
@@ -137,56 +145,52 @@ Examples:
     mcp_add = mcp_subparsers.add_parser(
         "add",
         help="Add a new MCP server to the configuration",
-        description="Register a new MCP server that will be available to SWE-CLI"
+        description="Register a new MCP server that will be available to SWE-CLI",
     )
     mcp_add.add_argument("name", help="Unique name for the server")
-    mcp_add.add_argument("command", help="Command to start the MCP server (e.g., 'uvx', 'node', 'python')")
+    mcp_add.add_argument(
+        "command", help="Command to start the MCP server (e.g., 'uvx', 'node', 'python')"
+    )
     mcp_add.add_argument("args", nargs="*", help="Arguments to pass to the command")
     mcp_add.add_argument(
         "--env",
         nargs="*",
         metavar="KEY=VALUE",
-        help="Environment variables for the server (e.g., API_KEY=xyz TOKEN=abc)"
+        help="Environment variables for the server (e.g., API_KEY=xyz TOKEN=abc)",
     )
     mcp_add.add_argument(
         "--no-auto-start",
         action="store_true",
-        help="Don't automatically start this server when SWE-CLI launches"
+        help="Don't automatically start this server when SWE-CLI launches",
     )
 
     # mcp remove
     mcp_remove = mcp_subparsers.add_parser(
-        "remove",
-        help="Remove an MCP server from the configuration"
+        "remove", help="Remove an MCP server from the configuration"
     )
     mcp_remove.add_argument("name", help="Name of the server to remove")
 
     # mcp enable
     mcp_enable = mcp_subparsers.add_parser(
-        "enable",
-        help="Enable an MCP server (will auto-start if configured)"
+        "enable", help="Enable an MCP server (will auto-start if configured)"
     )
     mcp_enable.add_argument("name", help="Name of the server to enable")
 
     # mcp disable
     mcp_disable = mcp_subparsers.add_parser(
-        "disable",
-        help="Disable an MCP server (won't auto-start)"
+        "disable", help="Disable an MCP server (won't auto-start)"
     )
     mcp_disable.add_argument("name", help="Name of the server to disable")
 
     # Run subcommand
     run_parser = subparsers.add_parser(
-        "run",
-        help="Run development tools",
-        description="Run development servers and tools"
+        "run", help="Run development tools", description="Run development servers and tools"
     )
     run_subparsers = run_parser.add_subparsers(dest="run_command", help="Run operations")
 
     # run ui
     run_ui_parser = run_subparsers.add_parser(
-        "ui",
-        help="Start the web UI (backend + frontend) and open in browser"
+        "ui", help="Start the web UI (backend + frontend) and open in browser"
     )
     run_ui_parser.add_argument(
         "--ui-port",
@@ -231,7 +235,7 @@ Examples:
     # This prevents shell prompt from bleeding into the TUI
     sys.stdout.write("\033[3J")  # Clear scrollback buffer
     sys.stdout.write("\033[2J")  # Clear screen
-    sys.stdout.write("\033[H")   # Move cursor to home
+    sys.stdout.write("\033[H")  # Move cursor to home
     sys.stdout.flush()
 
     # Set working directory
@@ -262,7 +266,11 @@ Examples:
             _run_non_interactive(config_manager, session_manager, args.prompt)
             return
 
-        launch_textual_cli(working_dir=working_dir)
+        launch_textual_cli(
+            working_dir=working_dir,
+            continue_session=args.continue_session,
+            resume_session_id=args.resume,
+        )
         return
 
     except KeyboardInterrupt:
@@ -272,6 +280,7 @@ Examples:
         console.print(f"[{ERROR}]Error: {str(e)}[/{ERROR}]")
         if args.verbose:
             import traceback
+
             console.print(traceback.format_exc())
         sys.exit(1)
 
@@ -283,12 +292,13 @@ def _handle_config_command(args) -> None:
         args: Parsed command-line arguments
     """
     import json
-    from pathlib import Path
 
     console = Console()
 
     if not args.config_command:
-        console.print(f"[{WARNING}]No config subcommand specified. Use --help for available commands.[/{WARNING}]")
+        console.print(
+            f"[{WARNING}]No config subcommand specified. Use --help for available commands.[/{WARNING}]"
+        )
         sys.exit(1)
 
     if args.config_command == "setup":
@@ -300,10 +310,13 @@ def _handle_config_command(args) -> None:
     elif args.config_command == "show":
         # Display current configuration
         from swecli.core.paths import get_paths
+
         config_file = get_paths().global_settings
 
         if not config_file.exists():
-            console.print(f"[{WARNING}]No configuration found. Run 'swecli config setup' first.[/{WARNING}]")
+            console.print(
+                f"[{WARNING}]No configuration found. Run 'swecli config setup' first.[/{WARNING}]"
+            )
             sys.exit(1)
 
         try:
@@ -321,7 +334,11 @@ def _handle_config_command(args) -> None:
                 if key == "api_key":
                     # Mask API key
                     if value:
-                        masked = value[:8] + "*" * (len(value) - 12) + value[-4:] if len(value) > 12 else "*" * len(value)
+                        masked = (
+                            value[:8] + "*" * (len(value) - 12) + value[-4:]
+                            if len(value) > 12
+                            else "*" * len(value)
+                        )
                         table.add_row(key, masked)
                     else:
                         table.add_row(key, "[dim]Not set[/dim]")
@@ -334,7 +351,9 @@ def _handle_config_command(args) -> None:
             console.print(f"[dim]Config file: {config_file}[/dim]")
 
         except json.JSONDecodeError:
-            console.print(f"[{ERROR}]Error: Invalid JSON in configuration file: {config_file}[/{ERROR}]")
+            console.print(
+                f"[{ERROR}]Error: Invalid JSON in configuration file: {config_file}[/{ERROR}]"
+            )
             sys.exit(1)
         except Exception as e:
             console.print(f"[{ERROR}]Error reading configuration: {e}[/{ERROR}]")
@@ -354,7 +373,9 @@ def _handle_mcp_command(args) -> None:
     mcp_manager = MCPManager()
 
     if not args.mcp_command:
-        console.print(f"[{WARNING}]No MCP subcommand specified. Use --help for available commands.[/{WARNING}]")
+        console.print(
+            f"[{WARNING}]No MCP subcommand specified. Use --help for available commands.[/{WARNING}]"
+        )
         sys.exit(1)
 
     try:
@@ -374,7 +395,11 @@ def _handle_mcp_command(args) -> None:
             for name, config in servers.items():
                 enabled = f"[{SUCCESS}]✓[/{SUCCESS}]" if config.enabled else f"[{ERROR}]✗[/{ERROR}]"
                 auto_start = f"[{SUCCESS}]✓[/{SUCCESS}]" if config.auto_start else "[dim]-[/dim]"
-                command = f"{config.command} {' '.join(config.args[:2])}" if config.args else config.command
+                command = (
+                    f"{config.command} {' '.join(config.args[:2])}"
+                    if config.args
+                    else config.command
+                )
                 if len(command) > 60:
                     command = command[:57] + "..."
 
@@ -407,17 +432,16 @@ def _handle_mcp_command(args) -> None:
             if args.env:
                 for env_var in args.env:
                     if "=" not in env_var:
-                        console.print(f"[{ERROR}]Error: Invalid environment variable format: {env_var}[/{ERROR}]")
+                        console.print(
+                            f"[{ERROR}]Error: Invalid environment variable format: {env_var}[/{ERROR}]"
+                        )
                         console.print("Use KEY=VALUE format")
                         sys.exit(1)
                     key, value = env_var.split("=", 1)
                     env[key] = value
 
             mcp_manager.add_server(
-                name=args.name,
-                command=args.command,
-                args=args.args or [],
-                env=env
+                name=args.name, command=args.command, args=args.args or [], env=env
             )
 
             # Update auto_start if specified
@@ -425,6 +449,7 @@ def _handle_mcp_command(args) -> None:
                 config = mcp_manager.get_config()
                 config.mcp_servers[args.name].auto_start = False
                 from swecli.core.context_engineering.mcp.config import save_config
+
                 save_config(config)
 
             console.print(f"[{SUCCESS}]✓[/{SUCCESS}] Added MCP server '{args.name}'")
@@ -471,7 +496,9 @@ def _handle_run_command(args) -> None:
     console = Console()
 
     if not args.run_command:
-        console.print(f"[{WARNING}]No run subcommand specified. Use --help for available commands.[/{WARNING}]")
+        console.print(
+            f"[{WARNING}]No run subcommand specified. Use --help for available commands.[/{WARNING}]"
+        )
         sys.exit(1)
 
     if args.run_command == "ui":
@@ -495,19 +522,23 @@ def _handle_run_command(args) -> None:
                 mcp_manager = MCPManager(working_dir)
 
                 # Get port and host from args
-                preferred_port = getattr(args, 'ui_port', 8080)
-                backend_host = getattr(args, 'ui_host', '127.0.0.1')
+                preferred_port = getattr(args, "ui_port", 8080)
+                backend_host = getattr(args, "ui_host", "127.0.0.1")
 
                 # Find an available port
                 from swecli.web.port_utils import find_available_port
+
                 backend_port = find_available_port(backend_host, preferred_port, max_attempts=10)
 
                 if backend_port is None:
-                    console.print(f"[{ERROR}]Error: Could not find available port starting from {preferred_port}[/{ERROR}]")
+                    console.print(
+                        f"[{ERROR}]Error: Could not find available port starting from {preferred_port}[/{ERROR}]"
+                    )
                     sys.exit(1)
 
                 # Check for static files
                 from swecli.web import find_static_directory
+
                 static_dir = find_static_directory()
 
                 if not static_dir or not static_dir.exists():
@@ -534,12 +565,16 @@ def _handle_run_command(args) -> None:
 
                     # Verify server is running
                     if not web_server_thread.is_alive():
-                        console.print(f"[{ERROR}]Error: Backend server thread terminated unexpectedly[/{ERROR}]")
+                        console.print(
+                            f"[{ERROR}]Error: Backend server thread terminated unexpectedly[/{ERROR}]"
+                        )
                         sys.exit(1)
 
-                except ImportError as e:
+                except ImportError:
                     console.print(f"[{ERROR}]Error: Web dependencies not installed[/{ERROR}]")
-                    console.print(f"[{WARNING}]Install with: pip install 'swe-cli[web]'[/{WARNING}]")
+                    console.print(
+                        f"[{WARNING}]Install with: pip install 'swe-cli[web]'[/{WARNING}]"
+                    )
                     sys.exit(1)
                 except Exception as e:
                     console.print(f"[{ERROR}]Error starting backend server: {str(e)}[/{ERROR}]")
@@ -549,8 +584,10 @@ def _handle_run_command(args) -> None:
 
                 # Open browser in background
                 import threading
+
                 def open_browser():
                     webbrowser.open(url)
+
                 threading.Thread(target=open_browser, daemon=True).start()
 
             # Simple success message
@@ -618,9 +655,7 @@ def _run_non_interactive(
 
     session = session_manager.get_current_session()
     if not session:
-        session = session_manager.create_session(
-            working_directory=str(config_manager.working_dir)
-        )
+        session = session_manager.create_session(working_directory=str(config_manager.working_dir))
 
     message_history = session.to_api_messages()
 
