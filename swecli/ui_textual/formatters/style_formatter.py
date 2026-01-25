@@ -37,6 +37,8 @@ class StyleFormatter:
             result_lines = self._format_process_output_result(tool_args, result)
         elif tool_name == "write_todos":
             result_lines = self._format_write_todos_result(tool_args, result)
+        elif tool_name == "search_tools":
+            result_lines = self._format_search_tools_result(tool_args, result)
         else:
             result_lines = self._format_generic_result(tool_name, tool_args, result)
 
@@ -406,6 +408,31 @@ class StyleFormatter:
             return lines if lines else ["Todos created"]
 
         return ["Todos created"]
+
+    def _format_search_tools_result(self, tool_args: Dict[str, Any], result: Dict[str, Any]) -> List[str]:
+        """Format search_tools result with concise summary."""
+        if not result.get("success"):
+            error_msg = result.get("error") or "Unknown error"
+            return [self._error_line(error_msg)]
+
+        count = result.get("count", 0)
+        detail_level = result.get("detail_level", "brief")
+
+        if count == 0:
+            query = tool_args.get("query", "")
+            return [f"No tools found matching '{query}'."]
+
+        # For full detail, schemas are loaded
+        if detail_level == "full":
+            tools = result.get("tools", [])
+            tool_names = [t.get("name", "") for t in tools[:6]]
+            names_str = ", ".join(tool_names)
+            if len(tools) > 6:
+                names_str += f", +{len(tools) - 6} more"
+            return [f"Found {count} tool(s) (schemas now loaded):", f"     {names_str}"]
+
+        # For brief/names, just show count
+        return [f"Found {count} tool(s)."]
 
     def _format_generic_result(self, tool_name: str, tool_args: Dict[str, Any], result: Dict[str, Any]) -> List[str]:
         if not result.get("success"):
