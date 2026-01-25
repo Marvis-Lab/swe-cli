@@ -3,15 +3,18 @@
 from __future__ import annotations
 
 import re
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 from rich.console import RenderableType
+from rich.table import Table
 from rich.text import Text
 
-from swecli.ui_textual.style_tokens import SUBTLE, PRIMARY, GREEN_BRIGHT, ACCENT, TEXT_MUTED
+from swecli.ui_textual.style_tokens import SUBTLE, ACCENT, TEXT_MUTED
 
 
-def render_markdown_text_segment(content: str, *, leading: bool = False) -> Tuple[List[RenderableType], bool]:
+def render_markdown_text_segment(
+    content: str, *, leading: bool = False
+) -> Tuple[List[RenderableType], bool]:
     """Convert markdown text into Rich renderables.
 
     Args:
@@ -35,9 +38,16 @@ def render_markdown_text_segment(content: str, *, leading: bool = False) -> Tupl
         nonlocal wrote_any, leading_consumed
         if isinstance(renderable, str):
             renderable = Text(renderable)
-        if leading and not leading_consumed and allow_leading and getattr(renderable, "plain", str(renderable)).strip():
+        if (
+            leading
+            and not leading_consumed
+            and allow_leading
+            and getattr(renderable, "plain", str(renderable)).strip()
+        ):
             bullet = Text("⏺ ")
-            bullet.append_text(renderable if isinstance(renderable, Text) else Text(str(renderable)))
+            bullet.append_text(
+                renderable if isinstance(renderable, Text) else Text(str(renderable))
+            )
             renderables.append(bullet)
             leading_consumed = True
         else:
@@ -150,6 +160,15 @@ def render_markdown_text_segment(content: str, *, leading: bool = False) -> Tupl
             index += 1
             continue
 
+        # Check for table
+        if _is_table_row(stripped):
+            parsed_rows, new_index = _parse_table(lines, index)
+            if parsed_rows is not None:
+                table = _render_table(parsed_rows)
+                emit(table, allow_leading=False)
+                index = new_index
+                continue
+
         paragraph_lines = [stripped]
         index += 1
         while index < total_lines:
@@ -162,6 +181,7 @@ def render_markdown_text_segment(content: str, *, leading: bool = False) -> Tupl
                 or is_bullet(probe)
                 or is_ordered(probe)
                 or probe_stripped.startswith(">")
+                or _is_table_row(probe)
             ):
                 break
             paragraph_lines.append(probe_stripped)
@@ -226,3 +246,85 @@ def _render_inline_markdown(text: str) -> Text:
         append_with_style(text)
 
     return result
+
+
+def _is_table_row(line: str) -> bool:
+    """Check if line is a table row (| cell | cell |)."""
+    stripped = line.strip()
+    return stripped.startswith("|") and stripped.endswith("|")
+
+
+def _is_table_separator(line: str) -> bool:
+    """Check if line is a table separator (|---|---|)."""
+    stripped = line.strip()
+    if not stripped.startswith("|") or not stripped.endswith("|"):
+        return False
+    # Remove pipes and check if all cells are dashes/colons (alignment markers)
+    cells = stripped[1:-1].split("|")
+    return all(re.match(r"^:?-+:?$", cell.strip()) for cell in cells if cell.strip())
+
+
+def _parse_row(line: str) -> List[str]:
+    """Parse a table row into cells."""
+    stripped = line.strip()[1:-1]  # Remove leading/trailing pipes
+    return [cell.strip() for cell in stripped.split("|")]
+
+
+def _parse_table(lines: List[str], start_index: int) -> Tuple[Optional[List[List[str]]], int]:
+    """Parse markdown table starting at given index.
+
+    Returns:
+        (rows, end_index) where rows is list of rows (each row is list of cells),
+        or (None, start_index) if not a valid table.
+    """
+    rows: List[List[str]] = []
+    index = start_index
+    total_lines = len(lines)
+
+    # Must start with a row
+    if not _is_table_row(lines[index]):
+        return None, start_index
+
+    # Parse header row
+    header = _parse_row(lines[index])
+    rows.append(header)
+    index += 1
+
+    # Must have separator row
+    if index >= total_lines or not _is_table_separator(lines[index]):
+        return None, start_index  # Not a valid table
+    index += 1
+
+    # Parse data rows
+    while index < total_lines and _is_table_row(lines[index]):
+        rows.append(_parse_row(lines[index]))
+        index += 1
+
+    return rows, index
+
+
+def _render_table(rows: List[List[str]]) -> Table:
+    """Convert parsed table rows to Rich Table."""
+    table = Table(
+        show_header=True,
+        header_style="bold",
+        box=None,  # Minimal borders for cleaner look
+        padding=(0, 1),
+        expand=False,
+    )
+
+    # Add columns from header row
+    if rows:
+        for header_cell in rows[0]:
+            # Render inline markdown in header cells
+            table.add_column(_render_inline_markdown(header_cell))
+
+    # Add data rows
+    for row in rows[1:]:
+        # Pad row if it has fewer cells than header
+        padded = row + [""] * (len(rows[0]) - len(row))
+        # Render inline markdown in each cell
+        rendered_cells = [_render_inline_markdown(cell) for cell in padded[: len(rows[0])]]
+        table.add_row(*rendered_cells)
+
+    return table

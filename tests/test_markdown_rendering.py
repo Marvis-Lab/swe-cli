@@ -1,8 +1,16 @@
 """Tests for markdown rendering helpers used by Textual and CLI output."""
 
+from rich.table import Table
 from rich.text import Text
 
-from swecli.ui_textual.renderers.markdown import render_markdown_text_segment
+from swecli.ui_textual.renderers.markdown import (
+    render_markdown_text_segment,
+    _is_table_row,
+    _is_table_separator,
+    _parse_row,
+    _parse_table,
+    _render_table,
+)
 from swecli.ui_textual.formatters_internal.markdown_formatter import markdown_to_plain_text
 
 
@@ -120,3 +128,140 @@ def test_leading_bullet_no_extra_indent():
     # Second bullet should be indented to create hanging indent effect
     assert plains[1].startswith("  ")
     assert "- Second" in plains[1]
+
+
+# ===== Table Detection Tests =====
+
+
+def test_is_table_row():
+    """Test table row detection."""
+    assert _is_table_row("| Header 1 | Header 2 |")
+    assert _is_table_row("| cell | cell |")
+    assert _is_table_row("  | cell | cell |  ")  # With whitespace
+    assert not _is_table_row("| incomplete")
+    assert not _is_table_row("no pipes here")
+    assert not _is_table_row("incomplete |")
+
+
+def test_is_table_separator():
+    """Test table separator detection."""
+    assert _is_table_separator("|---|---|")
+    assert _is_table_separator("| --- | --- |")
+    assert _is_table_separator("|:---|---:|")  # Alignment markers
+    assert _is_table_separator("|:---:|:---:|")  # Center alignment
+    assert _is_table_separator("| ----- | ----------- |")  # Variable dashes
+    assert not _is_table_separator("| text | text |")
+    assert _is_table_separator("|---|")  # Single column is valid
+
+
+def test_parse_row():
+    """Test parsing a table row into cells."""
+    assert _parse_row("| Header 1 | Header 2 |") == ["Header 1", "Header 2"]
+    assert _parse_row("|  spaced  |  content  |") == ["spaced", "content"]
+    assert _parse_row("| one | two | three |") == ["one", "two", "three"]
+    assert _parse_row("| empty ||") == ["empty", ""]
+
+
+def test_parse_table_basic():
+    """Test parsing a basic markdown table."""
+    lines = [
+        "| Name | Age |",
+        "|---|---|",
+        "| Alice | 30 |",
+        "| Bob | 25 |",
+    ]
+    rows, end_index = _parse_table(lines, 0)
+    assert rows is not None
+    assert rows == [["Name", "Age"], ["Alice", "30"], ["Bob", "25"]]
+    assert end_index == 4
+
+
+def test_parse_table_no_separator():
+    """Test that table without separator is not parsed as table."""
+    lines = [
+        "| Name | Age |",
+        "| Alice | 30 |",
+    ]
+    rows, end_index = _parse_table(lines, 0)
+    assert rows is None
+    assert end_index == 0
+
+
+def test_parse_table_partial():
+    """Test parsing table followed by other content."""
+    lines = [
+        "| Col1 | Col2 |",
+        "|---|---|",
+        "| data | data |",
+        "Some paragraph after table",
+    ]
+    rows, end_index = _parse_table(lines, 0)
+    assert rows is not None
+    assert len(rows) == 2  # Header + 1 data row
+    assert end_index == 3
+
+
+# ===== Table Rendering Tests =====
+
+
+def test_render_table_basic():
+    """Test rendering a basic table."""
+    rows = [["Name", "Value"], ["foo", "bar"]]
+    table = _render_table(rows)
+    assert isinstance(table, Table)
+    assert table.row_count == 1  # Data rows only (header is separate)
+
+
+def test_render_table_with_mismatched_columns():
+    """Test that shorter rows are padded."""
+    rows = [["A", "B", "C"], ["1", "2"]]  # Missing one cell
+    table = _render_table(rows)
+    assert isinstance(table, Table)
+    assert table.row_count == 1
+
+
+def test_table_rendering_integration():
+    """Test full integration of table rendering in markdown parser."""
+    content = """| Repo | Stars |
+|---|---|
+| project-a | 1000 |
+| project-b | 2000 |"""
+    renderables, wrote_any = render_markdown_text_segment(content)
+    assert wrote_any
+    # Should have rendered a Table object
+    assert any(isinstance(r, Table) for r in renderables)
+
+
+def test_table_with_inline_markdown():
+    """Test table cells with inline markdown formatting."""
+    content = """| Name | Description |
+|---|---|
+| **bold** | _italic_ |
+| `code` | [link](url) |"""
+    renderables, wrote_any = render_markdown_text_segment(content)
+    assert wrote_any
+    assert any(isinstance(r, Table) for r in renderables)
+
+
+def test_malformed_table_fallback():
+    """Test that malformed table is rendered as paragraph."""
+    content = "| incomplete header"
+    renderables, wrote_any = render_markdown_text_segment(content)
+    # Should be rendered as plain text, not a table
+    assert not any(isinstance(r, Table) for r in renderables)
+
+
+def test_table_followed_by_text():
+    """Test table followed by regular text."""
+    content = """| Col |
+|---|
+| data |
+
+Some text after the table."""
+    renderables, wrote_any = render_markdown_text_segment(content)
+    assert wrote_any
+    # Should have both table and text
+    has_table = any(isinstance(r, Table) for r in renderables)
+    has_text = any(isinstance(r, Text) and "Some text" in r.plain for r in renderables)
+    assert has_table
+    assert has_text
