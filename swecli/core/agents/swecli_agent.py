@@ -33,6 +33,42 @@ class WebInterruptMonitor:
 class SwecliAgent(BaseAgent):
     """Custom agent that coordinates LLM interactions via HTTP."""
 
+    def _check_todo_completion(self) -> tuple[bool, str]:
+        """Check if completion is allowed given todo state.
+
+        This validation ensures todos are properly completed before the agent
+        finishes. It covers all completion paths: implicit, exhausted nudges,
+        and explicit task_complete.
+
+        Returns:
+            Tuple of (can_complete, nudge_message):
+            - can_complete: True if OK to complete, False if incomplete todos exist
+            - nudge_message: Message prompting agent to complete todos (empty if can_complete)
+        """
+        if not hasattr(self, "tool_registry") or not self.tool_registry:
+            return True, ""
+
+        todo_handler = getattr(self.tool_registry, "todo_handler", None)
+        if not todo_handler:
+            return True, ""
+
+        if not todo_handler.has_todos():
+            return True, ""  # No todos created - OK to complete
+
+        incomplete = todo_handler.get_incomplete_todos()
+        if not incomplete:
+            return True, ""  # All todos done - OK to complete
+
+        # Build nudge message with incomplete todo titles
+        titles = [t.title for t in incomplete[:3]]
+        msg = (
+            f"⚠️ You have {len(incomplete)} incomplete todo(s):\n"
+            + "\n".join(f"  • {title}" for title in titles)
+            + ("\n  ..." if len(incomplete) > 3 else "")
+            + "\n\nPlease complete these tasks or mark them done before finishing."
+        )
+        return False, msg
+
     def __init__(
         self,
         config: AppConfig,
@@ -260,6 +296,8 @@ class SwecliAgent(BaseAgent):
         iteration = 0
         consecutive_no_tool_calls = 0
         MAX_NUDGE_ATTEMPTS = 3  # After this many nudges, treat as implicit completion
+        todo_nudge_count = 0
+        MAX_TODO_NUDGES = 2  # After this many todo nudges, allow completion anyway
 
         while True:
             iteration += 1
@@ -354,8 +392,14 @@ class SwecliAgent(BaseAgent):
                     consecutive_no_tool_calls += 1
 
                     if consecutive_no_tool_calls >= MAX_NUDGE_ATTEMPTS:
-                        # Exhausted nudge attempts - accept best-effort completion
-                        # Don't return failure, just accept whatever was accomplished
+                        # Exhausted nudge attempts - check todos before accepting completion
+                        can_complete, nudge_msg = self._check_todo_completion()
+                        if not can_complete and todo_nudge_count < MAX_TODO_NUDGES:
+                            todo_nudge_count += 1
+                            messages.append({"role": "user", "content": nudge_msg})
+                            continue
+
+                        # Accept best-effort completion
                         return {
                             "content": cleaned_content or "Completed with some errors",
                             "messages": messages,
@@ -371,7 +415,13 @@ class SwecliAgent(BaseAgent):
                     )
                     continue
 
-                # Last tool succeeded (or no previous tool) - accept implicit completion
+                # Last tool succeeded (or no previous tool) - check todos before implicit completion
+                can_complete, nudge_msg = self._check_todo_completion()
+                if not can_complete and todo_nudge_count < MAX_TODO_NUDGES:
+                    todo_nudge_count += 1
+                    messages.append({"role": "user", "content": nudge_msg})
+                    continue
+
                 # Return the natural completion content directly without extra LLM calls
                 # This prevents subagents from making unnecessary tool calls (like get_subagent_output)
                 return {
@@ -391,6 +441,15 @@ class SwecliAgent(BaseAgent):
                 if tool_name == "task_complete":
                     summary = tool_args.get("summary", "Task completed")
                     status = tool_args.get("status", "success")
+
+                    # Only check todos for successful completions
+                    if status == "success":
+                        can_complete, nudge_msg = self._check_todo_completion()
+                        if not can_complete and todo_nudge_count < MAX_TODO_NUDGES:
+                            todo_nudge_count += 1
+                            messages.append({"role": "user", "content": nudge_msg})
+                            continue  # Reject task_complete, loop again
+
                     return {
                         "content": summary,
                         "messages": messages,

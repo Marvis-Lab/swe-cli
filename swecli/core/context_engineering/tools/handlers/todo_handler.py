@@ -87,7 +87,7 @@ class TodoHandler:
                         "completed": "done",
                         "todo": "todo",
                         "doing": "doing",
-                        "done": "done"
+                        "done": "done",
                     }
                     mapped_status = status_mapping.get(status, "todo")
                     # Store as tuple to preserve status and activeForm information
@@ -120,6 +120,8 @@ class TodoHandler:
         failed_count = 0
         created_ids = []
 
+        logger.debug(f"[TODO] write_todos called with {len(normalized_todos)} items")
+
         for i, todo_item in enumerate(normalized_todos, 1):
             # Handle both string and tuple formats
             if isinstance(todo_item, tuple):
@@ -139,22 +141,24 @@ class TodoHandler:
                 continue
 
             # Call create_todo for each item with correct status and activeForm
-            result = self.create_todo(title=str(todo_text).strip(), status=todo_status, active_form=todo_active_form)
+            result = self.create_todo(
+                title=str(todo_text).strip(), status=todo_status, active_form=todo_active_form
+            )
 
             if result.get("success"):
                 todo_id = result.get("todo_id", "?")
                 created_ids.append(todo_id)
-                # Format with correct color and styling based on status
+                # Format with symbols based on status (no Rich markup - output goes to plain text)
                 if todo_status == "done":
-                    results.append(f"  [green]✓ ~~{str(todo_text).strip()}~~[/green]")
+                    results.append(f"  ✓ {str(todo_text).strip()}")
                 elif todo_status == "doing":
-                    results.append(f"  [yellow]▶ {str(todo_text).strip()}[/yellow]")
+                    results.append(f"  ▶ {str(todo_text).strip()}")
                 else:
-                    results.append(f"  [cyan]○ {str(todo_text).strip()}[/cyan]")
+                    results.append(f"  ○ {str(todo_text).strip()}")
                 created_count += 1
             else:
                 error = result.get("error", "Unknown error")
-                results.append(f"  [red]✗ {error}[/red]")
+                results.append(f"  ✗ {error}")
                 failed_count += 1
 
         # Build summary with instructive message for continuation
@@ -229,6 +233,7 @@ class TodoHandler:
         )
 
         self._todos[todo_id] = todo
+        logger.debug(f"[TODO] Created: {todo_id} = {title[:40]}...")
 
         return {
             "success": True,
@@ -364,8 +369,10 @@ class TodoHandler:
         Returns:
             Result dict with success status
         """
+        logger.debug(f"[TODO] update_todo called: id={id}, status={status}")
         actual_id, todo = self._find_todo(id)
         if todo is None:
+            logger.debug(f"[TODO] Todo not found: id={id}")
             # Build helpful error message with valid ID suggestions
             valid_ids = sorted(self._todos.keys())
             if valid_ids:
@@ -383,6 +390,9 @@ class TodoHandler:
                 "error": error_msg,
                 "output": None,
             }
+
+        logger.debug(f"[TODO] Found todo: actual_id={actual_id}, title={todo.title[:30]}...")
+        old_status = todo.status
 
         # Update fields
         if title is not None:
@@ -420,6 +430,7 @@ class TodoHandler:
             todo.expanded = expanded
 
         todo.updated_at = datetime.now().isoformat()
+        logger.debug(f"[TODO] Status changed: {old_status} -> {todo.status}")
 
         # Generate minimal status update
         if todo.status == "doing":
@@ -445,6 +456,7 @@ class TodoHandler:
         Returns:
             Result dict with success status
         """
+        logger.debug(f"[TODO] complete_todo called: id={id}")
         actual_id, todo = self._find_todo(id)
         if todo is None:
             # Build helpful error message with valid ID suggestions
@@ -464,7 +476,11 @@ class TodoHandler:
                 "error": error_msg,
                 "output": None,
             }
+        old_status = todo.status
         todo.status = "done"
+        logger.debug(
+            f"[TODO] Completed: actual_id={actual_id}, status changed: {old_status} -> done"
+        )
 
         if log:
             if todo.log:
@@ -696,7 +712,11 @@ class TodoHandler:
             # Return minimal output - just note the update
             return {
                 "success": True,
-                "output": f"▶ Now working on: {updated[0]}" if len(updated) == 1 else f"Updated {len(updated)} todos",
+                "output": (
+                    f"▶ Now working on: {updated[0]}"
+                    if len(updated) == 1
+                    else f"Updated {len(updated)} todos"
+                ),
                 "updated_count": len(updated),
             }
         return {
@@ -716,3 +736,27 @@ class TodoHandler:
             if todo.status == "doing" and todo.active_form:
                 return todo.active_form
         return None
+
+    def has_todos(self) -> bool:
+        """Check if any todos exist.
+
+        Returns:
+            True if any todos have been created, False otherwise.
+        """
+        return bool(self._todos)
+
+    def has_incomplete_todos(self) -> bool:
+        """Check if any todos remain incomplete.
+
+        Returns:
+            True if any todo has status != 'done', False otherwise.
+        """
+        return any(t.status != "done" for t in self._todos.values())
+
+    def get_incomplete_todos(self) -> List["TodoItem"]:
+        """Get all todos that are not done.
+
+        Returns:
+            List of TodoItem objects with status != 'done'.
+        """
+        return [t for t in self._todos.values() if t.status != "done"]

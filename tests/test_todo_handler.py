@@ -210,15 +210,17 @@ class TestTodoHandlerColors:
         assert "~~" in completed_line  # Strikethrough markup
         assert "[/green]" in completed_line
 
-    def test_write_todos_output_has_colors(self, handler):
-        """Test that write_todos output includes color markup."""
+    def test_write_todos_output_has_symbols(self, handler):
+        """Test that write_todos output includes status symbols (no Rich markup)."""
         result = handler.write_todos(["New task 1", "New task 2"])
         assert result["success"]
 
         output = result["output"]
-        # Should have cyan color for pending todos
-        assert "[cyan]" in output
+        # Should have symbols for pending todos (no Rich markup - output goes to plain text)
         assert "○" in output
+        # Should NOT have Rich markup tags
+        assert "[cyan]" not in output
+        assert "[/cyan]" not in output
 
 
 class TestTodoHandlerUpdateComplete:
@@ -331,3 +333,224 @@ class TestTodoCompletionCounter:
         todos = list(handler._todos.values())
         has_active = any(t.status == "doing" for t in todos)
         assert has_active  # Should have an active todo
+
+
+class TestTodoHandlerStateTransitions:
+    """Test complete state transition flows."""
+
+    def test_full_lifecycle_pending_to_done(self):
+        """Test todo through full lifecycle: pending -> doing -> done."""
+        handler = TodoHandler()
+        handler.write_todos(["My task"])
+
+        # Initial state
+        todo = handler._todos["todo-1"]
+        assert todo.status == "todo"
+
+        # Start working
+        handler.update_todo("todo-1", status="in_progress")
+        assert todo.status == "doing"
+
+        # Complete
+        handler.complete_todo("todo-1")
+        assert todo.status == "done"
+
+    def test_single_doing_enforcement(self):
+        """Only one todo can be 'doing' at a time."""
+        handler = TodoHandler()
+        handler.write_todos(["Task 1", "Task 2", "Task 3"])
+
+        handler.update_todo("todo-1", status="doing")
+        assert handler._todos["todo-1"].status == "doing"
+
+        # Set another to doing - first should revert
+        handler.update_todo("todo-2", status="doing")
+        assert handler._todos["todo-1"].status == "todo"  # Reverted
+        assert handler._todos["todo-2"].status == "doing"
+
+    def test_complete_and_activate_next(self):
+        """Test atomic complete + activate next flow."""
+        handler = TodoHandler()
+        handler.write_todos(["Task 1", "Task 2", "Task 3"])
+        handler.update_todo("todo-1", status="doing")
+
+        result = handler.complete_and_activate_next("todo-1")
+
+        assert result["success"]
+        assert handler._todos["todo-1"].status == "done"
+        assert handler._todos["todo-2"].status == "doing"
+
+    def test_complete_and_activate_next_no_pending(self):
+        """Test complete_and_activate_next when no pending todos remain."""
+        handler = TodoHandler()
+        handler.write_todos(["Task 1"])
+        handler.update_todo("todo-1", status="doing")
+
+        result = handler.complete_and_activate_next("todo-1")
+
+        assert result["success"]
+        assert handler._todos["todo-1"].status == "done"
+        assert "All todos completed" in result["output"]
+
+    def test_direct_to_done_skipping_doing(self):
+        """Test marking todo directly from pending to done."""
+        handler = TodoHandler()
+        handler.write_todos(["Task 1"])
+
+        # Skip doing and go directly to done
+        handler.complete_todo("todo-1")
+        assert handler._todos["todo-1"].status == "done"
+
+    def test_status_mapping_from_deep_agent_format(self):
+        """Test that Deep Agent status formats are correctly mapped."""
+        handler = TodoHandler()
+        handler.write_todos(["Task 1"])
+
+        # pending -> todo
+        handler.update_todo("todo-1", status="pending")
+        assert handler._todos["todo-1"].status == "todo"
+
+        # in_progress -> doing
+        handler.update_todo("todo-1", status="in_progress")
+        assert handler._todos["todo-1"].status == "doing"
+
+        # completed -> done
+        handler.update_todo("todo-1", status="completed")
+        assert handler._todos["todo-1"].status == "done"
+
+
+class TestTodoHandlerWriteTodos:
+    """Test write_todos behavior including status-only updates."""
+
+    def test_write_todos_replaces_existing(self):
+        """write_todos should replace existing todo list."""
+        handler = TodoHandler()
+        handler.write_todos(["Task 1", "Task 2"])
+
+        assert len(handler._todos) == 2
+
+        # Write new todos - should replace
+        handler.write_todos(["New Task"])
+
+        assert len(handler._todos) == 1
+        assert handler._todos["todo-1"].title == "New Task"
+
+    def test_write_todos_with_dict_format(self):
+        """write_todos should accept dict format (Deep Agent)."""
+        handler = TodoHandler()
+        result = handler.write_todos([
+            {"content": "Task 1", "status": "pending"},
+            {"content": "Task 2", "status": "in_progress"},
+            {"content": "Task 3", "status": "completed"},
+        ])
+
+        assert result["success"]
+        assert handler._todos["todo-1"].status == "todo"
+        assert handler._todos["todo-2"].status == "doing"
+        assert handler._todos["todo-3"].status == "done"
+
+    def test_write_todos_with_active_form(self):
+        """write_todos should preserve activeForm."""
+        handler = TodoHandler()
+        result = handler.write_todos([
+            {"content": "Run tests", "status": "in_progress", "activeForm": "Running tests"},
+        ])
+
+        assert result["success"]
+        assert handler._todos["todo-1"].active_form == "Running tests"
+
+    def test_status_only_update_detection(self):
+        """write_todos should detect status-only updates."""
+        handler = TodoHandler()
+        handler.write_todos(["Task 1", "Task 2"])
+
+        # Same content, different status
+        result = handler.write_todos([
+            {"content": "Task 1", "status": "in_progress"},
+            {"content": "Task 2", "status": "pending"},
+        ])
+
+        assert result["success"]
+        # Should have updated status without recreating
+        assert handler._todos["todo-1"].status == "doing"
+
+
+class TestTodoHandlerCompletionHelpers:
+    """Test suite for completion enforcement helper methods."""
+
+    def test_has_todos_empty(self):
+        """has_todos returns False when no todos exist."""
+        handler = TodoHandler()
+        assert handler.has_todos() is False
+
+    def test_has_todos_with_todos(self):
+        """has_todos returns True when todos exist."""
+        handler = TodoHandler()
+        handler.write_todos(["Task 1"])
+        assert handler.has_todos() is True
+
+    def test_has_incomplete_todos_empty(self):
+        """has_incomplete_todos returns False when no todos exist."""
+        handler = TodoHandler()
+        assert handler.has_incomplete_todos() is False
+
+    def test_has_incomplete_todos_all_done(self):
+        """has_incomplete_todos returns False when all todos are done."""
+        handler = TodoHandler()
+        handler.write_todos(["Task 1", "Task 2"])
+        handler.complete_todo("todo-1")
+        handler.complete_todo("todo-2")
+        assert handler.has_incomplete_todos() is False
+
+    def test_has_incomplete_todos_some_pending(self):
+        """has_incomplete_todos returns True when some todos are pending."""
+        handler = TodoHandler()
+        handler.write_todos(["Task 1", "Task 2"])
+        handler.complete_todo("todo-1")
+        assert handler.has_incomplete_todos() is True
+
+    def test_has_incomplete_todos_some_doing(self):
+        """has_incomplete_todos returns True when some todos are in progress."""
+        handler = TodoHandler()
+        handler.write_todos(["Task 1", "Task 2"])
+        handler.update_todo("todo-1", status="doing")
+        handler.complete_todo("todo-2")
+        assert handler.has_incomplete_todos() is True
+
+    def test_get_incomplete_todos_empty(self):
+        """get_incomplete_todos returns empty list when no todos exist."""
+        handler = TodoHandler()
+        assert handler.get_incomplete_todos() == []
+
+    def test_get_incomplete_todos_all_done(self):
+        """get_incomplete_todos returns empty list when all done."""
+        handler = TodoHandler()
+        handler.write_todos(["Task 1", "Task 2"])
+        handler.complete_todo("todo-1")
+        handler.complete_todo("todo-2")
+        assert handler.get_incomplete_todos() == []
+
+    def test_get_incomplete_todos_mixed_status(self):
+        """get_incomplete_todos returns only incomplete todos."""
+        handler = TodoHandler()
+        handler.write_todos(["Task 1", "Task 2", "Task 3"])
+        handler.update_todo("todo-1", status="doing")  # incomplete
+        handler.complete_todo("todo-2")  # done
+        # todo-3 remains pending (incomplete)
+
+        incomplete = handler.get_incomplete_todos()
+        assert len(incomplete) == 2
+        titles = [t.title for t in incomplete]
+        assert "Task 1" in titles
+        assert "Task 3" in titles
+        assert "Task 2" not in titles
+
+    def test_get_incomplete_todos_returns_todoitem_objects(self):
+        """get_incomplete_todos returns TodoItem objects."""
+        handler = TodoHandler()
+        handler.write_todos(["Task 1"])
+        incomplete = handler.get_incomplete_todos()
+        assert len(incomplete) == 1
+        assert isinstance(incomplete[0], TodoItem)
+        assert incomplete[0].title == "Task 1"
+        assert incomplete[0].status == "todo"
