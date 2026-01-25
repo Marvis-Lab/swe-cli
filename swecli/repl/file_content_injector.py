@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -467,7 +466,7 @@ class FileContentInjector:
             f'<directory_listing path="{ref_str}" count="{item_count}">\n'
             f'{path.name}/\n'
             + "\n".join(tree) + "\n"
-            f'</directory_listing>'
+            '</directory_listing>'
         )
 
     def _process_pdf(self, path: Path, ref_str: str) -> str:

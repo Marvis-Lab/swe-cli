@@ -1,12 +1,10 @@
 """Unit tests for subagent infrastructure."""
 
 import pytest
-from unittest.mock import MagicMock, patch, AsyncMock
-import asyncio
+from unittest.mock import MagicMock, patch
 
 from swecli.core.agents.subagents import (
     SubAgentSpec,
-    CompiledSubAgent,
     SubAgentManager,
     create_task_tool_schema,
     TASK_TOOL_NAME,

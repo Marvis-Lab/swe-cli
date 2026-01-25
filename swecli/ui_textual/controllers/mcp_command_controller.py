@@ -171,7 +171,6 @@ class MCPCommandController:
 
     def _launch_auto_connect(self) -> None:
         """Launch MCP auto-connection for all configured servers."""
-        import time
 
         mcp_manager = getattr(self.repl, "mcp_manager", None)
         if not mcp_manager:

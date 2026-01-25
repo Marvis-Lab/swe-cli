@@ -4,8 +4,7 @@ from __future__ import annotations
 
 from typing import Any, List, Optional, TYPE_CHECKING
 
-from rich.console import Console, Group, RenderableType
-from rich.panel import Panel
+from rich.console import Console, RenderableType
 from rich.text import Text
 from textual.events import MouseDown, MouseMove, MouseScrollDown, MouseScrollUp, MouseUp, Resize
 from textual.geometry import Size

@@ -1,7 +1,5 @@
 """Tests for TextualUICallback threading behavior."""
-import asyncio
-from unittest.mock import Mock, patch
-from rich.text import Text
+from unittest.mock import Mock
 
 from swecli.ui_textual.ui_callback import TextualUICallback
 

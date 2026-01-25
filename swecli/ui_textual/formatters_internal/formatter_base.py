@@ -6,13 +6,12 @@ from typing import Any, Optional
 from rich.console import Console
 from rich.panel import Panel
 
-
-from rich.panel import Panel
-
 from swecli.ui_textual.style_tokens import STATUS_ICONS, TOOL_ICONS
 
 # Action hints displayed in tool result panels
 ACTION_HINTS = "r rerun • e export • y copy"
+
+__all__ = ["BaseFormatter", "ACTION_HINTS", "TOOL_ICONS", "STATUS_ICONS"]
 
 
 class BaseFormatter:

@@ -132,7 +132,7 @@ class WebState:
         print(f"[State] resolve_approval called: id={approval_id}, approved={approved}")
         with self._lock:
             if approval_id in self._pending_approvals:
-                print(f"[State] Found approval in pending list, marking as resolved")
+                print("[State] Found approval in pending list, marking as resolved")
                 self._pending_approvals[approval_id]["resolved"] = True
                 self._pending_approvals[approval_id]["approved"] = approved
                 self._pending_approvals[approval_id]["auto_approve"] = auto_approve

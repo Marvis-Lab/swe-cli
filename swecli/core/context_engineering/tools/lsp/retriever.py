@@ -10,7 +10,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from .wrapper import LSPServerWrapper, get_lsp_wrapper
+from .wrapper import get_lsp_wrapper
 from .symbol import Symbol, NamePathMatcher, find_symbols_by_pattern
 
 logger = logging.getLogger(__name__)

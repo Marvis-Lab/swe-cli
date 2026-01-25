@@ -1,7 +1,6 @@
 """Tests for the ModelConfigManager component."""
 
-from types import SimpleNamespace
-from unittest.mock import MagicMock, AsyncMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 

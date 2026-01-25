@@ -1,5 +1,5 @@
 """Tests for MCPCommandController."""
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
 import pytest
 
 from swecli.ui_textual.controllers.mcp_command_controller import MCPCommandController

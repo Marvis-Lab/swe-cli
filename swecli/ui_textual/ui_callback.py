@@ -248,7 +248,6 @@ class TextualUICallback:
         # After stopping spinner, this blank line is the last line
         # We need to remove it using _truncate_from to properly update widget state
         def write_interrupt_replacing_blank_line():
-            from rich.text import Text
 
             # Check if we have lines and last line is blank
             if hasattr(self.conversation, "lines") and len(self.conversation.lines) > 0:
@@ -1075,7 +1074,7 @@ class TextualUICallback:
         self._in_parallel_agent_group = True
 
         if hasattr(self.conversation, "on_parallel_agents_start") and self._app is not None:
-            print(f"[DEBUG] Calling conversation.on_parallel_agents_start", file=sys.stderr)
+            print("[DEBUG] Calling conversation.on_parallel_agents_start", file=sys.stderr)
             self._app.call_from_thread(
                 self.conversation.on_parallel_agents_start,
                 agent_infos,

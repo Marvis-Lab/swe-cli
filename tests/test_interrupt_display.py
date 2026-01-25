@@ -49,7 +49,7 @@ def test_interrupt_display_format():
     print("\n✅ Test passed! Display format is correct:")
     print(f"   - Tool call line: {lines[0]}")
     print(f"   - Result line: {result_line}")
-    print(f"   - Uses ::interrupted:: marker (will show in red without ❌)")
+    print("   - Uses ::interrupted:: marker (will show in red without ❌)")
 
 
 if __name__ == "__main__":

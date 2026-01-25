@@ -163,7 +163,7 @@ async def resume_session(session_id: str) -> Dict[str, str]:
         if current:
             print(f"[DEBUG] Session {session_id} loaded with {len(current.messages)} messages")
         else:
-            print(f"[DEBUG] WARNING: Session loaded but current_session is None")
+            print("[DEBUG] WARNING: Session loaded but current_session is None")
 
         return {"status": "success", "message": f"Resumed session {session_id}"}
 

@@ -1,6 +1,5 @@
 """Tests for CollapsibleOutput model."""
 
-import pytest
 from swecli.ui_textual.models.collapsible_output import CollapsibleOutput
 
 

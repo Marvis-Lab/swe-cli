@@ -6,12 +6,10 @@ import pytest
 from rich.console import Console
 
 from swecli.cli import _run_non_interactive
-from swecli.core.runtime.approval import ApprovalManager
 from swecli.core.runtime import ConfigManager
 from swecli.core.context_engineering.history.session_manager import SessionManager
-from swecli.core.context_engineering.history.undo_manager import UndoManager
 from swecli.core.runtime.services import RuntimeService
-from swecli.models.message import ChatMessage, Role
+from swecli.models.message import Role
 
 
 class _StubAgent:
