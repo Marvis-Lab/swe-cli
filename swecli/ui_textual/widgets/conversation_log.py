@@ -156,6 +156,14 @@ class ConversationLog(RichLog):
         Uses the BlockRegistry to track which content blocks should be
         re-rendered at the new width.
         """
+        # CRITICAL: Skip ALL resize handling (including parent) when there's active
+        # line tracking. The parent RichLog.on_resize() with wrap=True can modify
+        # self.lines internally, corrupting stored line indices.
+        if self._has_active_line_tracking():
+            # Still need to handle basic resize event propagation for layout
+            # but skip any content re-rendering
+            return
+
         super().on_resize(event)
 
         # Get new content width
