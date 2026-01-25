@@ -379,7 +379,6 @@ class TestMessageRenderer:
     def test_add_thinking_block_writes_to_log(self):
         """Test add_thinking_block writes to log."""
         from swecli.ui_textual.widgets.conversation.message_renderer import DefaultMessageRenderer
-        from rich.text import Text
 
         mock_log = MagicMock()
         renderer = DefaultMessageRenderer(mock_log)

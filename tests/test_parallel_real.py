@@ -266,7 +266,6 @@ def test_tool_filtering():
     """Test that SwecliAgent correctly filters tools based on allowed_tools."""
     print("\n=== Testing Tool Filtering ===\n")
 
-    from swecli.core.agents.swecli_agent import SwecliAgent
     from swecli.core.agents.components.tool_schema_builder import ToolSchemaBuilder
 
     # Test 1: No filtering (None) = all tools

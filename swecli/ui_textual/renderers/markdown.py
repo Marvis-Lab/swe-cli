@@ -8,7 +8,7 @@ from typing import List, Tuple
 from rich.console import RenderableType
 from rich.text import Text
 
-from swecli.ui_textual.style_tokens import SUBTLE, PRIMARY, GREEN_BRIGHT, ACCENT, TEXT_MUTED
+from swecli.ui_textual.style_tokens import SUBTLE, ACCENT, TEXT_MUTED
 
 
 def render_markdown_text_segment(content: str, *, leading: bool = False) -> Tuple[List[RenderableType], bool]:

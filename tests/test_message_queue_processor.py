@@ -1,10 +1,7 @@
 """Tests for the MessageProcessor component."""
 
-import queue
-import threading
 import time
-from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 

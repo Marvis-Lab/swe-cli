@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Simple test to verify Textual UI behavior without terminal dependency."""
 
-import asyncio
 import sys
 from pathlib import Path
 
@@ -9,9 +8,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 from textual.app import App
-from textual.containers import Container, Vertical
-from textual.widgets import Header, Footer, Static, Button
-from swecli.ui_textual.chat_app import ConversationLog, ChatTextArea
+from textual.containers import Container
+from textual.widgets import Header, Footer, Button
+from swecli.ui_textual.chat_app import ConversationLog
 
 class TestApp(App):
     """Simple test app to verify UI rendering."""

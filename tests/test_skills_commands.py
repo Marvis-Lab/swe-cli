@@ -1,11 +1,9 @@
 """Tests for /skills command handler."""
 
 import tempfile
-import shutil
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
 from rich.console import Console
 
 from swecli.repl.commands.skills_commands import SkillsCommands, load_skill_generator_prompt

@@ -17,11 +17,10 @@ import pexpect
 from .exceptions import (
     BashSyntaxError,
     CommandTimeoutError,
-    NoExitCodeError,
     NonZeroExitCodeError,
     SessionNotInitializedError,
 )
-from .models import BashAction, BashObservation, CreateSessionRequest, CreateSessionResponse
+from .models import BashAction, BashObservation, CreateSessionResponse
 
 if TYPE_CHECKING:
     pass

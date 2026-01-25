@@ -344,7 +344,7 @@ class MCPCommands(CommandHandler):
         connected = [name for name in servers if self.mcp_manager.is_connected(name)]
         enabled = [name for name, cfg in servers.items() if cfg.enabled]
 
-        self.console.print(f"\n[bold cyan]MCP Status[/bold cyan]")
+        self.console.print("\n[bold cyan]MCP Status[/bold cyan]")
         self.console.print(
             f"  Servers: {len(servers)} configured, {len(connected)} connected, {len(enabled)} enabled"
         )

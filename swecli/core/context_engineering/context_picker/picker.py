@@ -10,7 +10,6 @@ All decisions are logged as ContextReason objects for full traceability.
 from __future__ import annotations
 
 import logging
-import os
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
 
@@ -25,7 +24,6 @@ from .tracer import get_tracer
 
 if TYPE_CHECKING:
     from swecli.core.context_engineering.history import SessionManager
-    from swecli.core.context_engineering.memory import Playbook
     from swecli.core.context_engineering.tools.implementations import FileOperations
     from swecli.models.config import Config
 
@@ -202,7 +200,7 @@ class ContextPicker:
             # For now, treat as single piece - could be enhanced to split
             reason = ContextReason(
                 source="file_reference",
-                reason=f"User referenced files with @ in query",
+                reason="User referenced files with @ in query",
                 tokens_estimate=len(result.text_content) // 4,
                 metadata={"query_contains": "@"},
             )
@@ -389,7 +387,7 @@ class ContextPicker:
         
         reason = ContextReason(
             source="system_prompt",
-            reason=f"Agent system prompt" + (
+            reason="Agent system prompt" + (
                 f" with {len(strategy_pieces)} strategy sections"
                 if strategy_pieces else ""
             ),

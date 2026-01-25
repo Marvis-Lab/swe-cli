@@ -10,15 +10,13 @@ from __future__ import annotations
 import asyncio
 import subprocess
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Coroutine, Literal, Optional, TypeVar
 
 from swecli.commands.subagent_mixin import CommandPhase, SubagentProgressMixin
 from swecli.commands.subagent_types import (
     PatchMetadata,
-    PRMetadata,
-    RepoMetadata,
     SubagentCommandResult,
 )
 from swecli.ui_textual.nested_callback import DockerContext, create_subagent_nested_callback
@@ -266,7 +264,6 @@ class IssueResolverCommand(SubagentProgressMixin):
         Returns:
             SubagentCommandResult with success status and details
         """
-        import asyncio
 
         from swecli.core.docker import DockerConfig, DockerDeployment, DockerToolHandler
 
@@ -509,7 +506,6 @@ Use absolute paths like: /testbed/path/to/file.py
         Returns:
             SubagentCommandResult with success status and details
         """
-        import asyncio
 
         from swecli.core.docker import DockerConfig, DockerDeployment, DockerToolHandler
 

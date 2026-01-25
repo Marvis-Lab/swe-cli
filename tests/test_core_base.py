@@ -2,7 +2,6 @@ import pytest
 from typing import Any, Mapping
 from unittest.mock import MagicMock, patch
 import sys
-import importlib
 
 # Use local imports to avoid side effects
 

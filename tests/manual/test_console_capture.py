@@ -6,7 +6,6 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from io import StringIO
 from swecli.ui_textual.runner import TextualRunner
 from swecli.models.message import Role
 
@@ -28,7 +27,7 @@ def test_console_capture():
     messages_before = len(session_before.messages) if session_before else 0
 
     # Manually do what _run_query does
-    print(f"\n🎯 Capturing console output...")
+    print("\n🎯 Capturing console output...")
 
     with runner.repl.console.capture() as capture:
         runner.repl._process_query(test_query)
@@ -48,17 +47,17 @@ def test_console_capture():
 
     if assistant_messages:
         assistant_text = assistant_messages[0].content
-        print(f"\n💬 Assistant message from session:")
+        print("\n💬 Assistant message from session:")
         print("─" * 80)
         print(assistant_text)
         print("─" * 80)
 
-        print(f"\n🔍 Comparison:")
+        print("\n🔍 Comparison:")
         if assistant_text in console_output:
-            print(f"   ❌ PROBLEM: Assistant message IS in console output!")
-            print(f"   This will cause DUPLICATION when both are rendered!")
+            print("   ❌ PROBLEM: Assistant message IS in console output!")
+            print("   This will cause DUPLICATION when both are rendered!")
         else:
-            print(f"   ✅ Good: Assistant message NOT in console output")
+            print("   ✅ Good: Assistant message NOT in console output")
 
     return True
 

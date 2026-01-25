@@ -22,13 +22,10 @@ from swecli.core.plugins.config import (
 )
 from swecli.core.plugins.models import (
     MarketplaceInfo,
-    KnownMarketplaces,
     PluginMetadata,
     InstalledPlugin,
-    InstalledPlugins,
     SkillMetadata,
     DirectPlugin,
-    DirectPlugins,
 )
 
 
@@ -389,7 +386,7 @@ class PluginManager:
         metadata = self._load_plugin_metadata(source_dir)
         if not metadata and not is_skill_as_plugin:
             # For regular plugins, metadata is required
-            raise PluginManagerError(f"Invalid plugin: missing plugin.json")
+            raise PluginManagerError("Invalid plugin: missing plugin.json")
 
         if is_skill_as_plugin:
             # Create metadata for skill-as-plugin

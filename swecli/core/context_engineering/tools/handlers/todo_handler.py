@@ -6,7 +6,6 @@ from datetime import datetime
 from typing import Dict, List, Optional
 
 from rich.console import Console
-from rich.panel import Panel
 from rich.table import Table
 
 # Configure logger for todo ID validation warnings

@@ -1,6 +1,5 @@
 """Tests for the BlockRegistry used in terminal resize handling."""
 
-import pytest
 from rich.text import Text
 
 from swecli.ui_textual.widgets.conversation.block_registry import (

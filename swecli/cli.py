@@ -283,7 +283,6 @@ def _handle_config_command(args) -> None:
         args: Parsed command-line arguments
     """
     import json
-    from pathlib import Path
 
     console = Console()
 
@@ -537,7 +536,7 @@ def _handle_run_command(args) -> None:
                         console.print(f"[{ERROR}]Error: Backend server thread terminated unexpectedly[/{ERROR}]")
                         sys.exit(1)
 
-                except ImportError as e:
+                except ImportError:
                     console.print(f"[{ERROR}]Error: Web dependencies not installed[/{ERROR}]")
                     console.print(f"[{WARNING}]Install with: pip install 'swe-cli[web]'[/{WARNING}]")
                     sys.exit(1)
