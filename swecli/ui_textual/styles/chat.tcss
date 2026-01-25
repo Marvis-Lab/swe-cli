@@ -8,6 +8,14 @@ Screen {
     background: $background;
 }
 
+#welcome-panel {
+    width: 100%;
+    height: auto;
+    content-align: center middle;
+    background: $background;
+    padding: 1 0;
+}
+
 #conversation {
     height: 1fr;
     border: none;

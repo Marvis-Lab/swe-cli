@@ -11,7 +11,7 @@ from textual.binding import Binding
 from textual.containers import Container, Vertical
 from textual.widgets import Header, Rule, Static
 
-from swecli.ui_textual.widgets import ConversationLog, ProgressBar
+from swecli.ui_textual.widgets import AnimatedWelcomePanel, ConversationLog, ProgressBar
 from swecli.ui_textual.widgets.chat_text_area import ChatTextArea
 from swecli.ui_textual.widgets.status_bar import ModelFooter, StatusBar
 from swecli.ui_textual.widgets.todo_panel import TodoPanel
@@ -29,7 +29,8 @@ from swecli.ui_textual.managers.console_buffer_manager import ConsoleBufferManag
 from swecli.ui_textual.managers.message_history import MessageHistory
 from swecli.ui_textual.managers.tool_summary_manager import ToolSummaryManager
 from swecli.ui_textual.managers.spinner_service import SpinnerService
-from swecli.ui_textual.renderers.welcome_panel import render_welcome_panel
+
+# Note: render_welcome_panel no longer used - replaced by AnimatedWelcomePanel widget
 
 
 class SWECLIChatApp(App):
@@ -130,12 +131,17 @@ class SWECLIChatApp(App):
         self._default_label = "› Type your message (Enter to send, Shift+Enter for new line):"
         self._thinking_visible = True  # Thinking mode visibility state (default ON)
         self._progress_bar: ProgressBar | None = None
+        self._welcome_panel: AnimatedWelcomePanel | None = None
+        self._welcome_visible = True
 
     def compose(self) -> ComposeResult:
         """Create child widgets."""
         yield Header(show_clock=True)
 
         with Container(id="main-container"):
+            # Animated welcome panel (fades out on first message)
+            yield AnimatedWelcomePanel(id="welcome-panel")
+
             # Conversation area
             yield ConversationLog(id="conversation")
 
@@ -179,6 +185,7 @@ class SWECLIChatApp(App):
         self.status_bar = self.query_one("#status-bar", StatusBar)
         self.footer = self.query_one("#model-footer", ModelFooter)
         self._progress_bar = self.query_one("#progress-bar", ProgressBar)
+        self._welcome_panel = self.query_one("#welcome-panel", AnimatedWelcomePanel)
 
         # Inject app reference into progress bar (for polling _is_processing)
         self._progress_bar.set_app(self)
@@ -201,15 +208,16 @@ class SWECLIChatApp(App):
         # Focus input field
         self.input_field.focus()
 
-        # Show different welcome message based on whether we have real backend integration
+        # Set titles based on whether we have real backend integration
         if self.on_message:
             self.title = "SWE-CLI Chat"
             self.sub_title = "AI-powered coding assistant"
-            render_welcome_panel(self.conversation, real_integration=True)
         else:
             self.title = "SWE-CLI Chat (Textual POC)"
             self.sub_title = "Full-screen terminal interface"
-            render_welcome_panel(self.conversation, real_integration=False)
+
+        # Note: Welcome panel is now an animated widget mounted in compose()
+        # It will be hidden on first user message via _hide_welcome_panel()
 
         if self._on_ready is not None:
             self.call_after_refresh(self._on_ready)
@@ -328,10 +336,16 @@ class SWECLIChatApp(App):
 
     async def action_send_message(self) -> None:
         """Send message when user presses Enter."""
+        # Hide welcome panel on first message
+        if self._welcome_visible:
+            self._hide_welcome_panel()
         await self._message_controller.submit(self.input_field.text)
 
     async def on_chat_text_area_submitted(self, event: ChatTextArea.Submitted) -> None:
         """Handle chat submissions from the custom text area."""
+        # Hide welcome panel on first message
+        if self._welcome_visible:
+            self._hide_welcome_panel()
         await self._message_controller.submit(event.value)
 
     def add_assistant_message(self, message: str) -> None:
@@ -343,6 +357,20 @@ class SWECLIChatApp(App):
         """Proxy system message helper."""
         if hasattr(self, "conversation"):
             self.conversation.add_system_message(message)
+
+    def _hide_welcome_panel(self) -> None:
+        """Fade out and remove the welcome panel."""
+        if not self._welcome_visible or self._welcome_panel is None:
+            return
+
+        self._welcome_visible = False
+
+        def on_fade_complete() -> None:
+            if self._welcome_panel is not None:
+                self._welcome_panel.remove()
+                self._welcome_panel = None
+
+        self._welcome_panel.fade_out(on_fade_complete)
 
     async def handle_command(self, command: str) -> bool:
         """Handle slash commands.
