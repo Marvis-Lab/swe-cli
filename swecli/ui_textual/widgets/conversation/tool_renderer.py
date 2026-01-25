@@ -173,12 +173,100 @@ class DefaultToolRenderer:
         # Track most recent collapsible output for quick access
         self._most_recent_collapsible: Optional[int] = None
 
+        # Resize coordination
+        self._paused_for_resize = False
+
     def cleanup(self) -> None:
         """Stop all timers and clear state."""
         self._stop_timers()
         if self._nested_tool_timer:
             self._nested_tool_timer.stop()
             self._nested_tool_timer = None
+
+    # --- Resize Coordination Methods ---
+
+    def pause_for_resize(self) -> None:
+        """Stop animation timers for resize."""
+        self._paused_for_resize = True
+        self._stop_timers()
+        if self._nested_tool_timer:
+            self._nested_tool_timer.stop()
+            self._nested_tool_timer = None
+
+    def adjust_indices(self, delta: int, first_affected: int) -> None:
+        """Adjust all tracked line indices by delta.
+
+        Args:
+            delta: Number of lines added (positive) or removed (negative)
+            first_affected: First line index affected by the change
+        """
+
+        def adj(idx: Optional[int]) -> Optional[int]:
+            """Adjust a single index if affected."""
+            return idx + delta if idx is not None and idx >= first_affected else idx
+
+        # Adjust tool call tracking
+        self._tool_call_start = adj(self._tool_call_start)
+        self._nested_tool_line = adj(self._nested_tool_line)
+
+        # Adjust nested tools (multi-tool tracking)
+        for state in self._nested_tools.values():
+            if state.line_number >= first_affected:
+                state.line_number += delta
+
+        # Adjust parallel group
+        if self._parallel_group is not None:
+            if self._parallel_group.header_line >= first_affected:
+                self._parallel_group.header_line += delta
+            for agent in self._parallel_group.agents.values():
+                if agent.line_number >= first_affected:
+                    agent.line_number += delta
+                if agent.status_line >= first_affected:
+                    agent.status_line += delta
+
+        # Adjust single agent
+        if self._single_agent is not None:
+            if self._single_agent.header_line >= first_affected:
+                self._single_agent.header_line += delta
+            if self._single_agent.status_line >= first_affected:
+                self._single_agent.status_line += delta
+            if self._single_agent.tool_line >= first_affected:
+                self._single_agent.tool_line += delta
+
+        # Adjust streaming box lines
+        self._streaming_box_header_line = adj(self._streaming_box_header_line)
+        self._streaming_box_top_line = adj(self._streaming_box_top_line)
+
+        # Adjust collapsible outputs (rebuild dict with new keys)
+        new_collapsibles: Dict[int, CollapsibleOutput] = {}
+        for start, coll in self._collapsible_outputs.items():
+            new_start = start + delta if start >= first_affected else start
+            coll.start_line = new_start
+            if coll.end_line >= first_affected:
+                coll.end_line += delta
+            new_collapsibles[new_start] = coll
+        self._collapsible_outputs = new_collapsibles
+
+        # Adjust most recent collapsible pointer
+        self._most_recent_collapsible = adj(self._most_recent_collapsible)
+
+    def resume_after_resize(self) -> None:
+        """Restart animations after resize."""
+        self._paused_for_resize = False
+
+        # Check if there are any active animations that need to be restarted
+        has_active = (
+            self._nested_tools
+            or self._nested_tool_line is not None
+            or (
+                self._parallel_group is not None
+                and any(a.status == "running" for a in self._parallel_group.agents.values())
+            )
+            or (self._single_agent is not None and self._single_agent.status == "running")
+        )
+
+        if has_active and self._nested_tool_timer is None:
+            self._animate_nested_tool_spinner()
 
     def _stop_timers(self) -> None:
         if self._tool_spinner_timer:
@@ -568,6 +656,9 @@ class DefaultToolRenderer:
 
     def _animate_nested_tool_spinner(self) -> None:
         """Animate ALL active nested tool spinners AND agent row spinners."""
+        if self._paused_for_resize:
+            return  # Skip animation during resize
+
         if self._nested_tool_thread_timer:
             self._nested_tool_thread_timer.cancel()
             self._nested_tool_thread_timer = None

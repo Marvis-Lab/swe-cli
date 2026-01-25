@@ -32,6 +32,19 @@ class ModelPickerController:
     def active(self) -> bool:
         return self.state is not None
 
+    def adjust_indices(self, delta: int, first_affected: int) -> None:
+        """Adjust panel_start after resize.
+
+        Args:
+            delta: Number of lines added (positive) or removed (negative)
+            first_affected: First line index affected by the change
+        """
+        if self.state is None:
+            return
+        start = self.state.get("panel_start")
+        if start is not None and start >= first_affected:
+            self.state["panel_start"] = start + delta
+
     async def start(self) -> None:
         """Begin the model picker flow."""
         if self.active:
@@ -165,7 +178,9 @@ class ModelPickerController:
         if stage == "provider":
             providers = state.get("providers") or []
             if not providers:
-                self.app.conversation.add_system_message("No providers available — press X to cancel.")
+                self.app.conversation.add_system_message(
+                    "No providers available — press X to cancel."
+                )
                 self.app.refresh()
                 return
             index = max(0, min(state.get("provider_index", 0), len(providers) - 1))
@@ -183,7 +198,9 @@ class ModelPickerController:
             provider_info = state.get("provider")
             slot = state.get("slot")
             if not models:
-                self.app.conversation.add_system_message("No models to select — press B to go back.")
+                self.app.conversation.add_system_message(
+                    "No models to select — press B to go back."
+                )
                 self.app.refresh()
                 return
             if not provider_info or not slot:
@@ -251,7 +268,9 @@ class ModelPickerController:
 
             providers = state.get("providers") or []
             if not providers:
-                self.app.conversation.add_system_message("No providers available — press X to cancel.")
+                self.app.conversation.add_system_message(
+                    "No providers available — press X to cancel."
+                )
                 self.app.refresh()
                 return True
 
@@ -292,7 +311,9 @@ class ModelPickerController:
 
             models = state.get("models") or []
             if not models:
-                self.app.conversation.add_system_message("No models to select — press B to go back.")
+                self.app.conversation.add_system_message(
+                    "No models to select — press B to go back."
+                )
                 self.app.refresh()
                 return True
 
@@ -389,7 +410,6 @@ class ModelPickerController:
                     "option": option,
                 }
             )
-
 
         state["slot_items"] = items
         index = state.get("slot_index", 0)
@@ -494,7 +514,11 @@ class ModelPickerController:
             models = entry["models"]
             total_models = len(models)
             max_context = max((model.context_length for model in models), default=0)
-            context_display = f"{max_context // 1000}k context" if max_context >= 1000 else f"{max_context} context"
+            context_display = (
+                f"{max_context // 1000}k context"
+                if max_context >= 1000
+                else f"{max_context} context"
+            )
             summary_text = f"{total_models} models · {context_display}"
 
             is_active = row_index == index
@@ -548,7 +572,9 @@ class ModelPickerController:
         slot = state.get("slot")
 
         if not provider_entry or not models:
-            self.app.conversation.add_system_message("No models available for the selected provider.")
+            self.app.conversation.add_system_message(
+                "No models available for the selected provider."
+            )
             state["stage"] = "provider"
             self._render_provider_panel()
             return
@@ -626,7 +652,9 @@ class ModelPickerController:
                 model_display = "—"
             table.add_row(labels.get(slot, slot.title()), provider_display, model_display)
 
-        instructions = Text("Type /models again to reopen the selector anytime.", style=f"italic {GREY}")
+        instructions = Text(
+            "Type /models again to reopen the selector anytime.", style=f"italic {GREY}"
+        )
         panel = Panel(
             Group(Text("Current model configuration", style=BLUE_LIGHT), table, instructions),
             title="[bold]Model Summary[/bold]",
@@ -703,9 +731,15 @@ class ModelPickerController:
                         if isinstance(value, Mapping):
                             snapshot[slot] = {
                                 "provider": str(value.get("provider", "") or ""),
-                                "provider_display": str(value.get("provider_display", "") or value.get("provider", "") or ""),
+                                "provider_display": str(
+                                    value.get("provider_display", "")
+                                    or value.get("provider", "")
+                                    or ""
+                                ),
                                 "model": str(value.get("model", "") or ""),
-                                "model_display": str(value.get("model_display", "") or value.get("model", "") or ""),
+                                "model_display": str(
+                                    value.get("model_display", "") or value.get("model", "") or ""
+                                ),
                             }
             except Exception:  # pragma: no cover
                 snapshot = {}

@@ -46,7 +46,7 @@ def _format_tools_list(selected_tools: list[str]) -> str:
         YAML-formatted tools string (either 'tools: "*"' or a list).
     """
     if not selected_tools:
-        return 'tools: []'  # No tools
+        return "tools: []"  # No tools
 
     # If all built-in tools are selected, use wildcard
     from swecli.core.agents.subagents.tool_metadata import get_available_tools
@@ -85,6 +85,19 @@ class AgentCreatorController:
     @property
     def active(self) -> bool:
         return self.state is not None
+
+    def adjust_indices(self, delta: int, first_affected: int) -> None:
+        """Adjust panel_start after resize.
+
+        Args:
+            delta: Number of lines added (positive) or removed (negative)
+            first_affected: First line index affected by the change
+        """
+        if self.state is None:
+            return
+        start = self.state.get("panel_start")
+        if start is not None and start >= first_affected:
+            self.state["panel_start"] = start + delta
 
     def set_config_manager(self, config_manager: Any) -> None:
         """Set the config manager for path resolution."""
@@ -772,7 +785,7 @@ class AgentCreatorController:
 
         # Get the content after frontmatter as the system prompt
         if frontmatter_match:
-            system_prompt = content[frontmatter_match.end():].strip()
+            system_prompt = content[frontmatter_match.end() :].strip()
         else:
             # No frontmatter, use entire content as system prompt
             system_prompt = content
@@ -848,7 +861,9 @@ class AgentCreatorController:
 
         # Store generated metadata for tool selection
         state["agent_name"] = name
-        state["system_prompt"] = f"""You are a specialized agent for the following purpose:
+        state[
+            "system_prompt"
+        ] = f"""You are a specialized agent for the following purpose:
 
 {description}
 

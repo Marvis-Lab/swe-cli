@@ -88,6 +88,19 @@ class SkillCreatorController:
     def active(self) -> bool:
         return self.state is not None
 
+    def adjust_indices(self, delta: int, first_affected: int) -> None:
+        """Adjust panel_start after resize.
+
+        Args:
+            delta: Number of lines added (positive) or removed (negative)
+            first_affected: First line index affected by the change
+        """
+        if self.state is None:
+            return
+        start = self.state.get("panel_start")
+        if start is not None and start >= first_affected:
+            self.state["panel_start"] = start + delta
+
     def set_config_manager(self, config_manager: Any) -> None:
         """Set the config manager for path resolution."""
         self._config_manager = config_manager

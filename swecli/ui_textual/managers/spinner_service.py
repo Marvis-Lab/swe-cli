@@ -33,10 +33,10 @@ if TYPE_CHECKING:
 class SpinnerType(Enum):
     """Types of spinners with different rendering behaviors."""
 
-    TOOL = auto()      # Main tool spinner - braille dots, 120ms
+    TOOL = auto()  # Main tool spinner - braille dots, 120ms
     THINKING = auto()  # Thinking spinner - braille dots, 120ms, 300ms min visibility
-    TODO = auto()      # Todo panel - rotating arrows, 150ms
-    NESTED = auto()    # Nested/subagent tool - flashing bullet, 300ms
+    TODO = auto()  # Todo panel - rotating arrows, 150ms
+    NESTED = auto()  # Nested/subagent tool - flashing bullet, 300ms
 
 
 @dataclass(frozen=True)
@@ -110,12 +110,12 @@ class SpinnerFrame:
 
     spinner_id: str
     spinner_type: SpinnerType
-    char: str                    # Current animation character
-    frame_index: int             # Current frame number
-    elapsed_seconds: int         # Seconds since spinner started
-    message: Text                # Current message text
-    style: str                   # Style for the spinner character
-    metadata: Dict[str, Any]     # Widget-specific data
+    char: str  # Current animation character
+    frame_index: int  # Current frame number
+    elapsed_seconds: int  # Seconds since spinner started
+    message: Text  # Current message text
+    style: str  # Style for the spinner character
+    metadata: Dict[str, Any]  # Widget-specific data
 
 
 class SpinnerService:
@@ -196,6 +196,56 @@ class SpinnerService:
         self._tips_manager = tips_manager
 
     # =========================================================================
+    # RESIZE COORDINATION METHODS
+    # =========================================================================
+
+    def pause_for_resize(self) -> None:
+        """Stop animation timers for resize."""
+        with self._lock:
+            self._stop_animation_loop()
+
+    def adjust_indices(self, delta: int, first_affected: int) -> None:
+        """Adjust all tracked line indices by delta.
+
+        Args:
+            delta: Number of lines added (positive) or removed (negative)
+            first_affected: First line index affected by the change
+        """
+        with self._lock:
+            # Adjust spinner lines
+            for spinner_id in list(self._spinner_lines.keys()):
+                line = self._spinner_lines[spinner_id]
+                if line >= first_affected:
+                    self._spinner_lines[spinner_id] = line + delta
+
+            # Adjust result lines
+            for spinner_id in list(self._result_lines.keys()):
+                line = self._result_lines[spinner_id]
+                if line >= first_affected:
+                    self._result_lines[spinner_id] = line + delta
+
+            # Adjust spacing lines
+            for spinner_id in list(self._spacing_lines.keys()):
+                line = self._spacing_lines[spinner_id]
+                if line >= first_affected:
+                    self._spacing_lines[spinner_id] = line + delta
+
+            # Adjust tip lines
+            for spinner_id in list(self._spinner_tip_lines.keys()):
+                line = self._spinner_tip_lines[spinner_id]
+                if line >= first_affected:
+                    self._spinner_tip_lines[spinner_id] = line + delta
+
+    def resume_after_resize(self) -> None:
+        """Restart animation loop after resize."""
+        with self._lock:
+            if self._spinners and not self._running:
+                self._running = True
+        # Start animation loop outside lock to avoid deadlock
+        if self._spinners:
+            self._schedule_tick()
+
+    # =========================================================================
     # FACADE API (for ui_callback compatibility)
     # =========================================================================
 
@@ -251,7 +301,9 @@ class SpinnerService:
             # Get line number from tool_renderer's _tool_call_start
             # This is more reliable because RichLog.write() is async and len(lines)
             # might not update immediately. _tool_call_start is set BEFORE the async write.
-            if hasattr(conversation, "_tool_renderer") and hasattr(conversation._tool_renderer, "_tool_call_start"):
+            if hasattr(conversation, "_tool_renderer") and hasattr(
+                conversation._tool_renderer, "_tool_call_start"
+            ):
                 line_num = conversation._tool_renderer._tool_call_start
             else:
                 # Fallback: get the last line index
@@ -305,7 +357,9 @@ class SpinnerService:
             spinner_id=spinner_id,
             spinner_type=spinner_type,
             config=config,
-            message=display_text.copy() if isinstance(display_text, Text) else Text(str(display_text)),
+            message=(
+                display_text.copy() if isinstance(display_text, Text) else Text(str(display_text))
+            ),
             render_callback=render_callback,
         )
 
@@ -369,6 +423,8 @@ class SpinnerService:
         # First, try to stop as a callback-based spinner
         with self._lock:
             if spinner_id in self._spinners:
+                # Mark as stopped BEFORE deleting - prevents race with queued callbacks
+                self._spinners[spinner_id].stop_requested = True
                 del self._spinners[spinner_id]
                 if not self._spinners:
                     self._stop_animation_loop()
@@ -401,6 +457,7 @@ class SpinnerService:
             def text_to_strip(text: Text) -> "Strip":
                 from rich.console import Console
                 from textual.strip import Strip
+
                 console = Console(width=1000, force_terminal=True, no_color=False)
                 segments = list(text.render(console))
                 return Strip(segments)
@@ -604,6 +661,7 @@ class SpinnerService:
             return True  # Assume UI thread if no loop
         try:
             import asyncio
+
             running_loop = asyncio.get_running_loop()
             return running_loop is loop
         except RuntimeError:
@@ -726,9 +784,7 @@ class SpinnerService:
                 elapsed_since_frame = (now - instance.last_frame_at) * 1000
                 if elapsed_since_frame >= instance.config.interval_ms:
                     # Advance frame
-                    instance.frame_index = (
-                        (instance.frame_index + 1) % len(instance.config.chars)
-                    )
+                    instance.frame_index = (instance.frame_index + 1) % len(instance.config.chars)
                     instance.last_frame_at = now
 
                     # Mark for rendering (outside lock)
@@ -752,6 +808,12 @@ class SpinnerService:
 
     def _render_frame(self, instance: SpinnerInstance) -> None:
         """Invoke the render callback for a spinner."""
+        # Race condition prevention: don't render if stop was requested
+        # This guards against callbacks firing after stop() but before the instance
+        # is fully cleaned up from the to_render list in _on_tick()
+        if instance.stop_requested:
+            return
+
         if instance.render_callback is None:
             return
 
@@ -805,6 +867,7 @@ class SpinnerService:
                 # Convert to Strip
                 from rich.console import Console
                 from textual.strip import Strip
+
                 console = Console(width=1000, force_terminal=True, no_color=False)
                 segments = list(formatted.render(console))
                 strip = Strip(segments)
@@ -815,13 +878,13 @@ class SpinnerService:
                     conversation.lines.insert(line_num, strip)
 
                 # Invalidate cache and refresh - BOTH refreshes are needed
-                if hasattr(conversation, 'refresh_line'):
+                if hasattr(conversation, "refresh_line"):
                     conversation.refresh_line(line_num)
                 else:
                     conversation.refresh()
 
                 # Also refresh the app (like DefaultSpinnerManager does)
-                if hasattr(self.app, 'refresh'):
+                if hasattr(self.app, "refresh"):
                     self.app.refresh()
             except Exception:
                 pass  # Silently ignore errors
@@ -864,6 +927,7 @@ class SpinnerService:
                 # Convert to Strip
                 from rich.console import Console
                 from textual.strip import Strip
+
                 console = Console(width=1000, force_terminal=True, no_color=False)
                 segments = list(formatted.render(console))
                 strip = Strip(segments)
@@ -875,13 +939,13 @@ class SpinnerService:
                     conversation.lines.insert(line_num, strip)
 
                 # Invalidate cache and refresh - BOTH refreshes are needed
-                if hasattr(conversation, 'refresh_line'):
+                if hasattr(conversation, "refresh_line"):
                     conversation.refresh_line(line_num)
                 else:
                     conversation.refresh()
 
                 # Also refresh the app (like DefaultSpinnerManager does)
-                if hasattr(self.app, 'refresh'):
+                if hasattr(self.app, "refresh"):
                     self.app.refresh()
             except Exception:
                 pass  # Silently ignore errors in animation update
