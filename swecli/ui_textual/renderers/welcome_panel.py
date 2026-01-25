@@ -36,7 +36,7 @@ def render_welcome_panel(
         )
 
         for line in welcome_lines:
-            conversation.write(Text.from_ansi(line))
+            conversation.write(Text.from_ansi(line), wrappable=False)
 
     else:
         heading = Text("SWE-CLI (Preview)", style=f"bold {BLUE_BRIGHT}")
