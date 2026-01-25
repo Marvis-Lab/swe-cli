@@ -4,13 +4,18 @@ import json
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from enum import Enum, auto
-from typing import TYPE_CHECKING, Optional, Dict, Any, List
+from typing import TYPE_CHECKING, Optional, Dict, Any
 
 # Maximum number of tools to execute in parallel
 MAX_CONCURRENT_TOOLS = 5
 
+# Dual memory architecture constants
+SHORT_TERM_PAIRS = 3  # Number of recent message pairs to include in short-term memory
+MAX_TOOL_RESULT_LEN = 300  # Truncate tool results in short-term memory
+
 from swecli.models.message import ChatMessage, Role, ToolCall as ToolCallModel
 from swecli.core.context_engineering.memory import AgentResponse
+from swecli.core.context_engineering.memory.conversation_summarizer import ConversationSummarizer
 from swecli.core.runtime.monitoring import TaskMonitor
 from swecli.ui_textual.utils.tool_display import format_tool_call
 from swecli.ui_textual.components.task_progress import TaskProgressDisplay
@@ -84,6 +89,20 @@ class ReactExecutor:
         self._last_error = None
         self._last_latency_ms = 0
 
+        # Tracking variables for current iteration (for session persistence)
+        self._current_thinking_trace: Optional[str] = None
+        self._current_reasoning_content: Optional[str] = None
+        self._current_token_usage: Optional[dict] = None
+
+        self._conversation_summarizer = ConversationSummarizer(
+            regenerate_threshold=5,  # Regenerate summary after 5 new messages
+        )
+        # Load cached state from session if available
+        if self.session_manager.current_session:
+            cache_data = self.session_manager.current_session.metadata.get("conversation_summary")
+            if cache_data:
+                self._conversation_summarizer.load_from_dict(cache_data)
+
     def execute(
         self,
         query: str,
@@ -140,8 +159,9 @@ class ReactExecutor:
     ) -> Optional[str]:
         """Make a SEPARATE LLM call to get thinking trace.
 
-        This uses the thinking system prompt with dynamic context injection.
-        The context is formatted from conversation history and injected into {context} placeholder.
+        Uses dual memory architecture:
+        - Episodic memory: LLM-summarized conversation history
+        - Short-term memory: Last N message pairs in full detail
 
         Args:
             messages: Current conversation messages
@@ -155,27 +175,28 @@ class ReactExecutor:
             # Build thinking-specific system prompt template
             thinking_system_prompt_template = agent.build_system_prompt(thinking_visible=True)
 
-            # Format context from message history
+            # === BUILD DUAL MEMORY CONTEXT ===
             context_parts = []
-            for msg in messages:
-                role = msg.get("role")
-                content = msg.get("content", "")
-                
-                if role == "system":
-                    continue  # Skip system messages
-                elif role == "user":
-                    context_parts.append(f"USER REQUEST:\n{content}\n")
-                elif role == "assistant":
-                    tool_calls = msg.get("tool_calls", [])
-                    if tool_calls:
-                        tool_names = [tc["function"]["name"] for tc in tool_calls]
-                        context_parts.append(f"ASSISTANT CALLED TOOLS: {', '.join(tool_names)}\n")
-                    if content:
-                        context_parts.append(f"ASSISTANT REASONING:\n{content}\n")
-                elif role == "tool":
-                    # Format tool results concisely
-                    tool_content = content[:500] + "..." if len(content) > 500 else content
-                    context_parts.append(f"TOOL RESULT:\n{tool_content}\n")
+
+            # Count non-system messages
+            non_system_count = len([m for m in messages if m.get("role") != "system"])
+
+            # 1. EPISODIC MEMORY: Get/generate conversation summary (only if enough history)
+            if non_system_count > SHORT_TERM_PAIRS * 3:
+                if self._conversation_summarizer.needs_regeneration(non_system_count):
+                    summary = self._conversation_summarizer.generate_summary(
+                        messages, agent.call_thinking_llm
+                    )
+                else:
+                    summary = self._conversation_summarizer.get_cached_summary()
+
+                if summary:
+                    context_parts.append(f"CONVERSATION SUMMARY (episodic memory):\n{summary}\n")
+
+            # 2. SHORT-TERM MEMORY: Extract last N message pairs
+            short_term = self._extract_short_term_memory(messages, SHORT_TERM_PAIRS)
+            if short_term:
+                context_parts.append(f"RECENT EXCHANGES (short-term memory):\n{short_term}")
 
             formatted_context = "\n".join(context_parts)
 
@@ -187,7 +208,10 @@ class ReactExecutor:
             # Build minimal message list - just system prompt + empty user message
             thinking_messages = [
                 {"role": "system", "content": thinking_system_prompt},
-                {"role": "user", "content": "Analyze the context and provide your reasoning for the next step."}
+                {
+                    "role": "user",
+                    "content": "Analyze the context and provide your reasoning for the next step.",
+                },
             ]
 
             # Call LLM WITHOUT tools - just get reasoning
@@ -217,6 +241,67 @@ class ReactExecutor:
             logging.getLogger(__name__).exception("Error in thinking phase")
 
         return None
+
+    def _extract_short_term_memory(self, messages: list, n_pairs: int) -> str:
+        """Extract the last N message pairs (user->assistant->tools) in full detail.
+
+        A "pair" is defined as:
+        - User message
+        - Assistant response (with tool calls)
+        - Tool results (if any)
+
+        Args:
+            messages: Full message list
+            n_pairs: Number of pairs to extract
+
+        Returns:
+            Formatted string of recent exchanges
+        """
+        # Filter out system messages
+        non_system = [m for m in messages if m.get("role") != "system"]
+
+        if not non_system:
+            return ""
+
+        # Find user message boundaries to identify "pairs"
+        pair_starts = []
+        for i, msg in enumerate(non_system):
+            if msg.get("role") == "user":
+                pair_starts.append(i)
+
+        # Get last N pair starting indices
+        recent_pair_starts = pair_starts[-n_pairs:] if len(pair_starts) >= n_pairs else pair_starts
+
+        if not recent_pair_starts:
+            return ""
+
+        # Extract messages from first recent pair to end
+        start_idx = recent_pair_starts[0]
+        recent_messages = non_system[start_idx:]
+
+        # Format with truncation
+        parts = []
+        for msg in recent_messages:
+            role = msg.get("role")
+            content = msg.get("content", "")
+
+            if role == "user":
+                parts.append(f"USER:\n{content}\n")
+            elif role == "assistant":
+                tool_calls = msg.get("tool_calls", [])
+                if tool_calls:
+                    tool_names = [tc["function"]["name"] for tc in tool_calls]
+                    parts.append(f"ASSISTANT CALLED: {', '.join(tool_names)}\n")
+                if content:
+                    parts.append(f"ASSISTANT:\n{content[:500]}\n")
+            elif role == "tool":
+                # Truncate tool results more aggressively
+                tool_content = content[:MAX_TOOL_RESULT_LEN]
+                if len(content) > MAX_TOOL_RESULT_LEN:
+                    tool_content += f"... ({len(content)} chars total)"
+                parts.append(f"TOOL RESULT:\n{tool_content}\n")
+
+        return "\n".join(parts)
 
     def _check_subagent_completion(self, messages: list) -> bool:
         """Check if the last tool result was from a completed subagent.
@@ -263,6 +348,7 @@ class ReactExecutor:
         # Skip thinking phase after subagent completion - main agent decides directly
         if thinking_visible and not subagent_just_completed:
             thinking_trace = self._get_thinking_trace(ctx.messages, ctx.agent, ctx.ui_callback)
+            self._current_thinking_trace = thinking_trace  # Track for persistence
             if thinking_trace:
                 # Inject trace as user message for the action phase
                 ctx.messages.append(
@@ -308,6 +394,8 @@ class ReactExecutor:
 
         # Parse response - now includes reasoning_content
         content, tool_calls, reasoning_content = self._parse_llm_response(response)
+        self._current_reasoning_content = reasoning_content  # Track for persistence
+        self._current_token_usage = response.get("usage")  # Track token usage
 
         # Log what the LLM decided to do
         _debug_log(
@@ -349,7 +437,7 @@ class ReactExecutor:
                 ctx.ui_callback.on_interrupt()
             elif not ctx.ui_callback:
                 self.console.print(
-                    f"  ⎿  [bold red]Interrupted · What should I do instead?[/bold red]"
+                    "  ⎿  [bold red]Interrupted · What should I do instead?[/bold red]"
                 )
         else:
             self.console.print(f"[red]Error: {error_text}[/red]")
@@ -506,12 +594,15 @@ class ReactExecutor:
             return LoopAction.BREAK
 
         # Persist and Learn
+        _debug_log("[TOOLS] Before _persist_step")
         self._persist_step(ctx, tool_calls, tool_results_by_id, content, raw_content)
+        _debug_log("[TOOLS] After _persist_step")
 
         # Check nudge for reads
         if self._should_nudge_agent(ctx.consecutive_reads, ctx.messages):
             ctx.consecutive_reads = 0
 
+        _debug_log("[TOOLS] Returning LoopAction.CONTINUE")
         return LoopAction.CONTINUE
 
     def _execute_single_tool(
@@ -694,15 +785,20 @@ class ReactExecutor:
 
         for tc in tool_calls:
             tool_name = tc["function"]["name"]
+            _debug_log(f"[PERSIST] Processing tool call: {tool_name}")
             if tool_name == "task_complete":
                 continue
 
             full_result = results.get(tc["id"], {})
+            _debug_log(f"[PERSIST] full_result keys: {list(full_result.keys())}")
             tool_error = full_result.get("error") if not full_result.get("success", True) else None
             tool_result_str = (
                 full_result.get("output", "") if full_result.get("success", True) else None
             )
             result_summary = summarize_tool_result(tool_name, tool_result_str, tool_error)
+            _debug_log(
+                f"[PERSIST] result_summary: {result_summary[:100] if result_summary else None}"
+            )
 
             nested_calls = []
             if (
@@ -712,6 +808,7 @@ class ReactExecutor:
             ):
                 nested_calls = ctx.ui_callback.get_and_clear_nested_calls()
 
+            _debug_log("[PERSIST] Creating ToolCallModel")
             tool_call_objects.append(
                 ToolCallModel(
                     id=tc["id"],
@@ -724,16 +821,52 @@ class ReactExecutor:
                     nested_tool_calls=nested_calls,
                 )
             )
+            _debug_log("[PERSIST] ToolCallModel created")
 
         if tool_call_objects or content:
-            metadata = {"raw_content": raw_content} if raw_content is not None else {}
-            assistant_msg = ChatMessage(
-                role=Role.ASSISTANT,
-                content=content or "",
-                metadata=metadata,
-                tool_calls=tool_call_objects,
+            _debug_log(f"[PERSIST] Creating msg with {len(tool_call_objects)} tool calls")
+            _debug_log(
+                f"[PERSIST] content={content[:50] if content else None}, raw_content={raw_content[:50] if raw_content else None}"
             )
+            metadata = {"raw_content": raw_content} if raw_content is not None else {}
+            _debug_log("[PERSIST] About to create ChatMessage")
+            try:
+                assistant_msg = ChatMessage(
+                    role=Role.ASSISTANT,
+                    content=content or "",
+                    metadata=metadata,
+                    tool_calls=tool_call_objects,
+                    # Include tracked iteration data for session persistence
+                    thinking_trace=self._current_thinking_trace,
+                    reasoning_content=self._current_reasoning_content,
+                    token_usage=self._current_token_usage,
+                )
+                _debug_log("[PERSIST] ChatMessage created successfully")
+            except Exception as e:
+                _debug_log(f"[PERSIST] ChatMessage creation failed: {e}")
+                raise
+
+            # Sync summarizer cache to session metadata before saving
+            _debug_log("[PERSIST] Syncing summarizer cache")
+            try:
+                cache_data = self._conversation_summarizer.to_dict()
+                if cache_data and self.session_manager.current_session:
+                    self.session_manager.current_session.metadata["conversation_summary"] = (
+                        cache_data
+                    )
+            except Exception as e:
+                _debug_log(f"[PERSIST] Cache sync failed: {e}")
+
+            _debug_log("[PERSIST] Calling add_message")
             self.session_manager.add_message(assistant_msg, self.config.auto_save_interval)
+
+            _debug_log("[PERSIST] Clearing tracked values")
+            # Clear tracked values after persistence
+            self._current_thinking_trace = None
+            self._current_reasoning_content = None
+            self._current_token_usage = None
+
+        _debug_log("[PERSIST] Completed")
 
         if tool_call_objects:
             outcome = "error" if any(tc.error for tc in tool_call_objects) else "success"

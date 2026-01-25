@@ -39,9 +39,12 @@ class ChatMessage(BaseModel):
     tool_calls: list[ToolCall] = Field(default_factory=list)
     tokens: Optional[int] = None
 
-    model_config = ConfigDict(
-        json_encoders={datetime: lambda v: v.isoformat()}
-    )
+    # Fields for complete session persistence
+    thinking_trace: Optional[str] = None  # Thinking/reasoning used for this response
+    reasoning_content: Optional[str] = None  # Native model reasoning (o1/o3)
+    token_usage: Optional[dict[str, Any]] = None  # Token usage stats (may contain nested dicts)
+
+    model_config = ConfigDict(json_encoders={datetime: lambda v: v.isoformat()})
 
     def token_estimate(self) -> int:
         """Estimate token count (rough approximation)."""
