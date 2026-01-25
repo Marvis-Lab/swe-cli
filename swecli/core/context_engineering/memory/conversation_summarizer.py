@@ -151,3 +151,24 @@ class ConversationSummarizer:
     def clear_cache(self) -> None:
         """Clear the cached summary."""
         self._cache = None
+
+    def to_dict(self) -> Optional[Dict[str, Any]]:
+        """Serialize cache for session persistence."""
+        if not self._cache:
+            return None
+        return {
+            "summary": self._cache.summary,
+            "message_count": self._cache.message_count,
+            "last_summarized_index": self._cache.last_summarized_index,
+        }
+
+    def load_from_dict(self, data: Optional[Dict[str, Any]]) -> None:
+        """Load cache from session persistence."""
+        if not data:
+            self._cache = None
+            return
+        self._cache = ConversationSummary(
+            summary=data.get("summary", ""),
+            message_count=data.get("message_count", 0),
+            last_summarized_index=data.get("last_summarized_index", 0),
+        )

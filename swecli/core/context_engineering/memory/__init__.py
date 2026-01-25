@@ -30,6 +30,12 @@ from swecli.core.context_engineering.memory.roles import (
 from swecli.core.context_engineering.memory.playbook import SessionPlaybook, Strategy
 from swecli.core.context_engineering.memory.reflection import ExecutionReflector, ReflectionResult
 
+# Conversation summarization for thinking context
+from swecli.core.context_engineering.memory.conversation_summarizer import (
+    ConversationSummarizer,
+    ConversationSummary,
+)
+
 __all__ = [
     # Native ACE Components (recommended)
     "Playbook",
@@ -46,4 +52,7 @@ __all__ = [
     "Strategy",
     "ExecutionReflector",
     "ReflectionResult",
+    # Conversation summarization for thinking context
+    "ConversationSummarizer",
+    "ConversationSummary",
 ]

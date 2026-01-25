@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING, Optional
 
 from textual.widgets import Static
 
 from swecli.ui_textual.style_tokens import SUCCESS, WARNING
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from swecli.ui_textual.managers.spinner_service import SpinnerService, SpinnerFrame
@@ -38,6 +41,7 @@ class TodoPanel(Static):
         # SpinnerService integration
         self._spinner_service: Optional["SpinnerService"] = None
         self._spinner_id: str = ""
+        self._render_suppressed: bool = False  # Prevents spinner race conditions
 
     def set_spinner_service(self, service: "SpinnerService") -> None:
         """Inject the SpinnerService.
@@ -57,11 +61,19 @@ class TodoPanel(Static):
         Shows collapsed summary or full list depending on is_expanded state.
         Auto-shows panel in collapsed state when todos are created.
         """
+        # CRITICAL: Suppress spinner rendering to prevent race conditions
+        # Any queued spinner frame callbacks will see this flag and bail out
+        self._render_suppressed = True
+
         if not self.todo_handler:
             self.update("Todo panel not connected")
             return
 
         todos = list(self.todo_handler._todos.values())
+
+        logger.debug(f"[PANEL] refresh_display: {len(todos)} todos")
+        for t in todos:
+            logger.debug(f"[PANEL]   {t.id}: status={t.status}, title={t.title[:30]}...")
 
         # Hide when no todos at all
         if not todos:
@@ -74,18 +86,14 @@ class TodoPanel(Static):
                 self.remove_class("expanded")
             return
 
-        # Show completion summary when all done (instead of hiding)
+        # Auto-hide panel when all todos are complete
         if all(t.status == "done" for t in todos):
+            logger.debug("[PANEL] All done, auto-hiding panel")
             self._stop_spinner()
-            total = len(todos)
-            self.update(
-                f"[{SUCCESS}]✓ {total}/{total} completed[/{SUCCESS}] "
-                f"[dim](Press Ctrl+T to expand/hide)[/dim]"
-            )
+            self.update("")
             self.border_title = ""
-            # Keep collapsed class for styling consistency
-            if not self.has_class("collapsed") and not self.has_class("expanded"):
-                self.add_class("collapsed")
+            self.remove_class("collapsed")
+            self.remove_class("expanded")
             return
 
         # Auto-show in collapsed state when todos are created
@@ -104,6 +112,9 @@ class TodoPanel(Static):
         active_text = self._get_active_todo_text(todos)
 
         if active_text:
+            # Un-suppress - we want the spinner to animate
+            self._render_suppressed = False
+
             # Start spinner if not already running
             if not self._spinner_id:
                 self._start_spinner(active_text)
@@ -113,7 +124,7 @@ class TodoPanel(Static):
                     self._spinner_service.update_metadata(self._spinner_id, active_text=active_text)
             # Initial render will happen via callback
         else:
-            # No active task - STOP SPINNER FIRST to prevent race condition
+            # Keep suppressed - we're showing completion count, not spinner
             self._stop_spinner()
 
             # Now safe to show completion progress
@@ -200,6 +211,10 @@ class TodoPanel(Static):
         Args:
             frame: SpinnerFrame containing animation data
         """
+        # Guard 0: Don't render if suppressed (prevents race conditions during refresh)
+        if self._render_suppressed:
+            return
+
         # Guard 1: Don't render if expanded mode
         if self.is_expanded:
             return

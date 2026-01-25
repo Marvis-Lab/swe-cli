@@ -27,4 +27,4 @@ Prioritize information in this order:
 
 # Output Format
 
-Write a dense, factual paragraph. No bullet points or headers. No filler phrases. Aim for 200-400 words that capture essential context.
+Write a dense, factual paragraph. No filler phrases. Aim for 200-400 words that capture essential context.

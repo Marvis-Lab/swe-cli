@@ -1,7 +1,11 @@
-"""Tests for AnimatedWelcomePanel widget."""
+"""Tests for AnimatedWelcomePanel widget and DonutRenderer."""
 
-import pytest
-from swecli.ui_textual.widgets.welcome_panel import AnimatedWelcomePanel, hsl_to_ansi256
+
+from swecli.ui_textual.widgets.welcome_panel import (
+    AnimatedWelcomePanel,
+    DonutRenderer,
+    hsl_to_ansi256,
+)
 from swecli.core.runtime import OperationMode
 
 
@@ -128,12 +132,167 @@ class TestAnimatedWelcomePanel:
         assert version.startswith("v")
 
 
+class TestDonutRenderer:
+    """Test DonutRenderer spinning 3D ASCII torus."""
+
+    def test_creation_default(self):
+        """DonutRenderer can be created with defaults."""
+        donut = DonutRenderer()
+        assert donut.width == 30
+        assert donut.height == 15
+        assert donut.A != 0.0  # Initial rotation for 3D view
+        assert donut.B != 0.0
+
+    def test_creation_custom_size(self):
+        """DonutRenderer respects custom dimensions."""
+        donut = DonutRenderer(width=40, height=20)
+        assert donut.width == 40
+        assert donut.height == 20
+
+    def test_render_frame_dimensions(self):
+        """render_frame returns correct grid dimensions."""
+        donut = DonutRenderer(width=25, height=12)
+        frame = donut.render_frame()
+
+        assert len(frame) == 12  # height
+        assert all(len(row) == 25 for row in frame)  # width
+
+    def test_render_frame_produces_characters(self):
+        """render_frame produces donut characters (not all spaces)."""
+        donut = DonutRenderer()
+        frame = donut.render_frame()
+
+        # Count non-space characters
+        char_count = sum(1 for row in frame for char, _ in row if char != " ")
+        assert char_count > 50, "Donut should have visible characters"
+
+    def test_render_frame_uses_luminance_chars(self):
+        """render_frame uses the correct luminance character set."""
+        donut = DonutRenderer()
+        frame = donut.render_frame()
+
+        # All characters should be from the CHARS set or space
+        valid_chars = set(donut.CHARS + " ")
+        for row in frame:
+            for char, _ in row:
+                assert char in valid_chars, f"Invalid character: {char}"
+
+    def test_render_frame_includes_depth(self):
+        """render_frame returns depth values for each cell."""
+        donut = DonutRenderer()
+        frame = donut.render_frame()
+
+        # Check that visible characters have positive depth
+        for row in frame:
+            for char, depth in row:
+                if char != " ":
+                    assert depth > 0, "Visible characters should have positive depth"
+                else:
+                    assert depth == 0.0, "Empty cells should have zero depth"
+
+    def test_step_advances_rotation(self):
+        """step() advances the rotation angles."""
+        donut = DonutRenderer()
+        initial_A = donut.A
+        initial_B = donut.B
+
+        donut.step()
+
+        assert donut.A > initial_A
+        assert donut.B > initial_B
+
+    def test_step_rotation_increments(self):
+        """step() uses expected rotation increments."""
+        donut = DonutRenderer()
+        initial_A = donut.A
+        initial_B = donut.B
+
+        donut.step()
+
+        assert donut.A == initial_A + 0.04
+        assert donut.B == initial_B + 0.02
+
+    def test_multiple_steps_produce_different_frames(self):
+        """Animation steps produce visually different frames."""
+        donut = DonutRenderer()
+
+        frame1 = donut.render_frame()
+        donut.step()
+        donut.step()
+        donut.step()
+        frame2 = donut.render_frame()
+
+        # Compare character positions - should be different
+        chars1 = [
+            (r, c, char)
+            for r, row in enumerate(frame1)
+            for c, (char, _) in enumerate(row)
+            if char != " "
+        ]
+        chars2 = [
+            (r, c, char)
+            for r, row in enumerate(frame2)
+            for c, (char, _) in enumerate(row)
+            if char != " "
+        ]
+
+        assert chars1 != chars2, "Frames after animation should differ"
+
+    def test_luminance_characters_ordering(self):
+        """CHARS are ordered from dark to bright."""
+        donut = DonutRenderer()
+        # The characters should progress from less dense to more dense
+        assert donut.CHARS == ".,-~:;=!*#$@"
+
+
+class TestAnimatedWelcomePanelWithDonut:
+    """Test AnimatedWelcomePanel donut integration."""
+
+    def test_panel_has_donut_renderer(self):
+        """Panel creates a DonutRenderer instance."""
+        panel = AnimatedWelcomePanel()
+        assert hasattr(panel, "_donut")
+        assert isinstance(panel._donut, DonutRenderer)
+
+    def test_render_donut_method_exists(self):
+        """Panel has _render_donut method."""
+        panel = AnimatedWelcomePanel()
+        assert hasattr(panel, "_render_donut")
+        assert callable(panel._render_donut)
+
+    def test_render_donut_produces_text(self):
+        """_render_donut produces Rich Text with content."""
+        panel = AnimatedWelcomePanel()
+        donut_text = panel._render_donut()
+
+        from rich.text import Text
+
+        assert isinstance(donut_text, Text)
+        assert len(donut_text.plain) > 0
+
+    def test_render_welcome_text_method_exists(self):
+        """Panel has _render_welcome_text method."""
+        panel = AnimatedWelcomePanel()
+        assert hasattr(panel, "_render_welcome_text")
+        assert callable(panel._render_welcome_text)
+
+    def test_update_gradient_steps_donut(self):
+        """_update_gradient advances the donut animation."""
+        panel = AnimatedWelcomePanel()
+        initial_A = panel._donut.A
+
+        panel._update_gradient()
+
+        assert panel._donut.A > initial_A
+
+
 class TestAnimatedWelcomePanelIntegration:
     """Integration tests for AnimatedWelcomePanel."""
 
     def test_import_from_widgets(self):
         """Can import from widgets package."""
         from swecli.ui_textual.widgets import AnimatedWelcomePanel as Imported
+
         assert Imported is AnimatedWelcomePanel
 
     def test_widget_has_default_css(self):
@@ -141,3 +300,9 @@ class TestAnimatedWelcomePanelIntegration:
         panel = AnimatedWelcomePanel()
         assert hasattr(panel, "DEFAULT_CSS")
         assert "AnimatedWelcomePanel" in panel.DEFAULT_CSS
+
+    def test_donut_renderer_exported(self):
+        """DonutRenderer is exported from module."""
+        from swecli.ui_textual.widgets.welcome_panel import DonutRenderer as Imported
+
+        assert Imported is DonutRenderer

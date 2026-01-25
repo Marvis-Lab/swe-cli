@@ -76,4 +76,6 @@ def render_welcome_panel(
 
         conversation.write(panel)
 
-    conversation.add_system_message("")
+    # Use direct write with wrappable=False to avoid resize re-rendering issues
+    # The empty line separator should not trigger block re-rendering on terminal resize
+    conversation.write(Text(""), wrappable=False)

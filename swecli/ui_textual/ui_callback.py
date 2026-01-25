@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import json
+import logging
 import sys
 from pathlib import Path
 from typing import Any, Dict, Optional
+
+logger = logging.getLogger(__name__)
 
 from swecli.ui_textual.formatters.style_formatter import StyleFormatter
 from swecli.ui_textual.style_tokens import GREY, PRIMARY
@@ -591,6 +594,7 @@ class TextualUICallback:
 
         # Auto-refresh todo panel after todo tool execution
         if tool_name in {"write_todos", "update_todo", "complete_todo"}:
+            logger.debug(f"[CALLBACK] Todo tool completed: {tool_name}, refreshing panel")
             self._refresh_todo_panel()
 
     def on_nested_tool_call(
@@ -739,6 +743,7 @@ class TextualUICallback:
 
         # Auto-refresh todo panel after nested todo tool execution
         if tool_name in {"write_todos", "update_todo", "complete_todo"}:
+            logger.debug(f"[CALLBACK] Nested todo tool completed: {tool_name}, refreshing panel")
             self._refresh_todo_panel()
 
     def _display_tool_sub_result(
@@ -999,15 +1004,18 @@ class TextualUICallback:
     def _refresh_todo_panel(self) -> None:
         """Refresh the todo panel with latest state."""
         if not self.chat_app:
+            logger.debug("[CALLBACK] _refresh_todo_panel: no chat_app")
             return
 
         try:
             from swecli.ui_textual.widgets.todo_panel import TodoPanel
 
             panel = self.chat_app.query_one("#todo-panel", TodoPanel)
+            logger.debug("[CALLBACK] _refresh_todo_panel: calling panel.refresh_display()")
             self._run_on_ui(panel.refresh_display)
-        except Exception:
+        except Exception as e:
             # Panel not found or not initialized yet
+            logger.debug(f"[CALLBACK] _refresh_todo_panel: panel not found - {e}")
             pass
 
     def on_tool_complete(

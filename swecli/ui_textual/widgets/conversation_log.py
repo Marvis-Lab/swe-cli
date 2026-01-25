@@ -4,8 +4,7 @@ from __future__ import annotations
 
 from typing import Any, List, Optional, TYPE_CHECKING
 
-from rich.console import Console, Group, RenderableType
-from rich.panel import Panel
+from rich.console import Console, RenderableType
 from rich.text import Text
 from textual.events import MouseDown, MouseMove, MouseScrollDown, MouseScrollUp, MouseUp, Resize
 from textual.geometry import Size
@@ -56,6 +55,7 @@ class ConversationLog(RichLog):
         self._block_registry = BlockRegistry()
         self._last_render_width: int = 0
         self._resize_timer: Optional[Timer] = None
+        self._pending_rerender: bool = False
 
     def refresh_line(self, y: int) -> None:
         """Refresh a specific line by invalidating cache and repainting."""
@@ -151,111 +151,51 @@ class ConversationLog(RichLog):
             self._resize_timer = None
 
     def on_resize(self, event: Resize) -> None:
-        """Handle terminal resize by re-rendering wrappable blocks.
-
-        Uses the BlockRegistry to track which content blocks should be
-        re-rendered at the new width. When dynamic elements are active,
-        uses coordinated resize to pause animations, adjust indices, and resume.
-        """
+        """Handle resize by scheduling a coordinated re-render."""
         super().on_resize(event)
-
-        # Get new content width
         new_width = self.scrollable_content_region.width
 
-        # Skip if width is invalid
         if new_width <= 0:
             return
 
-        # On first resize (startup), just record the width without re-rendering
-        # since content was just rendered at this width
         if self._last_render_width == 0:
             self._last_render_width = new_width
             return
 
-        # Only re-render if width actually changed
         if new_width != self._last_render_width:
             self._last_render_width = new_width
-            # Use coordinated rerender when there are active dynamic elements
-            if self._has_active_line_tracking():
-                self._schedule_coordinated_rerender()
-            else:
-                self._schedule_rerender()
+            self._schedule_rerender()
 
     def _schedule_rerender(self) -> None:
-        """Schedule a debounced re-render to avoid excessive re-rendering during rapid resize."""
+        """Schedule a debounced coordinated re-render."""
+        if self._pending_rerender:
+            return
+        self._pending_rerender = True
         if self._resize_timer is not None:
             self._resize_timer.stop()
-        # Debounce: wait 100ms before re-rendering
-        self._resize_timer = self.set_timer(0.1, self._rerender_blocks)
+        self._resize_timer = self.set_timer(0.05, self._do_rerender)
 
-    def _schedule_coordinated_rerender(self) -> None:
-        """Schedule a debounced coordinated re-render for when dynamic elements are active."""
-        if self._resize_timer is not None:
-            self._resize_timer.stop()
-        # Debounce: wait 100ms before coordinated re-rendering
-        self._resize_timer = self.set_timer(0.1, self._coordinated_rerender)
-
-    def _has_active_line_tracking(self) -> bool:
-        """Check if any component has active state that tracks line indices.
-
-        When line indices are being actively tracked (spinners, tool calls, etc.),
-        re-rendering would corrupt these indices and cause display issues.
-
-        Returns:
-            True if re-rendering should be skipped to avoid corruption
-        """
-        # Check spinner manager
-        sm = self._spinner_manager
-        if sm._spinner_active:
-            return True
-        if sm._spinner_start is not None:
-            return True
-
-        # Check tool renderer active states
-        tr = self._tool_renderer
-
-        # Active tool call
-        if tr._tool_call_start is not None:
-            return True
-
-        # Active nested tools
-        if tr._nested_tools:
-            return True
-        if tr._nested_tool_line is not None:
-            return True
-
-        # Active parallel agent group
-        if tr._parallel_group is not None:
-            return True
-
-        # Active single agent
-        if tr._single_agent is not None:
-            return True
-
-        # Active streaming bash box
-        if tr._streaming_box_header_line is not None:
-            return True
-
-        # Active approval prompt
-        if self._approval_start is not None:
-            return True
-
-        # Active ask-user prompt
-        if self._ask_user_start is not None:
-            return True
-
-        return False
+    def _do_rerender(self) -> None:
+        """Execute the coordinated re-render."""
+        self._pending_rerender = False
+        self._coordinated_rerender()
 
     def _coordinated_rerender(self) -> None:
         """Re-render with proper coordination of ALL dynamic elements.
 
-        This method:
-        1. Pauses all animation timers
-        2. Re-renders blocks and computes cumulative line delta
-        3. Adjusts all cached line indices in each component
-        4. Resumes animation timers
+        Uses clear-and-rebuild approach with:
+        1. Pause all animation timers
+        2. Capture current strips for non-wrappable blocks
+        3. Clear and rebuild (preserving non-wrappable, re-rendering wrappable)
+        4. Calculate cumulative delta from wrappable blocks
+        5. Adjust all cached line indices
+        6. Resume animation timers
         """
         self._resize_timer = None
+
+        blocks = self._block_registry.get_all_blocks()
+        if not blocks:
+            return
 
         try:
             # 1. Pause all animations
@@ -264,105 +204,103 @@ class ConversationLog(RichLog):
             if hasattr(self, "app") and hasattr(self.app, "spinner_service"):
                 self.app.spinner_service.pause_for_resize()
 
-            # 2. Re-render blocks and get delta
-            cumulative_delta, first_affected = self._rerender_blocks_with_delta()
+            # 2. Save scroll and capture non-wrappable strips BEFORE clearing
+            was_at_end = self.auto_scroll
+            scroll_offset = self.scroll_y
 
-            # 3. Adjust ALL component indices
+            width = self.scrollable_content_region.width
+            if width <= 0:
+                return
+            console = Console(width=width, force_terminal=True, no_color=False)
+
+            # Capture CURRENT strips for non-wrappable blocks (preserves animation state)
+            preserved_strips: dict[str, list[Strip]] = {}
+            for block in blocks:
+                if not block.is_wrappable:
+                    start = block.start_line
+                    end = start + block.line_count
+                    if start < len(self.lines) and end <= len(self.lines):
+                        preserved_strips[block.block_id] = list(self.lines[start:end])
+
+            # 3. Clear display and registry
+            self.lines.clear()
+            if hasattr(self, "_line_cache"):
+                self._line_cache.clear()
+            self._block_registry.clear()
+
+            # 4. Rebuild and track delta
+            cumulative_delta = 0
+            first_affected = len(blocks)  # Will be set to first wrappable block's new start
+
+            for block in blocks:
+                new_start = len(self.lines)
+
+                if block.is_wrappable:
+                    # Track first affected line (where wrappable content starts)
+                    if first_affected > new_start:
+                        first_affected = new_start
+
+                    # Re-render at new width
+                    new_strips = self._render_source_to_strips(block.source, console)
+                    self.lines.extend(new_strips)
+                    new_count = len(new_strips)
+
+                    # Track delta
+                    cumulative_delta += new_count - block.line_count
+                    line_count = new_count
+                else:
+                    # Restore preserved strips (animation state preserved)
+                    original = preserved_strips.get(block.block_id, [])
+                    self.lines.extend(original)
+                    line_count = len(original)
+
+                # Re-register with new indices
+                self._block_registry.register(
+                    ContentBlock(
+                        block_id=block.block_id,
+                        source=block.source,
+                        start_line=new_start,
+                        line_count=line_count,
+                        is_wrappable=block.is_wrappable,
+                        is_locked=block.is_locked,
+                    )
+                )
+
+            # 5. Adjust all component indices if delta != 0
             if cumulative_delta != 0:
-                # Core components
                 self._spinner_manager.adjust_indices(cumulative_delta, first_affected)
                 self._tool_renderer.adjust_indices(cumulative_delta, first_affected)
 
-                # SpinnerService
                 if hasattr(self, "app") and hasattr(self.app, "spinner_service"):
                     self.app.spinner_service.adjust_indices(cumulative_delta, first_affected)
 
-                # ConversationLog's own indices
+                # Adjust own indices
                 if self._approval_start is not None and self._approval_start >= first_affected:
                     self._approval_start += cumulative_delta
                 if self._ask_user_start is not None and self._ask_user_start >= first_affected:
                     self._ask_user_start += cumulative_delta
 
-                # Controllers with panel_start
+                # Adjust controller indices
                 if hasattr(self, "app"):
                     for ctrl_attr in ["_model_picker", "_agent_creator", "_skill_creator"]:
                         ctrl = getattr(self.app, ctrl_attr, None)
                         if ctrl and hasattr(ctrl, "adjust_indices"):
                             ctrl.adjust_indices(cumulative_delta, first_affected)
 
+            # 6. Restore scroll
+            if was_at_end:
+                self.scroll_end(animate=False)
+            else:
+                self.scroll_y = min(scroll_offset, self.max_scroll_y)
+
         finally:
-            # 4. Resume animations
+            # 7. Resume animations
             self._spinner_manager.resume_after_resize()
             self._tool_renderer.resume_after_resize()
             if hasattr(self, "app") and hasattr(self.app, "spinner_service"):
                 self.app.spinner_service.resume_after_resize()
 
         self.refresh()
-
-    def _rerender_blocks(self) -> None:
-        """Re-render all wrappable, unlocked blocks at current width."""
-        self._rerender_blocks_with_delta()
-
-    def _rerender_blocks_with_delta(self) -> tuple[int, int]:
-        """Re-render blocks and return (cumulative_delta, first_affected_line).
-
-        Returns:
-            Tuple of (cumulative_delta, first_affected_line) where:
-            - cumulative_delta: Total line count change (positive = added, negative = removed)
-            - first_affected_line: First line index that was modified
-        """
-        self._resize_timer = None
-
-        width = self.scrollable_content_region.width
-        if width <= 0:
-            return (0, len(self.lines))
-
-        console = Console(width=width, force_terminal=True, no_color=False)
-
-        # Track first affected line
-        first_affected = len(self.lines)
-
-        # Process blocks in order, adjusting indices as we go
-        cumulative_delta = 0
-        for block in self._block_registry.get_all_blocks():
-            if not block.is_wrappable or block.is_locked:
-                # Just adjust for previous deltas
-                block.start_line += cumulative_delta
-                continue
-
-            # Adjust start for previous deltas
-            block.start_line += cumulative_delta
-
-            # Track first affected
-            if block.start_line < first_affected:
-                first_affected = block.start_line
-
-            # Re-render this block
-            new_strips = self._render_source_to_strips(block.source, console)
-            old_count = block.line_count
-            new_count = len(new_strips)
-
-            # Replace lines
-            start = block.start_line
-            if start < len(self.lines):
-                # Delete old lines
-                end = min(start + old_count, len(self.lines))
-                del self.lines[start:end]
-                # Insert new lines
-                for i, strip in enumerate(new_strips):
-                    self.lines.insert(start + i, strip)
-
-            # Update block and track delta
-            block.line_count = new_count
-            delta = new_count - old_count
-            cumulative_delta += delta
-
-        # Clear cache and refresh
-        if hasattr(self, "_line_cache"):
-            self._line_cache.clear()
-        self.refresh()
-
-        return (cumulative_delta, first_affected)
 
     def _render_source_to_strips(self, source: RenderableType, console: Console) -> list[Strip]:
         """Render a source renderable to Strip objects.
@@ -537,7 +475,7 @@ class ConversationLog(RichLog):
         self._approval_start = len(self.lines)
 
         for renderable in renderables:
-            self.write(renderable)
+            self.write(renderable, wrappable=False)
 
     def clear_approval_prompt(self) -> None:
         """Remove the approval prompt from the log."""
@@ -577,7 +515,7 @@ class ConversationLog(RichLog):
         self._ask_user_start = len(self.lines)
 
         for renderable in renderables:
-            self.write(renderable)
+            self.write(renderable, wrappable=False)
 
     def clear_ask_user_prompt(self) -> None:
         """Remove the ask-user prompt from the log."""
