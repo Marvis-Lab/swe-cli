@@ -15,7 +15,6 @@ from typing import TYPE_CHECKING
 import pexpect
 
 from .exceptions import (
-    BashSyntaxError,
     CommandTimeoutError,
     NoExitCodeError,
     NonZeroExitCodeError,
@@ -35,21 +34,6 @@ def _strip_control_chars(s: str) -> str:
     """Remove ANSI control characters from string."""
     ansi_escape = re.compile(r"\x1B[@-_][0-?]*[ -/]*[@-~]")
     return ansi_escape.sub("", s).replace("\r\n", "\n")
-
-
-def _check_bash_syntax(command: str) -> None:
-    """Check if a bash command has valid syntax.
-
-    Raises:
-        BashSyntaxError: If the command has syntax errors.
-    """
-    unique_eof = "SWECLI_SYNTAX_CHECK_EOF"
-    cmd = f"/usr/bin/env bash -n << '{unique_eof}'\n{command}\n{unique_eof}"
-    result = subprocess.run(cmd, shell=True, capture_output=True)
-    if result.returncode == 0:
-        return
-    stderr = result.stderr.decode(errors="backslashreplace")
-    raise BashSyntaxError(command, stderr)
 
 
 class BashSession:
@@ -156,14 +140,6 @@ class BashSession:
         """
         if self._shell is None:
             raise SessionNotInitializedError(self.name)
-
-        # Optionally check syntax first (can be slow, so skip for simple commands)
-        if "\n" in action.command or ";" in action.command:
-            try:
-                _check_bash_syntax(action.command)
-            except BashSyntaxError:
-                # Log but don't fail - let bash report the error
-                logger.debug(f"Bash syntax check failed for: {action.command[:50]}...")
 
         # Send the command
         self.shell.sendline(action.command)
