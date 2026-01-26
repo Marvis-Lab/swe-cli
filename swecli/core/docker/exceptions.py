@@ -55,15 +55,6 @@ class CommandTimeoutError(DockerException):
         super().__init__(f"Command timed out after {timeout}s: {command[:100]}")
 
 
-class BashSyntaxError(DockerException):
-    """Raised when bash command has syntax errors."""
-
-    def __init__(self, command: str, error: str = ""):
-        self.command = command
-        self.error = error
-        super().__init__(f"Bash syntax error: {error}")
-
-
 class NoExitCodeError(DockerException):
     """Raised when exit code couldn't be extracted from command output."""
 
