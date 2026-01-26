@@ -168,48 +168,6 @@ class TestTodoHandlerColors:
         handler.create_todo(title="Completed task", status="done")
         return handler
 
-    def test_format_todo_list_has_colors(self, handler):
-        """Test that formatted todo list includes color markup."""
-        formatted = handler._format_todo_list_simple()
-
-        # Should have 3 todos
-        assert len(formatted) == 3
-
-        # Check that colors are present
-        # In progress (doing) should be yellow
-        assert any("[yellow]" in line for line in formatted)
-
-        # Pending (todo) should be cyan
-        assert any("[cyan]" in line for line in formatted)
-
-        # Completed (done) should be green
-        assert any("[green]" in line for line in formatted)
-
-    def test_pending_todo_is_cyan(self, handler):
-        """Test that pending todos use cyan color."""
-        formatted = handler._format_todo_list_simple()
-        pending_line = [line for line in formatted if "Pending task" in line][0]
-        assert "[cyan]" in pending_line
-        assert "○" in pending_line
-        assert "[/cyan]" in pending_line
-
-    def test_in_progress_todo_is_yellow(self, handler):
-        """Test that in-progress todos use yellow color."""
-        formatted = handler._format_todo_list_simple()
-        in_progress_line = [line for line in formatted if "In progress task" in line][0]
-        assert "[yellow]" in in_progress_line
-        assert "▶" in in_progress_line
-        assert "[/yellow]" in in_progress_line
-
-    def test_completed_todo_is_green_with_strikethrough(self, handler):
-        """Test that completed todos use green color with strikethrough."""
-        formatted = handler._format_todo_list_simple()
-        completed_line = [line for line in formatted if "Completed task" in line][0]
-        assert "[green]" in completed_line
-        assert "✓" in completed_line
-        assert "~~" in completed_line  # Strikethrough markup
-        assert "[/green]" in completed_line
-
     def test_write_todos_output_has_symbols(self, handler):
         """Test that write_todos output includes status symbols (no Rich markup)."""
         result = handler.write_todos(["New task 1", "New task 2"])

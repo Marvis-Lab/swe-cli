@@ -429,27 +429,6 @@ Be thorough and provide a clear summary when done."""
 
         return files
 
-    def _extract_github_info(self, task: str) -> tuple[str, str, str] | None:
-        """Extract GitHub repo URL and issue number from task.
-
-        Looks for GitHub issue URLs in the format:
-        https://github.com/owner/repo/issues/123
-
-        Args:
-            task: The task description string
-
-        Returns:
-            Tuple of (repo_url, owner_repo, issue_number) or None if not found
-        """
-        import re
-        match = re.search(r'https://github\.com/([^/]+/[^/]+)/issues/(\d+)', task)
-        if match:
-            owner_repo = match.group(1)
-            issue_number = match.group(2)
-            repo_url = f"https://github.com/{owner_repo}.git"
-            return (repo_url, owner_repo, issue_number)
-        return None
-
     def _copy_files_to_docker(
         self,
         container_name: str,
@@ -714,96 +693,6 @@ Use ONLY the filename or relative path for all file operations.
             path_sanitizer=path_sanitizer,
         )
 
-    def execute_with_docker_handler(
-        self,
-        name: str,
-        task: str,
-        deps: SubAgentDeps,
-        docker_handler: Any,
-        ui_callback: Any = None,
-        container_id: str = "",
-        image_name: str = "",
-        workspace_dir: str = "/workspace",
-        description: str | None = None,
-    ) -> dict[str, Any]:
-        """Execute subagent with pre-configured Docker handler.
-
-        Use this when you need custom Docker setup (e.g., clone repo, install deps)
-        before subagent execution, but still want standardized UI display.
-
-        This provides:
-        - Spawn header: Spawn[name](description)
-        - Nested callback with Docker path prefix: [image:containerid]:/workspace/...
-        - Consistent result display
-
-        Args:
-            name: Subagent name (e.g., "Code-Explorer", "Web-clone")
-            task: Task prompt for subagent
-            deps: SubAgentDeps with mode_manager, approval_manager, undo_manager
-            docker_handler: Pre-configured DockerToolHandler
-            ui_callback: UI callback for display
-            container_id: Docker container ID (last 8 chars) for path prefix
-            image_name: Docker image name for path prefix
-            workspace_dir: Workspace directory inside container
-            description: Description for Spawn header (defaults to task excerpt)
-
-        Returns:
-            Result dict with success, content, etc.
-        """
-        compiled = self._agents.get(name)
-        if not compiled:
-            return {"success": False, "error": f"Unknown subagent: {name}"}
-
-        # Extract description from task if not provided
-        if description is None:
-            description = self._extract_task_description(task)
-
-        # Show Spawn header
-        spawn_args = {
-            "subagent_type": name,
-            "description": description,
-        }
-        if ui_callback and hasattr(ui_callback, "on_tool_call"):
-            ui_callback.on_tool_call("spawn_subagent", spawn_args)
-
-        # Create nested callback with Docker context
-        nested_callback = self.create_docker_nested_callback(
-            ui_callback=ui_callback,
-            subagent_name=name,
-            workspace_dir=workspace_dir,
-            image_name=image_name,
-            container_id=container_id,
-        )
-
-        try:
-            # Execute subagent with nested callback and docker handler
-            result = self.execute_subagent(
-                name=name,
-                task=task,
-                deps=deps,
-                ui_callback=nested_callback,
-                docker_handler=docker_handler,
-                show_spawn_header=False,  # Already shown
-            )
-
-            # Show Spawn result
-            if ui_callback and hasattr(ui_callback, "on_tool_result"):
-                success = isinstance(result, str) or result.get("success", True)
-                ui_callback.on_tool_result("spawn_subagent", spawn_args, {
-                    "success": success,
-                    "output": result.get("content", "") if isinstance(result, dict) else str(result),
-                })
-
-            return result
-
-        except Exception as e:
-            if ui_callback and hasattr(ui_callback, "on_tool_result"):
-                ui_callback.on_tool_result("spawn_subagent", spawn_args, {
-                    "success": False,
-                    "error": str(e),
-                })
-            return {"success": False, "error": str(e)}
-
     def _extract_task_description(self, task: str) -> str:
         """Extract a short description from the task for Spawn header display.
 
@@ -823,20 +712,6 @@ Use ONLY the filename or relative path for all file operations.
         if len(task.split('\n')[0]) > 50:
             return first_line + "..."
         return first_line
-
-    def _get_agent_display_type(self, name: str) -> str:
-        """Get the display type for an agent.
-
-        Args:
-            name: The subagent name
-
-        Returns:
-            The display type (e.g., "Explore" for "Explore" agent)
-        """
-        # Map internal agent names to display types
-        # For now, just return the name as-is
-        # Could add special handling for specific agents
-        return name
 
     def _execute_with_docker(
         self,
