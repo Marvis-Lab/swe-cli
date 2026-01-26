@@ -36,11 +36,29 @@ def dump_pickle(obj: Any, path: str) -> None:
         pickle.dump(obj, f)
 
 
-def getstate(obj: Any) -> Any:
-    """Get state of an object for pickling."""
-    if hasattr(obj, "__getstate__"):
-        return obj.__getstate__()
-    return obj.__dict__.copy() if hasattr(obj, "__dict__") else None
+def getstate(
+    obj: Any, instance: Any | None = None, transient_properties: list[str] | None = None
+) -> Any:
+    """
+    Get state of an object for pickling.
+
+    Supports two signatures:
+    1. getstate(obj) -> returns obj.__getstate__() or obj.__dict__
+    2. getstate(cls, instance, transient_properties=...) -> returns instance.__dict__ excluding transient_properties
+    """
+    if instance is None:
+        # Signature 1: getstate(obj)
+        if hasattr(obj, "__getstate__"):
+            return obj.__getstate__()
+        return obj.__dict__.copy() if hasattr(obj, "__dict__") else None
+
+    # Signature 2: getstate(cls, instance, transient_properties=...)
+    state = instance.__dict__.copy()
+    if transient_properties:
+        for prop in transient_properties:
+            if prop in state:
+                del state[prop]
+    return state
 
 
 # ============================================================================
