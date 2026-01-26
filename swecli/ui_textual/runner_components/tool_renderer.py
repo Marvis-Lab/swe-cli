@@ -1,7 +1,7 @@
 """Tool rendering component for TextualRunner.
 
 This module handles the rendering of tool calls, results, and nested tool calls
-within the Textual conversation log.
+within the Textual conversation log. Uses ToolDisplayService for unified formatting.
 """
 
 from __future__ import annotations
@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from swecli.ui_textual.constants import TOOL_ERROR_SENTINEL
-from swecli.ui_textual.utils import build_tool_call_text
+from swecli.ui_textual.services import ToolDisplayService
 from swecli.ui_textual.utils.text_utils import summarize_error
 
 
@@ -19,6 +19,7 @@ class ToolRenderer:
 
     This class handles the display formatting for standard tool calls, nested
     tool calls (subagents), and special handling for bash execution outputs.
+    Uses ToolDisplayService for unified formatting between live and replay modes.
     """
 
     def __init__(self, working_dir: Path) -> None:
@@ -28,6 +29,8 @@ class ToolRenderer:
             working_dir: Working directory used for path resolution in display.
         """
         self._working_dir = working_dir
+        # Unified display service for consistent formatting
+        self._display_service = ToolDisplayService(working_dir)
 
     def render_stored_tool_calls(self, conversation: Any, tool_calls: list[Any]) -> None:
         """Replay historical tool calls using the same logic as live display.
@@ -52,11 +55,8 @@ class ToolRenderer:
             result = getattr(tool_call, "result", None)
             approved = getattr(tool_call, "approved", None)
 
-            # Resolve paths for display
-            display_params = self._resolve_paths_for_display(parameters)
-
-            # Display tool call header
-            display = build_tool_call_text(tool_name, display_params)
+            # Use unified service for path resolution and header formatting
+            display = self._display_service.format_tool_header(tool_name, parameters)
 
             # Gap 8: Check approval status and show rejection
             if approved is False:
@@ -184,11 +184,8 @@ class ToolRenderer:
             if isinstance(result, str):
                 result = {"success": True, "output": result}
 
-            # Resolve paths for display
-            display_params = self._resolve_paths_for_display(parameters)
-
-            # Display nested tool call header
-            display = build_tool_call_text(tool_name, display_params)
+            # Use unified service for path resolution and header formatting
+            display = self._display_service.format_tool_header(tool_name, parameters)
 
             # Gap 9: Check approval status for nested calls
             if approved is False:
@@ -257,29 +254,11 @@ class ToolRenderer:
         return {}
 
     def _resolve_paths_for_display(self, params: dict) -> dict:
-        """Resolve relative paths to absolute for display."""
-        path_keys = {
-            "path",
-            "file_path",
-            "working_dir",
-            "directory",
-            "dir",
-            "target",
-        }
-        result = dict(params)
-        for key in path_keys:
-            if key in result and isinstance(result[key], str):
-                path = result[key]
-                # Skip if already absolute or has special prefix
-                if path.startswith("/") or path.startswith("["):
-                    continue
-                # Resolve relative path
-                if path == "." or path == "":
-                    result[key] = str(self._working_dir)
-                else:
-                    clean_path = path.lstrip("./")
-                    result[key] = str(self._working_dir / clean_path)
-        return result
+        """Resolve relative paths to absolute for display.
+
+        Delegates to ToolDisplayService for unified logic.
+        """
+        return self._display_service.resolve_paths(params)
 
     def _format_tool_history_lines(self, tool_call: Any) -> list[str]:
         """Convert stored ToolCall data into RichLog-friendly summary lines."""
@@ -313,26 +292,17 @@ class ToolRenderer:
         return lines
 
     def _extract_result_lines(self, formatted: str) -> list[str]:
-        """Extract result lines from StyleFormatter output."""
-        lines = []
-        in_result = False
-        if not isinstance(formatted, str):
-            return lines
-        for line in formatted.splitlines():
-            stripped = line.strip()
-            if stripped.startswith("⎿"):
-                in_result = True
-                result_text = stripped.lstrip("⎿").strip()
-                if result_text:
-                    lines.append(result_text)
-            elif in_result and stripped:
-                # Continuation line after first ⎿
-                lines.append(stripped)
-        return lines
+        """Extract result lines from StyleFormatter output.
 
-    @staticmethod
-    def _truncate_tool_output(raw_result: Any, max_lines: int = 6, max_chars: int = 400) -> str:
-        """Trim long stored tool outputs for concise replay."""
+        Delegates to ToolDisplayService for unified logic.
+        """
+        return self._display_service.extract_result_lines(formatted)
+
+    def _truncate_tool_output(self, raw_result: Any, max_lines: int = 6, max_chars: int = 400) -> str:
+        """Trim long stored tool outputs for concise replay.
+
+        Delegates to ToolDisplayService for unified truncation logic.
+        """
         if raw_result is None:
             return ""
 
@@ -340,15 +310,8 @@ class ToolRenderer:
         if not text:
             return ""
 
-        lines = [line.rstrip() for line in text.splitlines()]
-        truncated = False
-        if len(lines) > max_lines:
-            lines = lines[:max_lines]
-            truncated = True
-        snippet = "\n".join(lines)
-        if len(snippet) > max_chars:
-            snippet = snippet[:max_chars].rstrip()
-            truncated = True
-        if truncated:
-            snippet = f"{snippet}\n... (truncated)"
-        return snippet.strip()
+        # Use service's unified truncation with generic mode
+        truncated, is_truncated, _ = self._display_service.truncate_output(
+            text, mode="generic", head_lines=max_lines, tail_lines=max_chars
+        )
+        return truncated
