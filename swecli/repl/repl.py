@@ -144,6 +144,20 @@ class REPL:
         self.error_handler = ErrorHandler(self.console)
         self.undo_manager = UndoManager(self.config.max_undo_history)
 
+    def _on_mode_change(self, mode: OperationMode) -> None:
+        """Handle mode change by swapping the active agent.
+
+        This is registered as a callback with mode_manager to ensure
+        consistent agent swapping across all mode change triggers.
+
+        Args:
+            mode: The new operation mode
+        """
+        if mode == OperationMode.PLAN:
+            self.agent = self.planning_agent
+        else:
+            self.agent = self.normal_agent
+
     def _init_runtime_service(self):
         """Initialize runtime service with tool registry and agents."""
         self.runtime_service = RuntimeService(self.config_manager, self.mode_manager)
@@ -166,6 +180,9 @@ class REPL:
         self.normal_agent = self.runtime_suite.agents.normal
         self.planning_agent = self.runtime_suite.agents.planning
         self.agent = self.normal_agent  # Default to normal agent
+
+        # Register mode change callback for unified agent swapping
+        self.mode_manager.add_mode_change_listener(self._on_mode_change)
 
     def _init_ui_components(self):
         """Initialize UI components and state."""
@@ -350,16 +367,11 @@ class REPL:
                 if self.mode_manager.current_mode == OperationMode.NORMAL
                 else OperationMode.NORMAL
             )
+            # set_mode triggers the callback which handles agent swapping
             self.mode_manager.set_mode(new_mode)
 
             if hasattr(self, "approval_manager"):
                 self.approval_manager.reset_auto_approve()
-
-            # Switch agent based on mode
-            if new_mode == OperationMode.PLAN:
-                self.agent = self.planning_agent
-            else:
-                self.agent = self.normal_agent
 
             self._notify(
                 f"Switched to {new_mode.value.upper()} mode.",
@@ -559,24 +571,15 @@ class REPL:
         elif cmd == "/clear":
             self.session_commands.clear()
         elif cmd == "/mode":
-            result = self.mode_commands.switch_mode(args)
-            # Sync agent after mode switch
-            if result.success and result.data:
-                new_mode = result.data
-                if new_mode == OperationMode.PLAN:
-                    self.agent = self.planning_agent
-                else:
-                    self.agent = self.normal_agent
+            # mode_commands.switch_mode calls mode_manager.set_mode,
+            # which triggers the callback to handle agent swapping
+            self.mode_commands.switch_mode(args)
         elif cmd == "/models":
             self.config_commands.show_model_selector()
         elif cmd == "/mcp":
             self.mcp_commands.handle(args)
         elif cmd == "/init":
             self.tool_commands.init_codebase(command)
-        elif cmd == "/resolve-issue":
-            self.tool_commands.resolve_issue(command)
-        elif cmd == "/paper2code":
-            self.tool_commands.paper2code(command)
         elif cmd == "/agents":
             self.agents_commands.handle(args)
         elif cmd == "/skills":

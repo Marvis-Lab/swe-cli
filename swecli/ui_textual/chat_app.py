@@ -180,6 +180,10 @@ class SWECLIChatApp(App):
 
     def on_mount(self) -> None:
         """Initialize the app on mount."""
+        # Clear debug log for fresh session
+        from swecli.ui_textual.debug_logger import clear_debug_log, debug_log
+        clear_debug_log()
+        debug_log("ChatApp", "App mounted - debug log cleared")
 
         self._ui_thread = threading.current_thread()
 
@@ -568,17 +572,29 @@ class SWECLIChatApp(App):
 
         Delegates to InterruptManager for state-aware handling.
         """
+        from swecli.ui_textual.debug_logger import debug_log
+        debug_log("ChatApp", "action_interrupt called")
+        debug_log("ChatApp", f"_is_processing={self._is_processing}")
+        debug_log("ChatApp", f"on_interrupt callback={self.on_interrupt}")
+
         # First, let InterruptManager handle modal states (autocomplete, prompts, wizards)
         if self._interrupt_manager.handle_interrupt():
+            debug_log("ChatApp", "InterruptManager handled it")
             return  # Handled by modal/autocomplete
 
         # Fall through to processing interrupt
         if self._is_processing:
+            debug_log("ChatApp", "Processing is active, calling on_interrupt")
             # Call interrupt callback if provided
             if self.on_interrupt:
-                self.on_interrupt()
+                result = self.on_interrupt()
+                debug_log("ChatApp", f"on_interrupt() returned: {result}")
+            else:
+                debug_log("ChatApp", "No on_interrupt callback!")
             # Don't display system message here - let the tool result formatter handle it
             # This prevents duplicate "Processing interrupted" messages
+        else:
+            debug_log("ChatApp", "NOT processing, nothing to interrupt")
 
     def action_clear_or_quit(self) -> None:
         """Clear input text or quit (Ctrl+C).

@@ -390,7 +390,7 @@ class DefaultToolRenderer:
         spacing_line = getattr(self.log, "_pending_spacing_line", None)
 
         for i, line in enumerate(lines):
-            formatted = Text("       ", style=GREY)  # 7 spaces to align with ⎿ content
+            formatted = Text("     ", style=GREY)  # 5 spaces to align with ⎿ content
             formatted.append(line, style=SUBTLE)
 
             if i == 0 and spacing_line is not None and spacing_line < len(self.log.lines):
@@ -1528,7 +1528,7 @@ class DefaultToolRenderer:
 
     def _write_edit_result(self, header: str, diff_lines: list[str]) -> None:
         # Write header with ⎿ prefix to match other tool results - header can wrap
-        self.log.write(Text(f"    ⎿  {header}", style=SUBTLE), wrappable=True)
+        self.log.write(Text(f"  ⎿  {header}", style=SUBTLE), wrappable=True)
 
         # Write diff lines with proper formatting - diff lines should NOT wrap
         # Lines come from _format_edit_file_result after ANSI stripping:
@@ -1537,7 +1537,7 @@ class DefaultToolRenderer:
         #   Context:  "NNN   content"
         # The + or - is at position 4 (0-indexed) after the 3-char line number
         for line in diff_lines:
-            formatted = Text("       ")  # 7 spaces to align with ⎿ content
+            formatted = Text("     ")  # 5 spaces to align with ⎿ content
             # Check position 4 for + or - (after "NNN " prefix)
             is_addition = len(line) > 4 and line[4] == "+"
             is_deletion = len(line) > 4 and line[4] == "-"
@@ -1553,7 +1553,7 @@ class DefaultToolRenderer:
         lines = text.rstrip("\n").splitlines() or [text]
         for i, raw_line in enumerate(lines):
             # First line gets ⎿ prefix, subsequent lines get spaces for alignment
-            prefix = "    ⎿  " if i == 0 else "       "
+            prefix = "  ⎿  " if i == 0 else "     "
             line = Text(prefix, style=GREY)
             message = raw_line.rstrip("\n")
             is_error = False
@@ -1608,7 +1608,7 @@ class DefaultToolRenderer:
             # Write collapsed summary line - summary text can wrap
             summary = summarize_output(lines, "bash")
             hint = get_expansion_hint()
-            summary_line = Text(f"{indent}    \u23bf  ", style=GREY)
+            summary_line = Text(f"{indent}  \u23bf  ", style=GREY)
             summary_line.append(summary, style=SUBTLE)
             summary_line.append(f" {hint}", style=f"{SUBTLE} italic")
             self.log.write(summary_line, wrappable=False)
@@ -1646,7 +1646,7 @@ class DefaultToolRenderer:
         """Write a single bash output line with proper indentation."""
         normalized = self._box_renderer.normalize_line(line)
         # Use ⎿ prefix for first line, spaces for rest
-        prefix = f"{indent}    \u23bf  " if is_first else f"{indent}       "
+        prefix = f"{indent}  \u23bf  " if is_first else f"{indent}     "
         output_line = Text(prefix, style=GREY)
         output_line.append(normalized, style=ERROR if is_error else GREY)
         # Bash output preserves formatting, don't re-wrap
@@ -1712,7 +1712,7 @@ class DefaultToolRenderer:
         # Write collapsed summary line - don't re-wrap
         summary = summarize_output(content_lines, "bash")
         hint = get_expansion_hint()
-        summary_line = Text(f"    \u23bf  ", style=GREY)
+        summary_line = Text("  \u23bf  ", style=GREY)
         summary_line.append(summary, style=SUBTLE)
         summary_line.append(f" {hint}", style=f"{SUBTLE} italic")
         self.log.write(summary_line, wrappable=False)
@@ -1820,7 +1820,7 @@ class DefaultToolRenderer:
 
         # Write collapsed summary - don't re-wrap
         hint = get_expansion_hint()
-        summary_line = Text(f"{indent}    \u23bf  ", style=GREY)
+        summary_line = Text(f"{indent}  \u23bf  ", style=GREY)
         summary_line.append(collapsible.summary, style=SUBTLE)
         summary_line.append(f" {hint}", style=f"{SUBTLE} italic")
         self.log.write(summary_line, wrappable=False)
@@ -1887,7 +1887,7 @@ class DefaultToolRenderer:
         indent = "  " * depth
         formatted.append(indent)
         # Use ⎿ prefix to match main agent style
-        formatted.append("    ⎿  ", style=GREY)
+        formatted.append("  ⎿  ", style=GREY)
         formatted.append(text, style=SUBTLE)
         # Todo sub-results have tree indentation structure, don't re-wrap
         self.log.write(formatted, scroll_end=True, animate=False, wrappable=False)
@@ -1907,7 +1907,7 @@ class DefaultToolRenderer:
             formatted.append(indent)
 
             # First line gets ⎿ prefix, subsequent lines get spaces for alignment
-            prefix = "    ⎿  " if i == 0 else "       "
+            prefix = "  ⎿  " if i == 0 else "     "
             formatted.append(prefix, style=GREY)
             formatted.append(f"{symbol} {title}", style=SUBTLE)
             # Todo sub-results have tree indentation structure, don't re-wrap
@@ -1952,7 +1952,7 @@ class DefaultToolRenderer:
             formatted.append(indent)
 
             # First line gets ⎿ prefix, subsequent lines get spaces for alignment
-            prefix = "    ⎿  " if idx == 0 else "       "
+            prefix = "  ⎿  " if idx == 0 else "     "
             formatted.append(prefix, style=GREY)
 
             # Strip markers from content
@@ -2024,7 +2024,7 @@ class DefaultToolRenderer:
                 # Write hunk header
                 formatted = Text()
                 formatted.append(indent)
-                prefix = "    ⎿  " if line_idx == 0 else "       "
+                prefix = "  ⎿  " if line_idx == 0 else "     "
                 formatted.append(prefix, style=GREY)
                 formatted.append(
                     f"[Edit {hunk_idx + 1}/{total_hunks} at line {start_line}]", style=CYAN
@@ -2037,7 +2037,7 @@ class DefaultToolRenderer:
                 formatted.append(indent)
 
                 # First line gets ⎿ prefix, subsequent lines get spaces for alignment
-                prefix = "    ⎿  " if line_idx == 0 else "       "
+                prefix = "  ⎿  " if line_idx == 0 else "     "
                 formatted.append(prefix, style=GREY)
 
                 if entry_type == "add":

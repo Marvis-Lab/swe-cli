@@ -57,11 +57,25 @@ class AskUserHandler:
             }
 
         if result.get("cancelled"):
+            # Build questions context even for cancelled (for session persistence)
+            questions_context = [
+                {
+                    "question": q.get("question"),
+                    "header": q.get("header"),
+                    "options": [
+                        {"label": opt.get("label"), "description": opt.get("description", "")}
+                        for opt in q.get("options", [])
+                    ],
+                    "multiSelect": q.get("multiSelect", False),
+                }
+                for q in questions
+            ]
             return {
                 "success": True,
                 "output": "User cancelled the questions",
                 "cancelled": True,
                 "answers": {},
+                "questions_context": questions_context,
             }
 
         # Format the answers for display
@@ -81,9 +95,24 @@ class AskUserHandler:
             answer_parts
         )
 
+        # Build questions context for session persistence (enables display on resume)
+        questions_context = [
+            {
+                "question": q.get("question"),
+                "header": q.get("header"),
+                "options": [
+                    {"label": opt.get("label"), "description": opt.get("description", "")}
+                    for opt in q.get("options", [])
+                ],
+                "multiSelect": q.get("multiSelect", False),
+            }
+            for q in questions
+        ]
+
         return {
             "success": True,
             "output": output_text,
             "answers": answers,
             "cancelled": False,
+            "questions_context": questions_context,
         }

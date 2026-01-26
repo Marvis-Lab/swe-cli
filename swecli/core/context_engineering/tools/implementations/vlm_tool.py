@@ -8,6 +8,7 @@ from typing import Optional, Dict, Any
 
 from swecli.models.config import AppConfig
 from swecli.config import get_model_registry
+from swecli.core.agents.components.api_configuration import build_max_tokens_param
 
 
 class VLMTool:
@@ -144,7 +145,9 @@ class VLMTool:
                 ".png": "image/png",
                 ".gif": "image/gif",
                 ".webp": "image/webp",
-            }.get(ext, "image/jpeg")  # Default to jpeg
+            }.get(
+                ext, "image/jpeg"
+            )  # Default to jpeg
             final_image_url = f"data:{mime_type};base64,{base64_image}"
         elif image_url:
             # Online URL - use directly
@@ -249,9 +252,7 @@ class VLMTool:
             "Authorization": f"Bearer {api_key}",
         }
 
-        response = requests.post(
-            url, headers=headers, json=payload, timeout=self.timeout
-        )
+        response = requests.post(url, headers=headers, json=payload, timeout=self.timeout)
 
         if response.status_code != 200:
             return {
@@ -295,7 +296,7 @@ class VLMTool:
 
         payload = {
             "model": model_id,
-            "max_tokens": max_tokens,
+            **build_max_tokens_param(model_id, max_tokens),
             "temperature": self.config.temperature,
             "messages": [
                 {
@@ -313,9 +314,7 @@ class VLMTool:
             "Authorization": f"Bearer {api_key}",
         }
 
-        response = requests.post(
-            url, headers=headers, json=payload, timeout=self.timeout
-        )
+        response = requests.post(url, headers=headers, json=payload, timeout=self.timeout)
 
         if response.status_code != 200:
             return {

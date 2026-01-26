@@ -144,13 +144,19 @@ class InterruptManager:
             True if the interrupt was consumed (no further handling needed),
             False if the caller should handle the interrupt
         """
+        from swecli.ui_textual.debug_logger import debug_log
+        debug_log("InterruptManager", "handle_interrupt called")
+        debug_log("InterruptManager", f"current_state={self._current_state}")
+
         # First, check for autocomplete (highest priority)
         if self._has_autocomplete():
+            debug_log("InterruptManager", "Has autocomplete, dismissing")
             return self._dismiss_autocomplete()
 
         # Check for active controllers by querying the app
         # This allows controllers that don't explicitly register to still be handled
         if self._cancel_any_active_controller():
+            debug_log("InterruptManager", "Cancelled an active controller")
             return True
 
         with self._lock:
@@ -158,6 +164,7 @@ class InterruptManager:
 
             # Check for exit confirmation mode
             if state == InterruptState.EXIT_CONFIRMATION:
+                debug_log("InterruptManager", "Clearing exit confirmation")
                 return self._clear_exit_confirmation()
 
             # Processing states - handled by caller (action_interrupt)
@@ -167,10 +174,12 @@ class InterruptManager:
                 InterruptState.PROCESSING_PARALLEL_TOOLS,
             ):
                 # Cleanup spinners but let caller handle the actual interrupt
+                debug_log("InterruptManager", "Processing state, cleaning spinners, returning False")
                 self.cleanup_spinners()
                 return False
 
             # IDLE state - nothing to handle
+            debug_log("InterruptManager", "IDLE state, returning False")
             return False
 
     def handle_cancel(self) -> bool:
@@ -264,41 +273,54 @@ class InterruptManager:
         Returns:
             True if a controller was cancelled
         """
+        from swecli.ui_textual.debug_logger import debug_log
+
         # Check approval controller
         approval = getattr(self.app, "_approval_controller", None)
-        if approval and getattr(approval, "active", False):
+        approval_active = approval and getattr(approval, "active", False)
+        debug_log("InterruptManager", f"approval_controller active={approval_active}")
+        if approval_active:
             if hasattr(self.app, "_approval_cancel"):
                 self.app._approval_cancel()
                 return True
 
         # Check ask-user controller
         ask_user = getattr(self.app, "_ask_user_controller", None)
-        if ask_user and getattr(ask_user, "active", False):
+        ask_user_active = ask_user and getattr(ask_user, "active", False)
+        debug_log("InterruptManager", f"ask_user_controller active={ask_user_active}")
+        if ask_user_active:
             if hasattr(self.app, "_ask_user_cancel"):
                 self.app._ask_user_cancel()
                 return True
 
         # Check model picker
         model_picker = getattr(self.app, "_model_picker", None)
-        if model_picker and getattr(model_picker, "active", False):
+        model_picker_active = model_picker and getattr(model_picker, "active", False)
+        debug_log("InterruptManager", f"model_picker active={model_picker_active}")
+        if model_picker_active:
             if hasattr(self.app, "_model_picker_cancel"):
                 self.app._model_picker_cancel()
                 return True
 
         # Check agent wizard
         agent_creator = getattr(self.app, "_agent_creator", None)
-        if agent_creator and getattr(agent_creator, "active", False):
+        agent_creator_active = agent_creator and getattr(agent_creator, "active", False)
+        debug_log("InterruptManager", f"agent_creator active={agent_creator_active}")
+        if agent_creator_active:
             if hasattr(self.app, "_agent_wizard_cancel"):
                 self.app._agent_wizard_cancel()
                 return True
 
         # Check skill wizard
         skill_creator = getattr(self.app, "_skill_creator", None)
-        if skill_creator and getattr(skill_creator, "active", False):
+        skill_creator_active = skill_creator and getattr(skill_creator, "active", False)
+        debug_log("InterruptManager", f"skill_creator active={skill_creator_active}")
+        if skill_creator_active:
             if hasattr(self.app, "_skill_wizard_cancel"):
                 self.app._skill_wizard_cancel()
                 return True
 
+        debug_log("InterruptManager", "No active controllers")
         return False
 
     def _cancel_active_controller(self) -> bool:

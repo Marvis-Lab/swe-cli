@@ -182,6 +182,11 @@ Examples:
     )
     mcp_disable.add_argument("name", help="Name of the server to disable")
 
+    # Ralph subcommand
+    from swecli.ralph.cli import create_ralph_parser
+
+    create_ralph_parser(subparsers)
+
     # Run subcommand
     run_parser = subparsers.add_parser(
         "run", help="Run development tools", description="Run development servers and tools"
@@ -221,6 +226,13 @@ Examples:
     # Handle run commands
     if args.command == "run":
         _handle_run_command(args)
+        return
+
+    # Handle ralph commands
+    if args.command == "ralph":
+        from swecli.ralph.cli import handle_ralph_command
+
+        handle_ralph_command(args)
         return
 
     console = Console()
@@ -691,6 +703,11 @@ def _run_non_interactive(
             raw_assistant_content = msg.get("content", raw_assistant_content)
             break
 
+    # Extract metadata from agent response for session persistence
+    thinking_trace = result.get("thinking_trace")
+    reasoning_content = result.get("reasoning_content")
+    token_usage = result.get("usage")
+
     metadata = {}
     if raw_assistant_content is not None:
         metadata["raw_content"] = raw_assistant_content
@@ -699,6 +716,9 @@ def _run_non_interactive(
         role=Role.ASSISTANT,
         content=assistant_content,
         metadata=metadata,
+        thinking_trace=thinking_trace,
+        reasoning_content=reasoning_content,
+        token_usage=token_usage,
     )
     session_manager.add_message(assistant_msg, config.auto_save_interval)
     session_manager.save_session()

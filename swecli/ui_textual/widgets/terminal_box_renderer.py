@@ -374,9 +374,7 @@ class TerminalBoxRenderer:
 
         # Render head lines
         for line in head_lines:
-            result.append(
-                self.render_content_line(line, config, apply_error_style=config.is_error)
-            )
+            result.append(self.render_content_line(line, config, apply_error_style=config.is_error))
 
         # Render separator if truncated
         if hidden_count > 0:
@@ -384,9 +382,7 @@ class TerminalBoxRenderer:
 
         # Render tail lines
         for line in tail_lines:
-            result.append(
-                self.render_content_line(line, config, apply_error_style=config.is_error)
-            )
+            result.append(self.render_content_line(line, config, apply_error_style=config.is_error))
 
         # Bottom padding
         result.append(self.render_padding_line(config))
@@ -421,7 +417,7 @@ class TerminalBoxRenderer:
         hint = get_expansion_hint()
 
         # Build summary line: "⎿  {summary} (ctrl+o to expand)"
-        result = Text(f"{indent}    \u23bf  ", style=GREY)
+        result = Text(f"{indent}  \u23bf  ", style=GREY)
         result.append(summary, style=SUBTLE)
         result.append(f" {hint}", style=f"{SUBTLE} italic")
 

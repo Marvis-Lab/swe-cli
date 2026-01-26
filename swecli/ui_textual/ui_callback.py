@@ -237,11 +237,17 @@ class TextualUICallback:
         Args:
             context: "thinking" for prompt phase, "tool" for tool execution
         """
+        from swecli.ui_textual.debug_logger import debug_log
+        debug_log("UICallback", f"on_interrupt called with context={context}")
         try:
+            debug_log("UICallback", "Cleaning up spinners...")
             self._cleanup_spinners()
+            debug_log("UICallback", "Showing interrupt message...")
             self._show_interrupt_message(context)
+            debug_log("UICallback", "on_interrupt complete")
         except Exception as e:
             # Fallback: at minimum ensure processing state is cleared
+            debug_log("UICallback", f"on_interrupt ERROR: {e}")
             logger.error(f"Interrupt handler error: {e}")
             if self.chat_app:
                 self.chat_app._is_processing = False
@@ -272,37 +278,31 @@ class TextualUICallback:
             context: "thinking" or "tool"
         """
 
-        # The key insight: after user message, there's a blank line (added by add_user_message)
-        # After stopping spinner, this blank line is the last line
-        # We need to remove it using _truncate_from to properly update widget state
         def write_interrupt_replacing_blank_line():
-            # Check if we have lines and last line is blank
+            # Remove trailing blank line if present (SpacingManager adds one after user message)
+            # Use simpler detection: try to render last line and check if empty
             if hasattr(self.conversation, "lines") and len(self.conversation.lines) > 0:
-                # Check if last line is blank
                 last_line = self.conversation.lines[-1]
 
-                # RichLog stores lines as Strip objects, not Text objects
-                # A blank line is a Strip with empty segments or a single empty Segment
+                # Check if blank: Strip objects have _segments, Text objects have plain
                 is_blank = False
+                try:
+                    if hasattr(last_line, "_segments"):
+                        # Strip object - check if all segments are empty/whitespace
+                        text = "".join(seg.text for seg in last_line._segments)
+                        is_blank = not text.strip()
+                    elif hasattr(last_line, "plain"):
+                        is_blank = not last_line.plain.strip()
+                    else:
+                        # Try string conversion as fallback
+                        is_blank = not str(last_line).strip()
+                except Exception:
+                    pass  # If detection fails, don't remove anything
 
-                # Check if it's a Strip object with empty content
-                if hasattr(last_line, "_segments"):
-                    segments = last_line._segments
-                    if len(segments) == 0:
-                        is_blank = True
-                    elif len(segments) == 1 and segments[0].text == "":
-                        is_blank = True
-                elif hasattr(last_line, "plain"):
-                    # Fallback for Text objects
-                    if last_line.plain.strip() == "":
-                        is_blank = True
+                if is_blank and hasattr(self.conversation, "_truncate_from"):
+                    self.conversation._truncate_from(len(self.conversation.lines) - 1)
 
-                if is_blank:
-                    # Use _truncate_from to properly remove the blank line and update widget state
-                    if hasattr(self.conversation, "_truncate_from"):
-                        self.conversation._truncate_from(len(self.conversation.lines) - 1)
-
-            # Now write the interrupt message using shared utility
+            # Write interrupt message using shared utility
             from swecli.ui_textual.utils.interrupt_utils import (
                 create_interrupt_text,
                 STANDARD_INTERRUPT_MESSAGE,

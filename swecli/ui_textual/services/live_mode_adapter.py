@@ -91,7 +91,9 @@ class LiveModeAdapter:
         if result.special_type == "bash" and result.bash_data:
             self._render_bash_output(result)
         elif result.is_interrupted:
-            self._conversation.add_tool_result("Interrupted by user")
+            # Don't add duplicate "Interrupted by user" message here
+            # The interrupt message is already shown by ui_callback.on_interrupt()
+            pass
         elif result.is_rejected:
             self._conversation.add_tool_result("Operation rejected by user")
         elif result.lines:

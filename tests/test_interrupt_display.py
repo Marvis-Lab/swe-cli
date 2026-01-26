@@ -30,7 +30,7 @@ def test_interrupt_display_format():
 
     # First line should be the tool call with ⏺
     assert lines[0].startswith("⏺"), f"Expected first line to start with ⏺, got: {lines[0]}"
-    assert "Run" in lines[0], f"Expected 'Run' in first line, got: {lines[0]}"
+    assert "Bash" in lines[0] or "command" in lines[0], f"Expected 'Bash' or 'command' in first line, got: {lines[0]}"
 
     # Second line should be the interrupted message with ::interrupted:: marker
     assert len(lines) >= 2, f"Expected at least 2 lines, got {len(lines)}"

@@ -148,10 +148,51 @@ class QueryProcessor:
         Returns:
             True if interrupt was requested, False if no task is running
         """
+        from swecli.ui_textual.debug_logger import debug_log
+        debug_log("QueryProcessor", "request_interrupt called")
+        debug_log("QueryProcessor", f"self._llm_caller id={id(self._llm_caller) if hasattr(self, '_llm_caller') else 'N/A'}")
+
+        interrupted = False
+
+        # Check our own task monitor (for direct _call_llm_with_progress usage)
+        debug_log("QueryProcessor", f"_current_task_monitor={self._current_task_monitor}")
         if self._current_task_monitor is not None:
             self._current_task_monitor.request_interrupt()
-            return True
-        return False
+            interrupted = True
+            debug_log("QueryProcessor", "Interrupted via _current_task_monitor")
+
+        # Also check llm_caller's monitor (for react_executor flow)
+        has_llm_caller = hasattr(self, "_llm_caller") and self._llm_caller is not None
+        debug_log("QueryProcessor", f"has _llm_caller={has_llm_caller}")
+        if has_llm_caller:
+            llm_monitor = getattr(self._llm_caller, "_current_task_monitor", None)
+            debug_log("QueryProcessor", f"_llm_caller id={id(self._llm_caller)}, _current_task_monitor={llm_monitor}")
+            if self._llm_caller.request_interrupt():
+                interrupted = True
+                debug_log("QueryProcessor", "Interrupted via _llm_caller")
+
+        # Also check tool_executor's monitor (for parallel tool execution)
+        has_tool_executor = hasattr(self, "_tool_executor") and self._tool_executor is not None
+        debug_log("QueryProcessor", f"has _tool_executor={has_tool_executor}")
+        if has_tool_executor:
+            tool_monitor = getattr(self._tool_executor, "_current_task_monitor", None)
+            debug_log("QueryProcessor", f"_tool_executor._current_task_monitor={tool_monitor}")
+            if self._tool_executor.request_interrupt():
+                interrupted = True
+                debug_log("QueryProcessor", "Interrupted via _tool_executor")
+
+        # Also check react_executor's monitor (for thinking phase)
+        has_react_executor = hasattr(self, "_react_executor") and self._react_executor is not None
+        debug_log("QueryProcessor", f"has _react_executor={has_react_executor}")
+        if has_react_executor:
+            react_monitor = getattr(self._react_executor, "_current_task_monitor", None)
+            debug_log("QueryProcessor", f"_react_executor._current_task_monitor={react_monitor}")
+            if self._react_executor.request_interrupt():
+                interrupted = True
+                debug_log("QueryProcessor", "Interrupted via _react_executor")
+
+        debug_log("QueryProcessor", f"Final result: interrupted={interrupted}")
+        return interrupted
 
     def _init_ace_components(self, agent):
         """Initialize ACE components lazily on first use.

@@ -94,6 +94,9 @@ class ReactExecutor:
         self._current_reasoning_content: Optional[str] = None
         self._current_token_usage: Optional[dict] = None
 
+        # Track current task monitor for interrupt support (thinking phase uses this)
+        self._current_task_monitor: Optional[TaskMonitor] = None
+
         self._conversation_summarizer = ConversationSummarizer(
             regenerate_threshold=5,  # Regenerate summary after 5 new messages
         )
@@ -102,6 +105,23 @@ class ReactExecutor:
             cache_data = self.session_manager.current_session.metadata.get("conversation_summary")
             if cache_data:
                 self._conversation_summarizer.load_from_dict(cache_data)
+
+    def request_interrupt(self) -> bool:
+        """Request interrupt of currently running task (thinking or tool execution).
+
+        Returns:
+            True if interrupt was requested, False if no task is running
+        """
+        from swecli.ui_textual.debug_logger import debug_log
+        debug_log("ReactExecutor", "request_interrupt called")
+        debug_log("ReactExecutor", f"_current_task_monitor={self._current_task_monitor}")
+
+        if self._current_task_monitor is not None:
+            self._current_task_monitor.request_interrupt()
+            debug_log("ReactExecutor", "Called task_monitor.request_interrupt()")
+            return True
+        debug_log("ReactExecutor", "No active task monitor")
+        return False
 
     def execute(
         self,
@@ -216,21 +236,30 @@ class ReactExecutor:
 
             # Call LLM WITHOUT tools - just get reasoning
             task_monitor = TaskMonitor()
-            response = agent.call_thinking_llm(thinking_messages, task_monitor)
+            # Track task monitor for interrupt support
+            self._current_task_monitor = task_monitor
+            from swecli.ui_textual.debug_logger import debug_log
+            debug_log("ReactExecutor", f"Thinking phase: SET _current_task_monitor={task_monitor}")
+            try:
+                response = agent.call_thinking_llm(thinking_messages, task_monitor)
 
-            if response.get("success"):
-                thinking_trace = response.get("content", "")
+                if response.get("success"):
+                    thinking_trace = response.get("content", "")
 
-                # Display in UI
-                if thinking_trace and ui_callback and hasattr(ui_callback, "on_thinking"):
-                    ui_callback.on_thinking(thinking_trace)
+                    # Display in UI
+                    if thinking_trace and ui_callback and hasattr(ui_callback, "on_thinking"):
+                        ui_callback.on_thinking(thinking_trace)
 
-                return thinking_trace
-            else:
-                # Log the error for debugging
-                error = response.get("error", "Unknown error")
-                if ui_callback and hasattr(ui_callback, "on_debug"):
-                    ui_callback.on_debug(f"Thinking phase error: {error}", "THINK")
+                    return thinking_trace
+                else:
+                    # Log the error for debugging
+                    error = response.get("error", "Unknown error")
+                    if ui_callback and hasattr(ui_callback, "on_debug"):
+                        ui_callback.on_debug(f"Thinking phase error: {error}", "THINK")
+            finally:
+                # Clear task monitor after thinking phase
+                self._current_task_monitor = None
+                debug_log("ReactExecutor", "Thinking phase: CLEARED _current_task_monitor")
 
         except Exception as e:
             # Log exceptions for debugging
@@ -376,9 +405,12 @@ class ReactExecutor:
 
         # ACTION PHASE: Call LLM with tools (no force_think)
         task_monitor = TaskMonitor()
+        from swecli.ui_textual.debug_logger import debug_log
+        debug_log("ReactExecutor", f"Calling call_llm_with_progress, _llm_caller={id(self._llm_caller)}, task_monitor={task_monitor}")
         response, latency_ms = self._llm_caller.call_llm_with_progress(
             ctx.agent, ctx.messages, task_monitor, thinking_visible=thinking_visible
         )
+        debug_log("ReactExecutor", f"call_llm_with_progress returned, success={response.get('success')}")
         self._last_latency_ms = latency_ms
 
         # Debug logging
@@ -433,6 +465,21 @@ class ReactExecutor:
 
         if "interrupted" in error_text.lower():
             self._last_error = error_text
+            # Persist interrupt with metadata for session resume
+            fallback = ChatMessage(
+                role=Role.ASSISTANT,
+                content=f"⚠ {error_text}",
+                thinking_trace=self._current_thinking_trace,
+                reasoning_content=self._current_reasoning_content,
+                token_usage=self._current_token_usage,
+                metadata={"is_error": True, "interrupted": True},
+            )
+            self.session_manager.add_message(fallback, self.config.auto_save_interval)
+            # Clear tracked values after persistence
+            self._current_thinking_trace = None
+            self._current_reasoning_content = None
+            self._current_token_usage = None
+
             if ctx.ui_callback and hasattr(ctx.ui_callback, "on_interrupt"):
                 ctx.ui_callback.on_interrupt()
             elif not ctx.ui_callback:
@@ -441,9 +488,22 @@ class ReactExecutor:
                 )
         else:
             self.console.print(f"[red]Error: {error_text}[/red]")
-            fallback = ChatMessage(role=Role.ASSISTANT, content=f"{error_text}")
+            # Include tracked metadata when persisting error
+            fallback = ChatMessage(
+                role=Role.ASSISTANT,
+                content=f"{error_text}",
+                thinking_trace=self._current_thinking_trace,
+                reasoning_content=self._current_reasoning_content,
+                token_usage=self._current_token_usage,
+                metadata={"is_error": True},
+            )
             self._last_error = error_text
             self.session_manager.add_message(fallback, self.config.auto_save_interval)
+            # Clear tracked values after persistence
+            self._current_thinking_trace = None
+            self._current_reasoning_content = None
+            self._current_token_usage = None
+
             if ctx.ui_callback and hasattr(ctx.ui_callback, "on_assistant_message"):
                 ctx.ui_callback.on_assistant_message(fallback.content)
 
@@ -893,8 +953,17 @@ class ReactExecutor:
             role=Role.ASSISTANT,
             content=content,
             metadata=metadata,
+            # Include tracked iteration data for session persistence
+            thinking_trace=self._current_thinking_trace,
+            reasoning_content=self._current_reasoning_content,
+            token_usage=self._current_token_usage,
         )
         self.session_manager.add_message(assistant_msg, self.config.auto_save_interval)
+
+        # Clear tracked values after persistence
+        self._current_thinking_trace = None
+        self._current_reasoning_content = None
+        self._current_token_usage = None
 
     def _should_nudge_agent(self, consecutive_reads: int, messages: list) -> bool:
         """Check if agent should be nudged to conclude."""

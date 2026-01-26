@@ -1,7 +1,7 @@
 """Mode management for controlling operation behavior."""
 
 from enum import Enum
-from typing import Optional
+from typing import Callable, Optional
 
 from swecli.models.operation import OperationType
 
@@ -11,6 +11,10 @@ class OperationMode(str, Enum):
 
     NORMAL = "normal"  # Interactive execution with approval for each operation
     PLAN = "plan"  # Planning only, no execution
+
+
+# Type alias for mode change callbacks
+ModeChangeCallback = Callable[["OperationMode"], None]
 
 
 class ModeManager:
@@ -25,10 +29,30 @@ class ModeManager:
         self._current_mode = default_mode
         self._operation_count = 0  # Track operations in normal mode
 
+        # Mode change callbacks for unified mode switching
+        self._mode_change_callbacks: list[ModeChangeCallback] = []
+
         # Plan storage for auto-execute workflow
         self._pending_plan: Optional[str] = None
         self._plan_steps: list[str] = []
         self._plan_goal: Optional[str] = None
+
+    def add_mode_change_listener(self, callback: ModeChangeCallback) -> None:
+        """Register a callback to be invoked when mode changes.
+
+        Args:
+            callback: Function that receives the new OperationMode
+        """
+        self._mode_change_callbacks.append(callback)
+
+    def remove_mode_change_listener(self, callback: ModeChangeCallback) -> None:
+        """Remove a previously registered mode change callback.
+
+        Args:
+            callback: The callback to remove
+        """
+        if callback in self._mode_change_callbacks:
+            self._mode_change_callbacks.remove(callback)
 
     @property
     def current_mode(self) -> OperationMode:
@@ -40,11 +64,21 @@ class ModeManager:
 
         Args:
             mode: Mode to set
+
+        Note:
+            All registered mode change listeners are notified when the mode changes.
         """
+        old_mode = self._current_mode
         self._current_mode = mode
+
         # Reset operation counter when switching to normal
         if mode == OperationMode.NORMAL:
             self._operation_count = 0
+
+        # Notify listeners if mode actually changed
+        if old_mode != mode:
+            for callback in self._mode_change_callbacks:
+                callback(mode)
 
     def is_approval_required(
         self,

@@ -155,6 +155,9 @@ class TextualRunner:
                 self.repl.config.enable_bash = True
 
             self._auto_connect_mcp = auto_connect_mcp and hasattr(self.repl, "mcp_manager")
+            # When using custom REPL, we don't know if session was resumed
+            # Default to False (show welcome panel)
+            self._is_resumed_session = False
         else:
             self.config_manager = config_manager or ConfigManager(self.working_dir)
             self.config = self.config_manager.load_config()
@@ -191,6 +194,9 @@ class TextualRunner:
 
             if not session_loaded:
                 self.session_manager.create_session(working_directory=str(self.working_dir))
+
+            # Store whether we resumed an existing session (for UI decisions)
+            self._is_resumed_session = session_loaded
 
             self.repl = REPL(self.config_manager, self.session_manager, is_tui=True)
             self.repl.mode_manager.set_mode(OperationMode.NORMAL)
@@ -279,6 +285,7 @@ class TextualRunner:
                 if hasattr(self.repl, "tool_registry")
                 else None
             ),
+            "is_resumed_session": self._is_resumed_session,
         }
 
         if self._auto_connect_mcp:
@@ -504,9 +511,8 @@ class TextualRunner:
         if not plan_text or not plan_steps:
             return False
 
-        # Switch to NORMAL mode
+        # Switch to NORMAL mode (callback handles agent swapping)
         self.repl.mode_manager.set_mode(OperationMode.NORMAL)
-        self.repl.agent = self.repl.normal_agent
 
         # Update UI to show mode change
         if hasattr(self.app, "status_bar"):
@@ -575,23 +581,29 @@ Work through each implementation step in order. Mark each todo item as 'in_progr
         Returns:
             True if interrupt was requested, False if no task is running
         """
-        if hasattr(self.repl, "query_processor") and self.repl.query_processor:
-            return self.repl.query_processor.request_interrupt()
+        from swecli.ui_textual.debug_logger import debug_log
+        debug_log("Runner", "_handle_interrupt called")
+        has_qp = hasattr(self.repl, "query_processor") and self.repl.query_processor
+        debug_log("Runner", f"has query_processor={has_qp}")
+
+        if has_qp:
+            result = self.repl.query_processor.request_interrupt()
+            debug_log("Runner", f"query_processor.request_interrupt() returned: {result}")
+            return result
         return False
 
     def _cycle_mode(self) -> str:
-        """Toggle between NORMAL and PLAN modes and return the active mode."""
+        """Toggle between NORMAL and PLAN modes and return the active mode.
 
+        Note:
+            The mode_manager callback handles agent swapping automatically.
+        """
         current = self.repl.mode_manager.current_mode
         from swecli.core.runtime import OperationMode
 
         new_mode = OperationMode.PLAN if current == OperationMode.NORMAL else OperationMode.NORMAL
-
+        # set_mode triggers the callback which handles agent swapping
         self.repl.mode_manager.set_mode(new_mode)
-        if new_mode == OperationMode.PLAN:
-            self.repl.agent = self.repl.planning_agent
-        else:
-            self.repl.agent = self.repl.normal_agent
 
         return new_mode.value
 

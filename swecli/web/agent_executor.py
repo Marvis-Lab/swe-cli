@@ -42,10 +42,9 @@ class AgentExecutor:
         try:
             # Broadcast message start
             try:
-                await ws_manager.broadcast({
-                    "type": "message_start",
-                    "data": {"messageId": str(time.time())}
-                })
+                await ws_manager.broadcast(
+                    {"type": "message_start", "data": {"messageId": str(time.time())}}
+                )
             except Exception as e:
                 logger.error(f"Failed to broadcast message_start: {e}")
 
@@ -60,7 +59,9 @@ class AgentExecutor:
             )
 
             # Add assistant response to session
-            logger.info(f"Agent response: success={response.get('success')}, has_content={bool(response.get('content'))}")
+            logger.info(
+                f"Agent response: success={response.get('success')}, has_content={bool(response.get('content'))}"
+            )
             if response and response.get("success"):
                 assistant_content = response.get("content", "")
                 raw_assistant_content = assistant_content
@@ -70,6 +71,11 @@ class AgentExecutor:
                         raw_assistant_content = msg.get("content", raw_assistant_content)
                         break
 
+                # Extract metadata from agent response for session persistence
+                thinking_trace = response.get("thinking_trace")
+                reasoning_content = response.get("reasoning_content")
+                token_usage = response.get("usage")
+
                 metadata = {}
                 if raw_assistant_content is not None:
                     metadata["raw_content"] = raw_assistant_content
@@ -78,6 +84,9 @@ class AgentExecutor:
                     role=Role.ASSISTANT,
                     content=assistant_content,
                     metadata=metadata,
+                    thinking_trace=thinking_trace,
+                    reasoning_content=reasoning_content,
+                    token_usage=token_usage,
                 )
                 self.state.add_message(assistant_msg)
 
@@ -86,10 +95,9 @@ class AgentExecutor:
 
             # Broadcast message complete
             try:
-                await ws_manager.broadcast({
-                    "type": "message_complete",
-                    "data": {"messageId": str(time.time())}
-                })
+                await ws_manager.broadcast(
+                    {"type": "message_complete", "data": {"messageId": str(time.time())}}
+                )
             except Exception as e:
                 logger.error(f"Failed to broadcast message_complete: {e}")
 
@@ -97,16 +105,16 @@ class AgentExecutor:
             # Broadcast error
             logger.error(f"❌ Agent execution error: {e}")
             import traceback
+
             logger.error(traceback.format_exc())
             try:
-                await ws_manager.broadcast({
-                    "type": "error",
-                    "data": {"message": str(e)}
-                })
+                await ws_manager.broadcast({"type": "error", "data": {"message": str(e)}})
             except Exception as broadcast_err:
                 logger.error(f"Failed to broadcast error: {broadcast_err}")
 
-    def _run_agent_sync(self, message: str, ws_manager: Any, loop: asyncio.AbstractEventLoop) -> Dict[str, Any]:
+    def _run_agent_sync(
+        self, message: str, ws_manager: Any, loop: asyncio.AbstractEventLoop
+    ) -> Dict[str, Any]:
         """Run agent synchronously in thread pool.
 
         Args:
@@ -127,8 +135,12 @@ class AgentExecutor:
             OpenBrowserTool,
             WebScreenshotTool,
         )
-        from swecli.core.context_engineering.tools.implementations.web_search_tool import WebSearchTool
-        from swecli.core.context_engineering.tools.implementations.notebook_edit_tool import NotebookEditTool
+        from swecli.core.context_engineering.tools.implementations.web_search_tool import (
+            WebSearchTool,
+        )
+        from swecli.core.context_engineering.tools.implementations.notebook_edit_tool import (
+            NotebookEditTool,
+        )
         from swecli.core.context_engineering.tools.implementations.ask_user_tool import AskUserTool
         from swecli.web.web_approval_manager import WebApprovalManager
         from swecli.web.ws_tool_broadcaster import WebSocketToolBroadcaster
@@ -187,9 +199,7 @@ class AgentExecutor:
         # Get session messages
         session = self.state.session_manager.get_current_session()
         if not session:
-            session = self.state.session_manager.create_session(
-                working_directory=str(working_dir)
-            )
+            session = self.state.session_manager.create_session(working_directory=str(working_dir))
 
         message_history = session.to_api_messages()
 
@@ -221,11 +231,10 @@ class AgentExecutor:
                 try:
                     # Schedule the broadcast coroutine in the event loop
                     future = asyncio.run_coroutine_threadsafe(
-                        ws_manager.broadcast({
-                            "type": "message_chunk",
-                            "data": {"content": str(content)}
-                        }),
-                        loop
+                        ws_manager.broadcast(
+                            {"type": "message_chunk", "data": {"content": str(content)}}
+                        ),
+                        loop,
                     )
                     # Wait for it to complete
                     future.result(timeout=5)
@@ -233,16 +242,12 @@ class AgentExecutor:
                 except Exception as e:
                     logger.error(f"Failed to broadcast message_chunk: {e}")
             else:
-                logger.warning(f"Agent returned success=False, not broadcasting message_chunk")
+                logger.warning("Agent returned success=False, not broadcasting message_chunk")
 
             return result
 
         except Exception as e:
-            return {
-                "success": False,
-                "error": str(e),
-                "content": f"Error: {str(e)}"
-            }
+            return {"success": False, "error": str(e), "content": f"Error: {str(e)}"}
 
     def _resolve_runtime_context(self) -> Tuple[ConfigManager, AppConfig, Path]:
         """Determine config manager, config, and working dir for current session."""

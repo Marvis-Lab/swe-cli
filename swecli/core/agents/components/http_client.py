@@ -64,7 +64,10 @@ class AgentHttpClient:
         request_thread = threading.Thread(target=make_request, daemon=True)
         request_thread.start()
 
+        from swecli.ui_textual.debug_logger import debug_log
+        poll_count = 0
         while request_thread.is_alive():
+            poll_count += 1
             should_interrupt = False
             if task_monitor is not None:
                 if hasattr(task_monitor, "should_interrupt"):
@@ -72,7 +75,12 @@ class AgentHttpClient:
                 elif hasattr(task_monitor, "is_interrupted"):
                     should_interrupt = task_monitor.is_interrupted()
 
+            # Log every 10th poll (every ~1 second)
+            if poll_count % 10 == 1:
+                debug_log("HttpClient", f"poll #{poll_count}, should_interrupt={should_interrupt}, task_monitor={task_monitor}")
+
             if should_interrupt:
+                debug_log("HttpClient", f"INTERRUPT DETECTED at poll #{poll_count}, closing session")
                 session.close()
                 return HttpResult(success=False, error="Interrupted by user", interrupted=True)
             request_thread.join(timeout=0.1)

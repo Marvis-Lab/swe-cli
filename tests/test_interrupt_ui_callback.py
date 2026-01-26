@@ -4,8 +4,8 @@ from rich.text import Text
 from swecli.ui_textual.ui_callback import TextualUICallback
 
 
-def test_on_interrupt_calls_add_tool_result():
-    """Test that on_interrupt uses _write_generic_tool_result - same as tool execution."""
+def test_on_interrupt_removes_blank_line_and_shows_message():
+    """Test that on_interrupt removes trailing blank line and displays interrupt message."""
 
     # Create mock conversation widget with lines array
     mock_conversation = Mock()
@@ -17,12 +17,12 @@ def test_on_interrupt_calls_add_tool_result():
         Text(""),  # Blank line added by add_user_message
     ]
 
-    # Track calls to _write_generic_tool_result
-    calls = []
-    def track_write_tool_result(text):
-        calls.append(text)
+    # Track calls to write (the actual method used to display interrupt)
+    write_calls = []
+    def track_write(text):
+        write_calls.append(text)
 
-    mock_conversation._write_generic_tool_result = track_write_tool_result
+    mock_conversation.write = track_write
     mock_conversation.stop_spinner = Mock()
 
     # Track calls to _truncate_from
@@ -53,24 +53,64 @@ def test_on_interrupt_calls_add_tool_result():
         print("❌ Test FAILED - _truncate_from was not called")
         raise AssertionError("on_interrupt did not remove blank line")
 
-    # Verify _write_generic_tool_result was called with interrupt marker
-    print(f"Number of calls to _write_generic_tool_result: {len(calls)}")
+    # Verify write was called with interrupt message
+    print(f"Number of calls to write: {len(write_calls)}")
 
-    if calls:
-        call_text = calls[0]
+    if write_calls:
+        call_text = write_calls[0]
         print(f"Called with: {call_text}")
 
-        # Assertions
-        assert len(calls) == 1, f"Expected 1 call, got {len(calls)}"
-        assert "::interrupted::" in call_text, "Expected ::interrupted:: marker"
-        assert "Interrupted" in call_text, "Expected 'Interrupted' in message"
-        assert "What should I do instead?" in call_text, "Expected 'What should I do instead?'"
+        # Assertions - the write call receives a Rich Text object
+        assert len(write_calls) == 1, f"Expected 1 call, got {len(write_calls)}"
 
-        print("✅ Test PASSED - on_interrupt uses _write_generic_tool_result correctly")
+        # Convert to plain text for checking content
+        if hasattr(call_text, "plain"):
+            plain_text = call_text.plain
+        else:
+            plain_text = str(call_text)
+
+        assert "Interrupted" in plain_text, "Expected 'Interrupted' in message"
+        assert "What should I do instead?" in plain_text, "Expected 'What should I do instead?'"
+
+        print("✅ Test PASSED - on_interrupt displays correct message")
     else:
-        print("❌ Test FAILED - _write_generic_tool_result was not called")
-        raise AssertionError("on_interrupt did not call _write_generic_tool_result")
+        print("❌ Test FAILED - write was not called")
+        raise AssertionError("on_interrupt did not call write")
+
+
+def test_on_interrupt_without_blank_line():
+    """Test that on_interrupt works even when there's no trailing blank line."""
+
+    # Create mock conversation widget with no blank line
+    mock_conversation = Mock()
+    mock_app = Mock()
+
+    # Mock lines array WITHOUT a blank line at the end
+    mock_conversation.lines = [
+        Text("› run @app.py", style="bold white"),
+    ]
+
+    # Track calls to write
+    write_calls = []
+    mock_conversation.write = lambda text: write_calls.append(text)
+    mock_conversation.stop_spinner = Mock()
+    mock_conversation._truncate_from = Mock()
+
+    # Create UI callback
+    ui_callback = TextualUICallback(mock_conversation, mock_app)
+    ui_callback._app = None
+
+    # Call on_interrupt
+    ui_callback.on_interrupt()
+
+    # Should NOT call _truncate_from since last line is not blank
+    assert mock_conversation._truncate_from.call_count == 0, \
+        "Should not truncate when last line is not blank"
+
+    # Should still display interrupt message
+    assert len(write_calls) == 1, "Should still display interrupt message"
 
 
 if __name__ == "__main__":
-    test_on_interrupt_calls_add_tool_result()
+    test_on_interrupt_removes_blank_line_and_shows_message()
+    test_on_interrupt_without_blank_line()

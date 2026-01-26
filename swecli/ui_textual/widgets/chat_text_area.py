@@ -283,6 +283,10 @@ class ChatTextArea(TextArea):
 
     async def _on_key(self, event: Key) -> None:
         """Intercept Enter to submit while preserving Shift+Enter for new lines."""
+        from swecli.ui_textual.debug_logger import debug_log
+        # Debug: log ALL key events to see if _on_key is being called
+        debug_log("ChatTextArea._on_key", f"key={event.key}, has_focus={self.has_focus}")
+
         app = getattr(self, "app", None)
 
         # Cancel exit confirmation on any key except Ctrl+C
@@ -293,8 +297,11 @@ class ChatTextArea(TextArea):
 
         # Handle ESC key for interrupt
         if event.key == "escape":
+            debug_log("ChatTextArea", "ESC key detected")
+
             # First check autocomplete - highest priority
             if self._completions:
+                debug_log("ChatTextArea", "Dismissing autocomplete")
                 event.stop()
                 event.prevent_default()
                 self._dismiss_autocomplete()
@@ -303,6 +310,7 @@ class ChatTextArea(TextArea):
             # Delegate to InterruptManager for modal states
             interrupt_manager = getattr(app, "_interrupt_manager", None)
             if interrupt_manager and interrupt_manager.handle_interrupt():
+                debug_log("ChatTextArea", "InterruptManager handled it")
                 event.stop()
                 event.prevent_default()
                 return
@@ -310,10 +318,13 @@ class ChatTextArea(TextArea):
             # Explicitly call action_interrupt for processing interrupt
             # (can't rely on keybinding propagation from TextArea)
             if hasattr(app, "action_interrupt"):
+                debug_log("ChatTextArea", "Calling app.action_interrupt()")
                 event.stop()
                 event.prevent_default()
                 app.action_interrupt()
                 return
+            else:
+                debug_log("ChatTextArea", "No action_interrupt on app!")
 
         approval_controller = getattr(app, "_approval_controller", None)
         approval_mode = bool(approval_controller and getattr(approval_controller, "active", False))
