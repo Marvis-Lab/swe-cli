@@ -261,7 +261,7 @@ class TestAnimatedWelcomePanelWithCube:
         assert isinstance(panel._cube, CubeRenderer)
 
     def test_calculate_cube_size_small_terminal(self):
-        """Cube size adapts to small terminal."""
+        """Shape size adapts to small terminal (3 shapes side by side)."""
         panel = AnimatedWelcomePanel()
 
         # Mock small terminal size
@@ -275,14 +275,15 @@ class TestAnimatedWelcomePanelWithCube:
 
         try:
             width, height = panel._calculate_cube_size()
-            assert width >= 40  # Wide horizontal cube
-            assert height >= 8  # Short height for horizontal style
-            assert height <= 14  # Not too tall
+            assert width >= 18  # Minimum per-shape width
+            assert width <= 35  # Maximum per-shape width
+            assert height >= 10  # Minimum height
+            assert height <= 16  # Maximum height
         finally:
             type(panel).size = original_size
 
     def test_calculate_cube_size_large_terminal(self):
-        """Cube size grows with large terminal."""
+        """Shape size grows with large terminal (3 shapes side by side)."""
         panel = AnimatedWelcomePanel()
 
         # Mock large terminal size
@@ -296,9 +297,10 @@ class TestAnimatedWelcomePanelWithCube:
 
         try:
             width, height = panel._calculate_cube_size()
-            assert width >= 70  # Wide horizontal cube
-            assert height >= 10  # Short but reasonable height
-            assert height <= 14  # Capped for horizontal style
+            assert width >= 30  # Larger per-shape width for big terminal
+            assert width <= 35  # Still within max
+            assert height >= 14  # Taller for larger terminal
+            assert height <= 16  # Within max
         finally:
             type(panel).size = original_size
 
