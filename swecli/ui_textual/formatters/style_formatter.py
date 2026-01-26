@@ -7,6 +7,7 @@ from typing import Any, Dict, List
 
 from swecli.ui_textual.formatters_internal.formatter_base import STATUS_ICONS
 from swecli.ui_textual.utils.tool_display import get_tool_display_parts
+from swecli.ui_textual.utils.text_utils import summarize_error
 from swecli.ui_textual.constants import TOOL_ERROR_SENTINEL
 from swecli.ui_textual.utils.interrupt_utils import (
     create_interrupt_message,
@@ -76,7 +77,7 @@ class StyleFormatter:
 
     @staticmethod
     def _error_line(message: str) -> str:
-        return f"{TOOL_ERROR_SENTINEL} {message.strip()}"
+        return f"{TOOL_ERROR_SENTINEL} {summarize_error(message)}"
 
     @staticmethod
     def _interrupted_line(message: str) -> str:

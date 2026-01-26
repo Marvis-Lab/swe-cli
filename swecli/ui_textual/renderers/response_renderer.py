@@ -7,7 +7,7 @@ from typing import Any, TYPE_CHECKING
 from swecli.models.message import ChatMessage, Role
 from swecli.ui_textual.constants import TOOL_ERROR_SENTINEL
 from swecli.ui_textual.utils import build_tool_call_text
-from swecli.ui_textual.utils.text_utils import truncate_tool_output
+from swecli.ui_textual.utils.text_utils import truncate_tool_output, summarize_error
 
 if TYPE_CHECKING:  # pragma: no cover
     from swecli.ui_textual.chat_app import SWECLIChatApp
@@ -140,7 +140,7 @@ class ResponseRenderer:
 
         error = getattr(tool_call, "error", None)
         if error:
-            add_line(f"{TOOL_ERROR_SENTINEL} {str(error).strip()}")
+            add_line(f"{TOOL_ERROR_SENTINEL} {summarize_error(str(error))}")
 
         summary = getattr(tool_call, "result_summary", None)
         if summary:

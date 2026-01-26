@@ -7,32 +7,31 @@ within the Textual conversation log.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from swecli.ui_textual.constants import TOOL_ERROR_SENTINEL
 from swecli.ui_textual.utils import build_tool_call_text
+from swecli.ui_textual.utils.text_utils import summarize_error
 
 
 class ToolRenderer:
     """Manages rendering of tool calls and results in the conversation log.
-    
+
     This class handles the display formatting for standard tool calls, nested
     tool calls (subagents), and special handling for bash execution outputs.
     """
 
     def __init__(self, working_dir: Path) -> None:
         """Initialize the ToolRenderer.
-        
+
         Args:
             working_dir: Working directory used for path resolution in display.
         """
         self._working_dir = working_dir
 
-    def render_stored_tool_calls(
-        self, conversation: Any, tool_calls: list[Any]
-    ) -> None:
+    def render_stored_tool_calls(self, conversation: Any, tool_calls: list[Any]) -> None:
         """Replay historical tool calls using the same logic as live display.
-        
+
         Args:
             conversation: The conversation widget to render into.
             tool_calls: List of tool call objects to render.
@@ -47,18 +46,26 @@ class ToolRenderer:
         for tool_call in tool_calls:
             tool_name = getattr(tool_call, "name", "tool")
             try:
-                parameters = self._coerce_tool_parameters(
-                    getattr(tool_call, "parameters", {})
-                )
+                parameters = self._coerce_tool_parameters(getattr(tool_call, "parameters", {}))
             except Exception:
                 parameters = {}
             result = getattr(tool_call, "result", None)
+            approved = getattr(tool_call, "approved", None)
 
             # Resolve paths for display
             display_params = self._resolve_paths_for_display(parameters)
 
             # Display tool call header
             display = build_tool_call_text(tool_name, display_params)
+
+            # Gap 8: Check approval status and show rejection
+            if approved is False:
+                conversation.add_tool_call(f"{display} [REJECTED]")
+                if hasattr(conversation, "stop_tool_execution"):
+                    conversation.stop_tool_execution(success=False)
+                conversation.add_tool_result("⚠ Operation rejected by user")
+                continue
+
             conversation.add_tool_call(display)
             if hasattr(conversation, "stop_tool_execution"):
                 conversation.stop_tool_execution()
@@ -67,17 +74,23 @@ class ToolRenderer:
             if isinstance(result, str):
                 result = {"success": True, "output": result}
 
-            # Skip interrupted operations
+            # Gap 6: Display interrupted operations with indicator instead of skipping
             if isinstance(result, dict) and result.get("interrupted"):
+                if hasattr(conversation, "stop_tool_execution"):
+                    conversation.stop_tool_execution(success=False)
+                conversation.add_tool_result("⚠ Interrupted by user")
+                continue
+
+            # Gap 7: Special handling for ask_user to display question context
+            if tool_name == "ask_user" and isinstance(result, dict):
+                self._render_ask_user_stored(conversation, tool_call, result)
                 continue
 
             # Handle spawn_subagent with nested tool calls
             if tool_name == "spawn_subagent":
                 nested = getattr(tool_call, "nested_tool_calls", [])
                 if nested:
-                    self._render_nested_tool_calls(
-                        conversation, nested, formatter
-                    )
+                    self._render_nested_tool_calls(conversation, nested, formatter)
                 continue
 
             # Bash commands special handling
@@ -112,9 +125,7 @@ class ToolRenderer:
 
             # All tools: use StyleFormatter
             if isinstance(result, dict):
-                formatted = formatter.format_tool_result(
-                    tool_name, parameters, result
-                )
+                formatted = formatter.format_tool_result(tool_name, parameters, result)
                 lines = self._extract_result_lines(formatted)
                 if lines:
                     conversation.add_tool_result("\n".join(lines))
@@ -124,11 +135,39 @@ class ToolRenderer:
                 if fallback_lines:
                     conversation.add_tool_result("\n".join(fallback_lines))
 
+    def _render_ask_user_stored(self, conversation: Any, tool_call: Any, result: dict) -> None:
+        """Render stored ask_user with question context.
+
+        Args:
+            conversation: The conversation widget.
+            tool_call: The ask_user tool call object.
+            result: The result dictionary containing questions_context and answers.
+        """
+        questions_context = result.get("questions_context", [])
+        answers = result.get("answers", {})
+        cancelled = result.get("cancelled", False)
+
+        if questions_context:
+            lines = []
+            for idx, q in enumerate(questions_context):
+                header = q.get("header") or f"Q{idx + 1}"
+                question = q.get("question", "")
+                answer = answers.get(str(idx), "(not answered)")
+                if cancelled:
+                    answer = "(cancelled)"
+                lines.append(f"[{header}] {question} → {answer}")
+            conversation.add_tool_result("\n".join(lines))
+        else:
+            # Fallback to output text if no questions_context
+            output = result.get("output", "")
+            if output:
+                conversation.add_tool_result(output)
+
     def _render_nested_tool_calls(
         self, conversation: Any, nested_calls: list[Any], formatter: Any
     ) -> None:
         """Render nested tool calls using existing conversation log methods.
-        
+
         Args:
             conversation: The conversation widget.
             nested_calls: List of nested tool calls.
@@ -136,32 +175,46 @@ class ToolRenderer:
         """
         for nested in nested_calls:
             tool_name = getattr(nested, "name", "tool")
-            parameters = self._coerce_tool_parameters(
-                getattr(nested, "parameters", {})
-            )
+            parameters = self._coerce_tool_parameters(getattr(nested, "parameters", {}))
             result = getattr(nested, "result", None)
+            approved = getattr(nested, "approved", None)
             depth = 1
 
             # Convert string result to dict
             if isinstance(result, str):
                 result = {"success": True, "output": result}
 
-            # Skip interrupted operations
-            if isinstance(result, dict) and result.get("interrupted"):
-                continue
-
             # Resolve paths for display
             display_params = self._resolve_paths_for_display(parameters)
 
             # Display nested tool call header
             display = build_tool_call_text(tool_name, display_params)
+
+            # Gap 9: Check approval status for nested calls
+            if approved is False:
+                if hasattr(conversation, "add_nested_tool_call"):
+                    conversation.add_nested_tool_call(f"{display} [REJECTED]", depth, "subagent")
+                if hasattr(conversation, "add_nested_tool_sub_results"):
+                    conversation.add_nested_tool_sub_results(
+                        ["⚠ Operation rejected by user"], depth
+                    )
+                if hasattr(conversation, "complete_nested_tool_call"):
+                    conversation.complete_nested_tool_call(tool_name, depth, "subagent", False)
+                continue
+
             if hasattr(conversation, "add_nested_tool_call"):
                 conversation.add_nested_tool_call(display, depth, "subagent")
 
+            # Gap 9: Display interrupted nested operations with indicator
+            if isinstance(result, dict) and result.get("interrupted"):
+                if hasattr(conversation, "add_nested_tool_sub_results"):
+                    conversation.add_nested_tool_sub_results(["⚠ Interrupted by user"], depth)
+                if hasattr(conversation, "complete_nested_tool_call"):
+                    conversation.complete_nested_tool_call(tool_name, depth, "subagent", False)
+                continue
+
             # Display result FIRST, then complete
-            success = (
-                result.get("success", True) if isinstance(result, dict) else True
-            )
+            success = result.get("success", True) if isinstance(result, dict) else True
 
             if tool_name in (
                 "bash_execute",
@@ -171,15 +224,11 @@ class ToolRenderer:
                 # Bash output box (special rendering)
                 is_error = not result.get("success", True)
                 command = parameters.get("command", "")
-                working_dir = parameters.get(
-                    "working_dir", str(self._working_dir)
-                )
+                working_dir = parameters.get("working_dir", str(self._working_dir))
                 output = result.get("stdout", "") or result.get("output", "")
                 if result.get("stderr"):
                     output = (
-                        (output + "\n" + result["stderr"]).strip()
-                        if output
-                        else result["stderr"]
+                        (output + "\n" + result["stderr"]).strip() if output else result["stderr"]
                     )
                 if hasattr(conversation, "add_bash_output_box"):
                     conversation.add_bash_output_box(
@@ -191,20 +240,14 @@ class ToolRenderer:
                     )
             elif isinstance(result, dict):
                 # All tools: use StyleFormatter
-                formatted = formatter.format_tool_result(
-                    tool_name, parameters, result
-                )
+                formatted = formatter.format_tool_result(tool_name, parameters, result)
                 lines = self._extract_result_lines(formatted)
-                if lines and hasattr(
-                    conversation, "add_nested_tool_sub_results"
-                ):
+                if lines and hasattr(conversation, "add_nested_tool_sub_results"):
                     conversation.add_nested_tool_sub_results(lines, depth)
 
             # Complete AFTER result display
             if hasattr(conversation, "complete_nested_tool_call"):
-                conversation.complete_nested_tool_call(
-                    tool_name, depth, "subagent", success
-                )
+                conversation.complete_nested_tool_call(tool_name, depth, "subagent", success)
 
     @staticmethod
     def _coerce_tool_parameters(raw: Any) -> dict[str, Any]:
@@ -252,7 +295,7 @@ class ToolRenderer:
 
         error = getattr(tool_call, "error", None)
         if error:
-            add_line(f"{TOOL_ERROR_SENTINEL} {str(error).strip()}")
+            add_line(f"{TOOL_ERROR_SENTINEL} {summarize_error(str(error))}")
 
         summary = getattr(tool_call, "result_summary", None)
         if summary:
@@ -288,9 +331,7 @@ class ToolRenderer:
         return lines
 
     @staticmethod
-    def _truncate_tool_output(
-        raw_result: Any, max_lines: int = 6, max_chars: int = 400
-    ) -> str:
+    def _truncate_tool_output(raw_result: Any, max_lines: int = 6, max_chars: int = 400) -> str:
         """Trim long stored tool outputs for concise replay."""
         if raw_result is None:
             return ""
