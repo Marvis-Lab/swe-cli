@@ -2,12 +2,15 @@
 
 import shutil
 from pathlib import Path
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 
 from swecli.models.config import AppConfig
 from swecli.models.operation import EditResult, Operation
 from swecli.core.context_engineering.tools.implementations.base import BaseTool
 from swecli.core.context_engineering.tools.implementations.diff_preview import DiffPreview, Diff
+
+if TYPE_CHECKING:
+    from swecli.core.runtime.task_monitor import TaskMonitor
 
 
 class EditTool(BaseTool):
@@ -43,8 +46,8 @@ class EditTool(BaseTool):
 
         # Normalize: strip each line, normalize line endings
         def normalize(s: str) -> str:
-            lines = s.replace('\r\n', '\n').replace('\r', '\n').split('\n')
-            return '\n'.join(line.strip() for line in lines)
+            lines = s.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+            return "\n".join(line.strip() for line in lines)
 
         norm_old = normalize(old_content)
         norm_original = normalize(original)
@@ -54,11 +57,11 @@ class EditTool(BaseTool):
             return (False, old_content)
 
         # Find actual content in original by line matching
-        old_lines = [l.strip() for l in old_content.split('\n') if l.strip()]
+        old_lines = [l.strip() for l in old_content.split("\n") if l.strip()]
         if not old_lines:
             return (False, old_content)
 
-        original_lines = original.split('\n')
+        original_lines = original.split("\n")
 
         # Find start line that matches first stripped line
         for i, line in enumerate(original_lines):
@@ -75,12 +78,12 @@ class EditTool(BaseTool):
 
                 if j == len(old_lines):
                     # Found all lines - reconstruct actual content
-                    actual = '\n'.join(matched_lines)
+                    actual = "\n".join(matched_lines)
                     # Check if we need trailing newline
                     if actual in original:
                         return (True, actual)
-                    if actual + '\n' in original:
-                        return (True, actual + '\n')
+                    if actual + "\n" in original:
+                        return (True, actual + "\n")
 
         return (False, old_content)
 
@@ -104,6 +107,7 @@ class EditTool(BaseTool):
         dry_run: bool = False,
         backup: bool = True,
         operation: Optional[Operation] = None,
+        task_monitor: Optional["TaskMonitor"] = None,
     ) -> EditResult:
         """Edit file by replacing old_content with new_content.
 
@@ -115,6 +119,7 @@ class EditTool(BaseTool):
             dry_run: If True, don't actually modify file
             backup: Create backup before editing
             operation: Operation object for tracking
+            task_monitor: Optional task monitor for interrupt checking
 
         Returns:
             EditResult with operation details
@@ -124,6 +129,21 @@ class EditTool(BaseTool):
             PermissionError: If edit is not permitted
             ValueError: If old_content not found or not unique
         """
+        # Check for interrupt before starting
+        if task_monitor and task_monitor.should_interrupt():
+            error = "Interrupted before edit"
+            if operation:
+                operation.mark_failed(error)
+            return EditResult(
+                success=False,
+                file_path=file_path,
+                lines_added=0,
+                lines_removed=0,
+                error=error,
+                operation_id=operation.id if operation else None,
+                interrupted=True,
+            )
+
         # Resolve path
         path = self._resolve_path(file_path)
 
@@ -188,7 +208,7 @@ class EditTool(BaseTool):
                     pos = original.find(old_content, search_pos)
                     if pos == -1:
                         break
-                    line_num = original[:pos].count('\n') + 1
+                    line_num = original[:pos].count("\n") + 1
                     occurrences.append(line_num)
                     search_pos = pos + 1
 
@@ -379,9 +399,7 @@ class EditTool(BaseTool):
         """
         return self.edit_file(**kwargs)
 
-    def preview_edit(
-        self, file_path: str, old_content: str, new_content: str
-    ) -> None:
+    def preview_edit(self, file_path: str, old_content: str, new_content: str) -> None:
         """Preview an edit operation.
 
         Args:

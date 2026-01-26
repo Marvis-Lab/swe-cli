@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any, TYPE_CHECKING
+from typing import Any, Optional, TYPE_CHECKING
 
 from rich.console import Group
 from rich.panel import Panel
@@ -14,6 +14,9 @@ from swecli.core.context_engineering.tools.implementations.ask_user_tool import 
     QuestionOption,
 )
 
+if TYPE_CHECKING:
+    from swecli.ui_textual.managers.interrupt_manager import InterruptManager
+
 
 class AskUserPromptController:
     """Encapsulates the ask-user prompt state machine.
@@ -23,11 +26,16 @@ class AskUserPromptController:
     along with a custom "Other" option.
     """
 
-    def __init__(self, app: "SWECLIChatApp") -> None:
+    def __init__(
+        self,
+        app: "SWECLIChatApp",
+        interrupt_manager: Optional["InterruptManager"] = None,
+    ) -> None:
         if TYPE_CHECKING:  # pragma: no cover
             pass
 
         self.app = app
+        self._interrupt_manager = interrupt_manager
         self._active = False
         self._future: asyncio.Future[dict[str, Any] | None] | None = None
         self._questions: list[Question] = []
@@ -75,6 +83,14 @@ class AskUserPromptController:
         self._multi_selections = set()
         self._other_mode = False
         self._active = True
+
+        # Track state for interrupt handling
+        if self._interrupt_manager:
+            from swecli.ui_textual.managers.interrupt_manager import InterruptState
+            self._interrupt_manager.enter_state(
+                InterruptState.ASK_USER_PROMPT,
+                controller_ref=self,
+            )
 
         loop = asyncio.get_running_loop()
         self._future = loop.create_future()
@@ -307,6 +323,10 @@ class AskUserPromptController:
     # ------------------------------------------------------------------
 
     def _cleanup(self) -> None:
+        # Exit state tracking
+        if self._interrupt_manager:
+            self._interrupt_manager.exit_state()
+
         conversation = self.app.conversation
         conversation.clear_ask_user_prompt()
         self._future = None

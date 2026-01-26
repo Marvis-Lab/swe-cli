@@ -292,6 +292,24 @@ class ChatTextArea(TextArea):
                 if hasattr(app, "_cancel_exit_confirmation"):
                     app._cancel_exit_confirmation()
 
+        # Delegate ESC/Ctrl+C to InterruptManager for unified handling
+        # This centralizes interrupt logic and handles autocomplete, modals, and processing
+        interrupt_manager = getattr(app, "_interrupt_manager", None)
+        if event.key in {"escape", "ctrl+c"} and interrupt_manager:
+            # Special case: autocomplete visible - handle here for immediate response
+            if event.key == "escape" and self._completions:
+                event.stop()
+                event.prevent_default()
+                self._dismiss_autocomplete()
+                return
+
+            # Let InterruptManager handle other ESC/Ctrl+C cases
+            if interrupt_manager.handle_interrupt():
+                event.stop()
+                event.prevent_default()
+                return
+            # If not consumed, let it fall through to action_interrupt via bindings
+
         approval_controller = getattr(app, "_approval_controller", None)
         approval_mode = bool(approval_controller and getattr(approval_controller, "active", False))
 
@@ -308,12 +326,7 @@ class ChatTextArea(TextArea):
                 if hasattr(app, "_approval_move"):
                     app._approval_move(1)
                 return
-            if event.key in {"escape", "ctrl+c"}:
-                event.stop()
-                event.prevent_default()
-                if hasattr(app, "_approval_cancel"):
-                    app._approval_cancel()
-                return
+            # ESC/Ctrl+C already handled by InterruptManager above
             if event.key in {"enter", "return"} and "+" not in event.key:
                 event.stop()
                 event.prevent_default()
@@ -329,19 +342,14 @@ class ChatTextArea(TextArea):
         )
 
         if ask_user_mode:
-            # In "Other" mode, allow typing but still handle Enter/Escape
+            # In "Other" mode, allow typing but still handle Enter
+            # ESC/Ctrl+C already handled by InterruptManager above
             if ask_user_other_mode:
                 if event.key in {"enter", "return"} and "+" not in event.key:
                     event.stop()
                     event.prevent_default()
                     if hasattr(app, "_ask_user_confirm"):
                         app._ask_user_confirm()
-                    return
-                if event.key in {"escape", "ctrl+c"}:
-                    event.stop()
-                    event.prevent_default()
-                    if hasattr(app, "_ask_user_cancel"):
-                        app._ask_user_cancel()
                     return
                 # Allow other keys (typing) to pass through
                 await super()._on_key(event)
@@ -383,12 +391,7 @@ class ChatTextArea(TextArea):
                 if hasattr(app, "_ask_user_toggle"):
                     app._ask_user_toggle()
                 return
-            if event.key in {"escape", "ctrl+c"}:
-                event.stop()
-                event.prevent_default()
-                if hasattr(app, "_ask_user_cancel"):
-                    app._ask_user_cancel()
-                return
+            # ESC/Ctrl+C already handled by InterruptManager above
             if event.key in {"enter", "return"} and "+" not in event.key:
                 event.stop()
                 event.prevent_default()
@@ -421,12 +424,7 @@ class ChatTextArea(TextArea):
                     if inspect.isawaitable(result):
                         asyncio.create_task(result)
                 return
-            if event.key in {"escape", "ctrl+c"}:
-                event.stop()
-                event.prevent_default()
-                if hasattr(app, "_model_picker_cancel"):
-                    app._model_picker_cancel()
-                return
+            # ESC/Ctrl+C already handled by InterruptManager above
             if event.character and event.character.lower() == "b":
                 event.stop()
                 event.prevent_default()
@@ -481,7 +479,8 @@ class ChatTextArea(TextArea):
                         agent_creator.toggle_tool_selection()
                     return
 
-            # BOTH STAGES: Enter confirms, Escape cancels
+            # BOTH STAGES: Enter confirms
+            # ESC/Ctrl+C already handled by InterruptManager above
             if event.key in {"enter", "return"} and "+" not in event.key:
                 event.stop()
                 event.prevent_default()
@@ -493,13 +492,6 @@ class ChatTextArea(TextArea):
                     result = confirm()
                     if inspect.isawaitable(result):
                         asyncio.create_task(result)
-                return
-
-            if event.key in {"escape", "ctrl+c"}:
-                event.stop()
-                event.prevent_default()
-                if hasattr(app, "_agent_wizard_cancel"):
-                    app._agent_wizard_cancel()
                 return
 
             # TEXT INPUT STAGES: Allow typing, update live preview after keystroke
@@ -550,7 +542,8 @@ class ChatTextArea(TextArea):
                         app._skill_wizard_back()
                     return
 
-            # BOTH STAGES: Enter confirms, Escape cancels
+            # BOTH STAGES: Enter confirms
+            # ESC/Ctrl+C already handled by InterruptManager above
             if event.key in {"enter", "return"} and "+" not in event.key:
                 event.stop()
                 event.prevent_default()
@@ -562,13 +555,6 @@ class ChatTextArea(TextArea):
                     result = confirm()
                     if inspect.isawaitable(result):
                         asyncio.create_task(result)
-                return
-
-            if event.key in {"escape", "ctrl+c"}:
-                event.stop()
-                event.prevent_default()
-                if hasattr(app, "_skill_wizard_cancel"):
-                    app._skill_wizard_cancel()
                 return
 
             # TEXT INPUT STAGES: Allow typing, update live preview after keystroke
@@ -595,11 +581,7 @@ class ChatTextArea(TextArea):
             self._insert_newline()
             return
 
-        if event.key == "escape" and self._completions:
-            event.stop()
-            event.prevent_default()
-            self._dismiss_autocomplete()
-            return
+        # ESC for autocomplete dismissal handled at the top of _on_key()
 
         if event.key == "up":
             if self._completions:

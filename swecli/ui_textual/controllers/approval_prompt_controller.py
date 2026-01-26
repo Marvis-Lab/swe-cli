@@ -3,21 +3,29 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any, TYPE_CHECKING
+from typing import Any, Optional, TYPE_CHECKING
 
 from rich.console import Group
 from rich.panel import Panel
 from rich.text import Text
 
+if TYPE_CHECKING:
+    from swecli.ui_textual.managers.interrupt_manager import InterruptManager
+
 
 class ApprovalPromptController:
     """Encapsulates the inline approval prompt state machine."""
 
-    def __init__(self, app: "SWECLIChatApp") -> None:
+    def __init__(
+        self,
+        app: "SWECLIChatApp",
+        interrupt_manager: Optional["InterruptManager"] = None,
+    ) -> None:
         if TYPE_CHECKING:  # pragma: no cover
             pass
 
         self.app = app
+        self._interrupt_manager = interrupt_manager
         self._active = False
         self._future: asyncio.Future[tuple[bool, str, str]] | None = None
         self._options: list[dict[str, Any]] = []
@@ -66,6 +74,14 @@ class ApprovalPromptController:
         ]
         self._selected_index = 0
         self._active = True
+
+        # Track state for interrupt handling
+        if self._interrupt_manager:
+            from swecli.ui_textual.managers.interrupt_manager import InterruptState
+            self._interrupt_manager.enter_state(
+                InterruptState.APPROVAL_PROMPT,
+                controller_ref=self,
+            )
 
         loop = asyncio.get_running_loop()
         self._future = loop.create_future()
@@ -163,6 +179,10 @@ class ApprovalPromptController:
     # ------------------------------------------------------------------
 
     def _cleanup(self) -> None:
+        # Exit state tracking
+        if self._interrupt_manager:
+            self._interrupt_manager.exit_state()
+
         conversation = self.app.conversation
         conversation.clear_approval_prompt()
         self._future = None

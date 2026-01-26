@@ -391,7 +391,7 @@ class ToolRegistry:
                     f"Auto-discovered MCP tool: {tool_name}. "
                     "Tip: Use search_tools() to discover tools before using them."
                 )
-            return self._mcp_handler.execute(tool_name, arguments)
+            return self._mcp_handler.execute(tool_name, arguments, task_monitor=task_monitor)
 
         if tool_name not in self._handlers:
             return {"success": False, "error": f"Unknown tool: {tool_name}", "output": None}

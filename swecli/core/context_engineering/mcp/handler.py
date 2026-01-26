@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from swecli.core.runtime.task_monitor import TaskMonitor
 
 
 class McpToolHandler:
@@ -11,7 +14,31 @@ class McpToolHandler:
     def __init__(self, mcp_manager: Any) -> None:
         self._mcp_manager = mcp_manager
 
-    def execute(self, tool_name: str, args: dict[str, Any]) -> dict[str, Any]:
+    def execute(
+        self,
+        tool_name: str,
+        args: dict[str, Any],
+        task_monitor: Optional["TaskMonitor"] = None,
+    ) -> dict[str, Any]:
+        """Execute an MCP tool.
+
+        Args:
+            tool_name: The full MCP tool name (mcp__server__tool)
+            args: Tool arguments
+            task_monitor: Optional task monitor for interrupt checking
+
+        Returns:
+            Result dict with success, output, and optionally error keys
+        """
+        # Check interrupt before execution
+        if task_monitor and task_monitor.should_interrupt():
+            return {
+                "success": False,
+                "interrupted": True,
+                "error": "Interrupted",
+                "output": None,
+            }
+
         if not self._mcp_manager:
             return {
                 "success": False,
@@ -38,7 +65,9 @@ class McpToolHandler:
             }
 
         try:
-            return self._mcp_manager.call_tool_sync(server_name, mcp_tool_name, args)
+            return self._mcp_manager.call_tool_sync(
+                server_name, mcp_tool_name, args, task_monitor=task_monitor
+            )
         except Exception as exc:  # noqa: BLE001
             return {
                 "success": False,

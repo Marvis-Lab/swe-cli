@@ -29,6 +29,7 @@ from swecli.ui_textual.managers.console_buffer_manager import ConsoleBufferManag
 from swecli.ui_textual.managers.message_history import MessageHistory
 from swecli.ui_textual.managers.tool_summary_manager import ToolSummaryManager
 from swecli.ui_textual.managers.spinner_service import SpinnerService
+from swecli.ui_textual.managers.interrupt_manager import InterruptManager, InterruptState
 
 # Note: render_welcome_panel no longer used - replaced by AnimatedWelcomePanel widget
 
@@ -71,6 +72,7 @@ class SWECLIChatApp(App):
         on_interrupt: Optional[Callable[[], bool]] = None,
         working_dir: Optional[str] = None,
         todo_handler: Optional[Any] = None,
+        is_resumed_session: bool = False,
         **kwargs,
     ):
         """Initialize chat application.
@@ -86,6 +88,7 @@ class SWECLIChatApp(App):
             on_interrupt: Callback for when user presses ESC to interrupt
             working_dir: Working directory path for repo display
             todo_handler: TodoHandler instance for managing todos
+            is_resumed_session: If True, skip the welcome panel (resuming existing session)
         """
         # Set color system to inherit from terminal
         kwargs.setdefault("ansi_color", "auto")
@@ -112,11 +115,12 @@ class SWECLIChatApp(App):
         self._pending_assistant_normalized: str | None = None
         self._ui_thread: threading.Thread | None = None
         self._tips_manager = TipsManager()
+        self._interrupt_manager = InterruptManager(self)
         self._model_picker: ModelPickerController = ModelPickerController(self)
         self._agent_creator: AgentCreatorController = AgentCreatorController(self)
         self._skill_creator: SkillCreatorController = SkillCreatorController(self)
-        self._approval_controller = ApprovalPromptController(self)
-        self._ask_user_controller = AskUserPromptController(self)
+        self._approval_controller = ApprovalPromptController(self, self._interrupt_manager)
+        self._ask_user_controller = AskUserPromptController(self, self._interrupt_manager)
         self._spinner = SpinnerController(self, self._tips_manager, todo_handler=self.todo_handler)
         self.spinner_service = SpinnerService(self)
         self.spinner_service.set_tips_manager(self._tips_manager)
@@ -132,15 +136,17 @@ class SWECLIChatApp(App):
         self._thinking_visible = True  # Thinking mode visibility state (default ON)
         self._progress_bar: ProgressBar | None = None
         self._welcome_panel: AnimatedWelcomePanel | None = None
-        self._welcome_visible = True
+        self._is_resumed_session = is_resumed_session
+        self._welcome_visible = not is_resumed_session
 
     def compose(self) -> ComposeResult:
         """Create child widgets."""
         yield Header(show_clock=True)
 
         with Container(id="main-container"):
-            # Animated welcome panel (fades out on first message)
-            yield AnimatedWelcomePanel(id="welcome-panel")
+            # Animated welcome panel (only for new sessions, fades out on first message)
+            if not self._is_resumed_session:
+                yield AnimatedWelcomePanel(id="welcome-panel")
 
             # Conversation area
             yield ConversationLog(id="conversation")
@@ -185,7 +191,12 @@ class SWECLIChatApp(App):
         self.status_bar = self.query_one("#status-bar", StatusBar)
         self.footer = self.query_one("#model-footer", ModelFooter)
         self._progress_bar = self.query_one("#progress-bar", ProgressBar)
-        self._welcome_panel = self.query_one("#welcome-panel", AnimatedWelcomePanel)
+
+        # Welcome panel is only present for new sessions
+        try:
+            self._welcome_panel = self.query_one("#welcome-panel", AnimatedWelcomePanel)
+        except Exception:
+            self._welcome_panel = None
 
         # Inject app reference into progress bar (for polling _is_processing)
         self._progress_bar.set_app(self)
@@ -553,7 +564,15 @@ class SWECLIChatApp(App):
         self.conversation.add_system_message("Conversation cleared (Ctrl+L)")
 
     def action_interrupt(self) -> None:
-        """Interrupt processing (ESC)."""
+        """Interrupt processing (ESC).
+
+        Delegates to InterruptManager for state-aware handling.
+        """
+        # First, let InterruptManager handle modal states (autocomplete, prompts, wizards)
+        if self._interrupt_manager.handle_interrupt():
+            return  # Handled by modal/autocomplete
+
+        # Fall through to processing interrupt
         if self._is_processing:
             # Call interrupt callback if provided
             if self.on_interrupt:
@@ -578,12 +597,14 @@ class SWECLIChatApp(App):
 
         # Enter exit confirmation mode
         self._exit_confirmation_mode = True
+        self._interrupt_manager.enter_state(InterruptState.EXIT_CONFIRMATION)
         self.input_label.update("› Press Ctrl+C again to quit")
 
     def _cancel_exit_confirmation(self) -> None:
         """Cancel exit confirmation and restore normal state."""
         if self._exit_confirmation_mode:
             self._exit_confirmation_mode = False
+            self._interrupt_manager.exit_state()
             self.input_label.update(
                 "› Type your message (Enter to send, Shift+Enter for new line):"
             )
@@ -798,6 +819,7 @@ def create_chat_app(
     on_interrupt: Optional[Callable[[], bool]] = None,
     working_dir: Optional[str] = None,
     todo_handler: Optional[Any] = None,
+    is_resumed_session: bool = False,
 ) -> SWECLIChatApp:
     """Create and return a new chat application instance.
 
@@ -812,6 +834,7 @@ def create_chat_app(
         on_interrupt: Callback for when user presses ESC to interrupt
         working_dir: Working directory path for repo display
         todo_handler: TodoHandler instance for managing todos
+        is_resumed_session: If True, skip the welcome panel (resuming existing session)
 
     Returns:
         Configured SWECLIChatApp instance
@@ -828,6 +851,7 @@ def create_chat_app(
         on_interrupt=on_interrupt,
         working_dir=working_dir,
         todo_handler=todo_handler,
+        is_resumed_session=is_resumed_session,
     )
 
 

@@ -1,8 +1,10 @@
 """MCP Manager for managing MCP server connections and tool execution."""
 
 import asyncio
+import concurrent.futures
 import os
 import threading
+import time
 from pathlib import Path
 from typing import Callable, Dict, List, Optional
 
@@ -294,7 +296,10 @@ class MCPManager:
         except Exception as e:
             # Log the error for debugging intermittent connection failures
             import logging
-            logging.getLogger(__name__).debug(f"MCP connection failed for '{server_name}': {type(e).__name__}: {e}")
+
+            logging.getLogger(__name__).debug(
+                f"MCP connection failed for '{server_name}': {type(e).__name__}: {e}"
+            )
             # Clean up partial connection
             if client is not None:
                 try:
@@ -444,20 +449,77 @@ class MCPManager:
 
         return future
 
-    def call_tool_sync(self, server_name: str, tool_name: str, arguments: Dict) -> Dict:
+    def call_tool_sync(
+        self,
+        server_name: str,
+        tool_name: str,
+        arguments: Dict,
+        task_monitor=None,
+    ) -> Dict:
         """Execute an MCP tool (synchronous wrapper).
 
         Args:
             server_name: Name of the MCP server
             tool_name: Name of the tool (without mcp__server__ prefix)
             arguments: Tool arguments
+            task_monitor: Optional task monitor for interrupt checking
 
         Returns:
             Tool execution result
         """
-        return self._run_coroutine_threadsafe(
-            self._call_tool_internal(server_name, tool_name, arguments)
+        # Check interrupt before starting
+        if task_monitor and task_monitor.should_interrupt():
+            return {
+                "success": False,
+                "interrupted": True,
+                "error": "Interrupted",
+                "output": None,
+            }
+
+        self._ensure_event_loop()
+        future = asyncio.run_coroutine_threadsafe(
+            self._call_tool_internal(server_name, tool_name, arguments),
+            self._event_loop,
         )
+
+        # Poll for interrupt while waiting for result
+        poll_interval = 0.1  # 100ms polling
+        timeout = 30  # 30 second overall timeout
+
+        start_time = time.monotonic()
+        while True:
+            # Check for interrupt
+            if task_monitor and task_monitor.should_interrupt():
+                future.cancel()
+                return {
+                    "success": False,
+                    "interrupted": True,
+                    "error": "Interrupted",
+                    "output": None,
+                }
+
+            # Check for timeout
+            elapsed = time.monotonic() - start_time
+            if elapsed >= timeout:
+                future.cancel()
+                return {
+                    "success": False,
+                    "error": f"MCP tool execution timed out after {timeout}s",
+                    "output": None,
+                }
+
+            # Try to get result with short timeout
+            try:
+                return future.result(timeout=poll_interval)
+            except concurrent.futures.TimeoutError:
+                continue  # Continue polling
+            except concurrent.futures.CancelledError:
+                return {
+                    "success": False,
+                    "interrupted": True,
+                    "error": "Cancelled",
+                    "output": None,
+                }
 
     def get_all_tools(self) -> List[Dict]:
         """Get all tools from all connected servers.

@@ -227,16 +227,34 @@ class TextualUICallback:
                 result_line.append(message, style=GREY)
                 self._run_on_ui(self.conversation.write, result_line)
 
-    def on_interrupt(self) -> None:
+    def on_interrupt(self, context: str = "thinking") -> None:
         """Called when execution is interrupted by user.
 
-        Displays the interrupt message directly by replacing the blank line after user prompt.
+        Displays the interrupt message based on context:
+        - "thinking": Show below/replacing blank line after user prompt
+        - "tool": Show below the tool name being executed
+
+        Args:
+            context: "thinking" for prompt phase, "tool" for tool execution
         """
+        try:
+            self._cleanup_spinners()
+            self._show_interrupt_message(context)
+        except Exception as e:
+            # Fallback: at minimum ensure processing state is cleared
+            logger.error(f"Interrupt handler error: {e}")
+            if self.chat_app:
+                self.chat_app._is_processing = False
+
+    def _cleanup_spinners(self) -> None:
+        """Stop all active spinners during interrupt."""
         # Stop any active spinners via SpinnerService
         if self._app is not None and hasattr(self._app, "spinner_service"):
-            if self._tool_spinner_id:
-                self._app.spinner_service.stop(self._tool_spinner_id, success=False)
-                self._tool_spinner_id = ""
+            # Stop all tracked tool spinners
+            for spinner_id in list(self._tool_spinner_ids.values()):
+                self._app.spinner_service.stop(spinner_id, success=False)
+            self._tool_spinner_ids.clear()
+
             if self._progress_spinner_id:
                 self._app.spinner_service.stop(self._progress_spinner_id, success=False)
                 self._progress_spinner_id = ""
@@ -247,12 +265,17 @@ class TextualUICallback:
         if self.chat_app and hasattr(self.chat_app, "_stop_local_spinner"):
             self._run_on_ui(self.chat_app._stop_local_spinner)
 
+    def _show_interrupt_message(self, context: str) -> None:
+        """Display the interrupt message based on context.
+
+        Args:
+            context: "thinking" or "tool"
+        """
+
         # The key insight: after user message, there's a blank line (added by add_user_message)
         # After stopping spinner, this blank line is the last line
         # We need to remove it using _truncate_from to properly update widget state
         def write_interrupt_replacing_blank_line():
-            from rich.text import Text
-
             # Check if we have lines and last line is blank
             if hasattr(self.conversation, "lines") and len(self.conversation.lines) > 0:
                 # Check if last line is blank
@@ -282,10 +305,10 @@ class TextualUICallback:
             # Now write the interrupt message using shared utility
             from swecli.ui_textual.utils.interrupt_utils import (
                 create_interrupt_text,
-                THINKING_INTERRUPT_MESSAGE,
+                STANDARD_INTERRUPT_MESSAGE,
             )
 
-            interrupt_line = create_interrupt_text(THINKING_INTERRUPT_MESSAGE)
+            interrupt_line = create_interrupt_text(STANDARD_INTERRUPT_MESSAGE)
             self.conversation.write(interrupt_line)
 
         self._run_on_ui(write_interrupt_replacing_blank_line)

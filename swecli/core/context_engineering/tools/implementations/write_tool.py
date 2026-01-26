@@ -1,11 +1,14 @@
 """Tool for creating new files."""
 
 from pathlib import Path
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 
 from swecli.models.config import AppConfig
 from swecli.models.operation import WriteResult, Operation
 from swecli.core.context_engineering.tools.implementations.base import BaseTool
+
+if TYPE_CHECKING:
+    from swecli.core.runtime.task_monitor import TaskMonitor
 
 
 class WriteTool(BaseTool):
@@ -38,6 +41,7 @@ class WriteTool(BaseTool):
         create_dirs: bool = True,
         dry_run: bool = False,
         operation: Optional[Operation] = None,
+        task_monitor: Optional["TaskMonitor"] = None,
     ) -> WriteResult:
         """Create a new file with content.
 
@@ -47,6 +51,7 @@ class WriteTool(BaseTool):
             create_dirs: Create parent directories if needed
             dry_run: If True, don't actually write file
             operation: Operation object for tracking
+            task_monitor: Optional task monitor for interrupt checking
 
         Returns:
             WriteResult with operation details
@@ -55,6 +60,21 @@ class WriteTool(BaseTool):
             FileExistsError: If file already exists
             PermissionError: If write is not permitted
         """
+        # Check for interrupt before starting
+        if task_monitor and task_monitor.should_interrupt():
+            error = "Interrupted before write"
+            if operation:
+                operation.mark_failed(error)
+            return WriteResult(
+                success=False,
+                file_path=file_path,
+                created=False,
+                size=0,
+                error=error,
+                operation_id=operation.id if operation else None,
+                interrupted=True,
+            )
+
         # Resolve path
         path = self._resolve_path(file_path)
 

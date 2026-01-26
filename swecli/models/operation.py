@@ -41,9 +41,7 @@ class Operation(BaseModel):
     approved: bool = False
     error: Optional[str] = None
 
-    model_config = ConfigDict(
-        json_encoders={datetime: lambda v: v.isoformat()}
-    )
+    model_config = ConfigDict(json_encoders={datetime: lambda v: v.isoformat()})
 
     def mark_executing(self) -> None:
         """Mark operation as executing."""
@@ -71,6 +69,7 @@ class WriteResult(BaseModel):
     size: int  # File size in bytes
     error: Optional[str] = None
     operation_id: Optional[str] = None
+    interrupted: bool = False  # True if operation was interrupted
 
 
 class EditResult(BaseModel):
@@ -84,6 +83,7 @@ class EditResult(BaseModel):
     error: Optional[str] = None
     operation_id: Optional[str] = None
     diff: Optional[str] = None  # Diff preview for the edit
+    interrupted: bool = False  # True if operation was interrupted
 
 
 class BashResult(BaseModel):
