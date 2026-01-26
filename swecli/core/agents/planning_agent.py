@@ -9,6 +9,7 @@ from swecli.core.base.abstract import BaseAgent
 from swecli.core.agents.components import (
     AgentHttpClient,
     PlanningPromptBuilder,
+    ThinkingPromptBuilder,
     ResponseCleaner,
     build_max_tokens_param,
     build_temperature_param,
@@ -76,11 +77,13 @@ class PlanningAgent(BaseAgent):
         """Build the system prompt for the planning agent.
 
         Args:
-            thinking_visible: Ignored for planning agent (compatibility parameter).
+            thinking_visible: If True, return thinking-specialized prompt for reasoning phase.
 
         Returns:
             The formatted system prompt string
         """
+        if thinking_visible:
+            return ThinkingPromptBuilder(self.tool_registry, self._working_dir).build()
         return PlanningPromptBuilder(self._working_dir).build()
 
     def call_thinking_llm(
@@ -135,7 +138,12 @@ class PlanningAgent(BaseAgent):
         """Return read-only tool schemas for codebase exploration."""
         return PlanningToolSchemaBuilder(self.tool_registry).build()
 
-    def call_llm(self, messages: list[dict], task_monitor: Optional[Any] = None) -> dict:
+    def call_llm(
+        self,
+        messages: list[dict],
+        task_monitor: Optional[Any] = None,
+        thinking_visible: bool = False,  # Ignored for planning agent (compatibility parameter)
+    ) -> dict:
         payload = {
             "model": self.config.model,
             "messages": messages,

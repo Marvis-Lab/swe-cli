@@ -55,6 +55,8 @@ _PLAN_READ_ONLY_TOOLS = {
     "search_tools",
     # Skills (read-only - just loads knowledge into context)
     "invoke_skill",
+    # User interaction (allows asking clarifying questions)
+    "ask_user",
     # Subagent spawning allowed in plan mode (subagents handle their own restrictions)
     "spawn_subagent",
     # Task completion (always allowed - agents must signal completion)
