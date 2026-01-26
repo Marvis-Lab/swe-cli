@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import sys
 from pathlib import Path
@@ -12,11 +11,10 @@ logger = logging.getLogger(__name__)
 
 from swecli.ui_textual.formatters.style_formatter import StyleFormatter
 from swecli.ui_textual.style_tokens import GREY, PRIMARY
-from swecli.ui_textual.utils.tool_display import build_tool_call_text
+from swecli.ui_textual.services import ToolDisplayService
+from swecli.ui_textual.constants import TOOL_ERROR_SENTINEL
+from swecli.ui_textual.utils.text_utils import summarize_error
 from swecli.models.message import ToolCall
-
-# Path argument keys that should be resolved to absolute paths
-_PATH_ARG_KEYS = {"path", "file_path", "working_dir", "directory", "dir", "target"}
 
 
 class TextualUICallback:
@@ -43,6 +41,8 @@ class TextualUICallback:
         self._tool_spinner_ids: Dict[str, str] = {}
         # Working directory for resolving relative paths
         self._working_dir = working_dir
+        # Unified display service for formatting (single source of truth)
+        self._display_service = ToolDisplayService(working_dir)
         # Collector for nested tool calls (for session storage)
         self._pending_nested_calls: list[ToolCall] = []
         # Thinking mode visibility toggle (default OFF)
@@ -370,9 +370,8 @@ class TextualUICallback:
         # Skip regular display for spawn_subagent - parallel display handles it
         if tool_name != "spawn_subagent":
             normalized_args = self._normalize_arguments(tool_args)
-            # Resolve relative paths to absolute for display
-            display_args = self._resolve_paths_in_args(normalized_args)
-            display_text = build_tool_call_text(tool_name, display_args)
+            # Use unified service for formatting with path resolution
+            display_text = self._display_service.format_tool_header(tool_name, normalized_args)
 
             # Use SpinnerService for unified spinner management
             if self._app is not None and hasattr(self._app, "spinner_service"):
@@ -555,6 +554,10 @@ class TextualUICallback:
                 stripped = line.strip()
                 if stripped.startswith("⎿"):
                     result_text = stripped.lstrip("⎿").strip()
+                    # Strip error sentinel and summarize if present
+                    if result_text.startswith(TOOL_ERROR_SENTINEL):
+                        result_text = result_text[len(TOOL_ERROR_SENTINEL) :].strip()
+                        result_text = summarize_error(result_text)
                     if result_text:
                         if not first_result_line_seen:
                             # First ⎿ line goes to placeholder only
@@ -618,7 +621,8 @@ class TextualUICallback:
 
         # Display nested tool call with indentation (BLOCKING to ensure timer starts before tool executes)
         if hasattr(self.conversation, "add_nested_tool_call") and self._app is not None:
-            display_text = build_tool_call_text(tool_name, normalized_args)
+            # Use unified service for formatting with path resolution
+            display_text = self._display_service.format_tool_header(tool_name, normalized_args)
             self._app.call_from_thread(
                 self.conversation.add_nested_tool_call,
                 display_text,
@@ -886,38 +890,16 @@ class TextualUICallback:
             self._run_on_ui(self.conversation.add_todo_sub_result, f"✓ {title}", depth)
 
     def _normalize_arguments(self, tool_args: Any) -> Dict[str, Any]:
-        """Ensure tool arguments are represented as a dictionary and normalize URLs for display."""
+        """Ensure tool arguments are represented as a dictionary and normalize URLs for display.
 
-        if isinstance(tool_args, dict):
-            result = tool_args
-        elif isinstance(tool_args, str):
-            try:
-                parsed = json.loads(tool_args)
-                if isinstance(parsed, dict):
-                    result = parsed
-                else:
-                    result = {"value": parsed}
-            except json.JSONDecodeError:
-                result = {"value": tool_args}
-        else:
-            result = {"value": tool_args}
-
-        # Normalize URLs for display (fix common malformations)
-        if "url" in result and isinstance(result["url"], str):
-            url = result["url"].strip()
-            # Fix: https:/domain.com → https://domain.com
-            if url.startswith("https:/") and not url.startswith("https://"):
-                result["url"] = url.replace("https:/", "https://", 1)
-            elif url.startswith("http:/") and not url.startswith("http://"):
-                result["url"] = url.replace("http:/", "http://", 1)
-            # Add protocol if missing
-            elif not url.startswith(("http://", "https://")):
-                result["url"] = f"https://{url}"
-
-        return result
+        Delegates to ToolDisplayService for unified logic.
+        """
+        return self._display_service.normalize_arguments(tool_args)
 
     def _resolve_paths_in_args(self, tool_args: Dict[str, Any]) -> Dict[str, Any]:
         """Resolve relative paths to absolute paths for display.
+
+        Delegates to ToolDisplayService for unified logic.
 
         Args:
             tool_args: Tool arguments dict
@@ -925,23 +907,7 @@ class TextualUICallback:
         Returns:
             Copy of tool_args with paths resolved to absolute paths
         """
-        if self._working_dir is None:
-            return tool_args
-
-        result = dict(tool_args)
-        for key in _PATH_ARG_KEYS:
-            if key in result and isinstance(result[key], str):
-                path = result[key]
-                # Skip if already absolute or has special prefix (like docker://[...]:)
-                if path.startswith("/") or path.startswith("["):
-                    continue
-                # Resolve relative path
-                if path == "." or path == "":
-                    result[key] = str(self._working_dir)
-                else:
-                    clean_path = path.lstrip("./")
-                    result[key] = str(self._working_dir / clean_path)
-        return result
+        return self._display_service.resolve_paths(tool_args)
 
     def _run_on_ui(self, func, *args, **kwargs) -> None:
         """Execute a function on the Textual UI thread and WAIT for completion.

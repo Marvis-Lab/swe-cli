@@ -478,6 +478,9 @@ class ToolRegistry:
                 "error": "VLM tool not available",
                 "output": None,
             }
+        # Handle max_completion_tokens -> max_tokens conversion (OpenAI models use different param)
+        if "max_completion_tokens" in arguments:
+            arguments["max_tokens"] = arguments.pop("max_completion_tokens")
         result = self.vlm_tool.analyze_image(**arguments)
         # Format output for consistency with other tools
         if result.get("success"):
