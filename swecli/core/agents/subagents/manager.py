@@ -1220,7 +1220,7 @@ Use ONLY the filename or relative path for all file operations.
         if working_dir is not None or docker_handler is not None or is_plan_mode:
             from swecli.core.agents import SwecliAgent
             from swecli.core.agents.planning_agent import PlanningAgent
-            from swecli.core.agents.components.tool_schema_builder import PLANNING_TOOLS
+            from swecli.core.agents.components import PLANNING_TOOLS
             from .agents import ALL_SUBAGENTS
 
             # Find the spec for this subagent

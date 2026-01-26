@@ -118,6 +118,6 @@ class TestTaskCompleteToolIntegration:
 
     def test_tool_in_plan_mode_allowed(self):
         """Verify task_complete is allowed in plan mode."""
-        from swecli.core.agents.components.tool_schema_builder import PLANNING_TOOLS
+        from swecli.core.agents.components import PLANNING_TOOLS
 
         assert "task_complete" in PLANNING_TOOLS

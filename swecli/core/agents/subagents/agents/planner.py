@@ -5,7 +5,7 @@ providing read-only access to the codebase for analysis and planning.
 """
 
 from swecli.core.agents.subagents.specs import SubAgentSpec
-from swecli.core.agents.components.tool_schema_builder import PLANNING_TOOLS
+from swecli.core.agents.components import PLANNING_TOOLS
 
 PLANNER_SYSTEM_PROMPT = """You are a planning agent with READ-ONLY access to the codebase.
 

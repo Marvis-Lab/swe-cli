@@ -293,7 +293,7 @@ class TestTaskCompleteToolSchema:
 
     def test_schema_in_builtin_schemas(self):
         """Verify task_complete schema is in builtin schemas."""
-        from swecli.core.agents.components.tool_schema_builder import _BUILTIN_TOOL_SCHEMAS
+        from swecli.core.agents.components.schemas import _BUILTIN_TOOL_SCHEMAS
 
         task_complete_schema = None
         for schema in _BUILTIN_TOOL_SCHEMAS:
@@ -312,7 +312,7 @@ class TestTaskCompleteToolSchema:
 
     def test_schema_has_enum_for_status(self):
         """Verify status has valid enum values."""
-        from swecli.core.agents.components.tool_schema_builder import _BUILTIN_TOOL_SCHEMAS
+        from swecli.core.agents.components.schemas import _BUILTIN_TOOL_SCHEMAS
 
         for schema in _BUILTIN_TOOL_SCHEMAS:
             if schema["function"]["name"] == "task_complete":

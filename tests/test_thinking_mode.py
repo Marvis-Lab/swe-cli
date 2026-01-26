@@ -149,14 +149,14 @@ class TestThinkToolRemoved:
 
     def test_think_schema_not_in_builtin(self):
         """Test that think tool schema is NOT defined (removed)."""
-        from swecli.core.agents.components.tool_schema_builder import _BUILTIN_TOOL_SCHEMAS
+        from swecli.core.agents.components.schemas import _BUILTIN_TOOL_SCHEMAS
 
         names = [s["function"]["name"] for s in _BUILTIN_TOOL_SCHEMAS]
         assert "think" not in names, "Think tool should be removed from schemas"
 
     def test_think_not_in_planning_tools(self):
         """Test that think is NOT in plan mode tools (removed)."""
-        from swecli.core.agents.components.tool_schema_builder import PLANNING_TOOLS
+        from swecli.core.agents.components import PLANNING_TOOLS
 
         assert "think" not in PLANNING_TOOLS, "Think should be removed from PLANNING_TOOLS"
 
@@ -483,7 +483,7 @@ class TestThinkingModeSchemaFiltering:
 
     def test_think_tool_never_in_schemas(self):
         """Test that think tool is NEVER in schemas (removed from architecture)."""
-        from swecli.core.agents.components.tool_schema_builder import ToolSchemaBuilder
+        from swecli.core.agents.components import ToolSchemaBuilder
 
         mock_registry = MagicMock()
         mock_registry.subagent_manager = None
@@ -775,7 +775,7 @@ class TestThinkingPromptBuilder:
 
     def test_thinking_prompt_builder_loads_prompt(self):
         """Test ThinkingPromptBuilder loads thinking_system_prompt.txt."""
-        from swecli.core.agents.components.system_prompt import ThinkingPromptBuilder
+        from swecli.core.agents.components import ThinkingPromptBuilder
 
         builder = ThinkingPromptBuilder(tool_registry=None, working_dir="/test/dir")
         prompt = builder.build()
@@ -785,7 +785,7 @@ class TestThinkingPromptBuilder:
 
     def test_thinking_prompt_builder_includes_mcp_tools(self):
         """Test ThinkingPromptBuilder includes MCP tools if available."""
-        from swecli.core.agents.components.system_prompt import ThinkingPromptBuilder
+        from swecli.core.agents.components import ThinkingPromptBuilder
 
         mock_registry = MagicMock()
         mock_registry.mcp_manager = MagicMock()
@@ -805,7 +805,7 @@ class TestHTTPClientFactory:
 
     def test_openai_client_creation(self):
         """Test creating HTTP client for OpenAI provider."""
-        from swecli.core.agents.components.api_configuration import create_http_client_for_provider
+        from swecli.core.agents.components import create_http_client_for_provider
 
         config = MagicMock()
 
@@ -815,7 +815,7 @@ class TestHTTPClientFactory:
 
     def test_fireworks_client_creation(self):
         """Test creating HTTP client for Fireworks provider."""
-        from swecli.core.agents.components.api_configuration import create_http_client_for_provider
+        from swecli.core.agents.components import create_http_client_for_provider
 
         config = MagicMock()
 
@@ -825,7 +825,7 @@ class TestHTTPClientFactory:
 
     def test_missing_api_key_raises(self):
         """Test that missing API key raises ValueError."""
-        from swecli.core.agents.components.api_configuration import create_http_client_for_provider
+        from swecli.core.agents.components import create_http_client_for_provider
 
         config = MagicMock()
 
@@ -835,7 +835,7 @@ class TestHTTPClientFactory:
 
     def test_unknown_provider_raises(self):
         """Test that unknown provider raises ValueError."""
-        from swecli.core.agents.components.api_configuration import create_http_client_for_provider
+        from swecli.core.agents.components import create_http_client_for_provider
 
         config = MagicMock()
 

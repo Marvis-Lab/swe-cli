@@ -9,13 +9,13 @@ from swecli.core.base.abstract import BaseAgent
 from swecli.core.agents.components import (
     AgentHttpClient,
     PlanningPromptBuilder,
+    PlanningToolSchemaBuilder,
     ThinkingPromptBuilder,
     ResponseCleaner,
     build_max_tokens_param,
     build_temperature_param,
     resolve_api_config,
 )
-from swecli.core.agents.components.tool_schema_builder import PlanningToolSchemaBuilder
 from swecli.models.config import AppConfig
 
 
@@ -175,6 +175,10 @@ class PlanningAgent(BaseAgent):
         raw_content = message_data.get("content")
         cleaned_content = self._response_cleaner.clean(raw_content) if raw_content else None
 
+        # Extract reasoning_content for OpenAI reasoning models (o1, o3, etc.)
+        # This is the native thinking/reasoning trace from models like o1-preview
+        reasoning_content = message_data.get("reasoning_content")
+
         if task_monitor and "usage" in response_data:
             usage = response_data["usage"]
             total_tokens = usage.get("total_tokens", 0)
@@ -186,6 +190,7 @@ class PlanningAgent(BaseAgent):
             "message": message_data,
             "content": cleaned_content,
             "tool_calls": message_data.get("tool_calls"),
+            "reasoning_content": reasoning_content,  # Native reasoning from o1/o3 models
             "usage": response_data.get("usage"),
         }
 
