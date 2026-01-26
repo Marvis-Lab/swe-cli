@@ -33,7 +33,6 @@ class HelpCommand(CommandHandler):
 ## Mode & Operations
 - `/mode <name>` - Switch mode: normal or plan
 - `/init [path]` - Analyze codebase and generate repository guidelines
-- `/resolve-issue <url>` - Resolve a GitHub issue automatically
 
 ## Session Management
 - `/clear` - Clear current session context

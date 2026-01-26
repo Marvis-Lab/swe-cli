@@ -30,7 +30,6 @@ DEFAULT_SLASH_COMMANDS = [
     # Advanced
     SlashCommand("init", "initialize codebase with AGENTS.md"),
     SlashCommand("mcp", "manage MCP servers and tools"),
-    SlashCommand("resolve-issue", "resolve a GitHub issue automatically"),
 ]
 
 

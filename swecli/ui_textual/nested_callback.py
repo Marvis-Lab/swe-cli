@@ -288,26 +288,26 @@ def create_subagent_nested_callback(
 
     Args:
         ui_callback: Parent UI callback to wrap (can be None)
-        subagent_name: Name of the subagent for context (e.g., "Issue-Resolver")
+        subagent_name: Name of the subagent for context (e.g., "Code-Explorer")
         docker_context: Optional Docker context for path sanitization
 
     Returns:
         NestedUICallback properly configured for the subagent, or None if ui_callback is None
 
     Examples:
-        # Non-Docker subagent (e.g., Code-Reviewer)
+        # Non-Docker subagent (e.g., Code-Explorer)
         nested = create_subagent_nested_callback(
             ui_callback=self.ui_callback,
-            subagent_name="Code-Reviewer",
+            subagent_name="Code-Explorer",
         )
 
-        # Docker subagent (e.g., Issue-Resolver)
+        # Docker subagent (e.g., Web-clone)
         nested = create_subagent_nested_callback(
             ui_callback=self.ui_callback,
-            subagent_name="Issue-Resolver",
+            subagent_name="Web-clone",
             docker_context=DockerContext(
-                workspace_dir="/testbed",
-                image_name="sweb.eval.x86_64.django:latest",
+                workspace_dir="/workspace",
+                image_name="ghcr.io/astral-sh/uv:python3.11",
                 container_id="a1b2c3d4",
                 local_dir="/Users/.../project",
             ),

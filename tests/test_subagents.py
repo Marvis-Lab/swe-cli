@@ -61,10 +61,11 @@ class TestDefaultSubAgents:
     def test_required_subagent_types(self):
         """Test that required subagent types are present."""
         names = [spec["name"] for spec in ALL_SUBAGENTS]
+        assert "ask-user" in names
         assert "Code-Explorer" in names
-        assert "Code-Reviewer" in names
-        assert "Test-Writer" in names
-        assert "Documentation" in names
+        assert "Web-clone" in names
+        assert "Web-Generator" in names
+        assert "Planner" in names
 
     def test_explorer_has_readonly_tools(self):
         """Test that explorer agent only has read-only tools."""
@@ -165,10 +166,11 @@ class TestSubAgentManager:
         manager.register_defaults()
 
         available = manager.get_available_types()
+        assert "ask-user" in available
         assert "Code-Explorer" in available
-        assert "Code-Reviewer" in available
-        assert "Test-Writer" in available
-        assert "Documentation" in available
+        assert "Web-clone" in available
+        assert "Web-Generator" in available
+        assert "Planner" in available
 
     @patch("swecli.core.agents.SwecliAgent")
     def test_get_subagent(self, mock_agent_class, manager):
@@ -373,10 +375,10 @@ class TestSpawnSubagentToolSchema:
     def mock_manager(self):
         """Create a mock SubAgentManager."""
         manager = MagicMock()
-        manager.get_available_types.return_value = ["Code-Explorer", "Code-Reviewer"]
+        manager.get_available_types.return_value = ["Code-Explorer", "Web-clone"]
         manager.get_descriptions.return_value = {
             "Code-Explorer": "Codebase exploration agent",
-            "Code-Reviewer": "Code review agent",
+            "Web-clone": "Website cloning agent",
         }
         return manager
 
@@ -412,7 +414,7 @@ class TestSpawnSubagentToolSchema:
 
         assert "enum" in subagent_type
         assert "Code-Explorer" in subagent_type["enum"]
-        assert "Code-Reviewer" in subagent_type["enum"]
+        assert "Web-clone" in subagent_type["enum"]
 
     def test_tool_schema_description_includes_subagents(self, mock_manager):
         """Test that tool description lists available subagents."""
@@ -420,7 +422,7 @@ class TestSpawnSubagentToolSchema:
         description = schema["function"]["description"]
 
         assert "Code-Explorer" in description
-        assert "Code-Reviewer" in description
+        assert "Web-clone" in description
 
 
 class TestToolRegistryIntegration:

@@ -72,7 +72,7 @@ UI Layer (ui_textual/)
 Agent Layer (core/agents/)
   - swecli_agent.py: Main ReAct agent (full tool access)
   - planning_agent.py: Plan mode (read-only tools)
-  - subagents/: Specialized agents (code_explorer, github_resolver, issue_resolver)
+  - subagents/: Specialized agents (ask_user, code_explorer, web_clone, web_generator, planner)
        ↓
 Runtime Services (core/runtime/)
   - config.py: Hierarchical config loading

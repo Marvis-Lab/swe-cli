@@ -675,7 +675,7 @@ Use ONLY the filename or relative path for all file operations.
 
         Args:
             ui_callback: Parent UI callback to wrap
-            subagent_name: Name of the subagent (e.g., "Paper2Code", "Issue-Resolver")
+            subagent_name: Name of the subagent (e.g., "Code-Explorer", "Web-clone")
             workspace_dir: Docker workspace path (e.g., "/workspace", "/testbed")
             image_name: Full Docker image name (e.g., "ghcr.io/astral-sh/uv:python3.11")
             container_id: Short container ID (e.g., "a1b2c3d4")
@@ -687,8 +687,8 @@ Use ONLY the filename or relative path for all file operations.
         Usage:
             nested_callback = manager.create_docker_nested_callback(
                 ui_callback=self.ui_callback,
-                subagent_name="Issue-Resolver",
-                workspace_dir="/testbed",
+                subagent_name="Web-clone",
+                workspace_dir="/workspace",
                 image_name=docker_image,
                 container_id=container_id,
             )
@@ -737,7 +737,7 @@ Use ONLY the filename or relative path for all file operations.
         - Consistent result display
 
         Args:
-            name: Subagent name (e.g., "Issue-Resolver", "GitHub-Resolver")
+            name: Subagent name (e.g., "Code-Explorer", "Web-clone")
             task: Task prompt for subagent
             deps: SubAgentDeps with mode_manager, approval_manager, undo_manager
             docker_handler: Pre-configured DockerToolHandler
@@ -946,31 +946,6 @@ Use ONLY the filename or relative path for all file operations.
                 deployment.runtime.run(f"mkdir -p {workspace_dir}")
             )
 
-            # For GitHub-Resolver: clone the repository if GitHub URL in task
-            if name == "GitHub-Resolver":
-                github_info = self._extract_github_info(task)
-                if github_info:
-                    repo_url, owner_repo, issue_number = github_info
-
-                    # Show cloning step
-                    if nested_callback and hasattr(nested_callback, 'on_tool_call'):
-                        nested_callback.on_tool_call("docker_setup", {"step": "Cloning repository..."})
-
-                    # Clone repo (shallow clone for speed)
-                    clone_cmd = f"git clone --depth=50 {repo_url} {workspace_dir}"
-                    loop.run_until_complete(deployment.runtime.run(clone_cmd))
-
-                    # Create branch for the fix
-                    branch_name = f"fix/issue-{issue_number}"
-                    branch_cmd = f"cd {workspace_dir} && git checkout -b {branch_name}"
-                    loop.run_until_complete(deployment.runtime.run(branch_cmd))
-
-                    if nested_callback and hasattr(nested_callback, 'on_tool_result'):
-                        nested_callback.on_tool_result("docker_setup", {}, {
-                            "success": True,
-                            "output": f"Repository cloned to {workspace_dir}, branch: {branch_name}",
-                        })
-
             # Create Docker tool handler with local registry fallback for tools like read_pdf
             runtime = deployment.runtime
             shell_init = docker_config.shell_init if hasattr(docker_config, 'shell_init') else ""
@@ -1177,6 +1152,19 @@ Use ONLY the filename or relative path for all file operations.
         if name == "ask-user":
             return self._execute_ask_user(task, ui_callback)
 
+        # Block Docker subagents in PLAN mode - they require write access
+        if docker_handler is None:
+            spec = self._get_spec_for_subagent(name)
+            if spec is not None and spec.get("docker_config") is not None:
+                from swecli.core.runtime.mode_manager import OperationMode
+                if deps.mode_manager and deps.mode_manager.current_mode == OperationMode.PLAN:
+                    return {
+                        "success": False,
+                        "error": f"Cannot spawn '{name}' in PLAN mode. Docker subagents require write access. "
+                                 "Switch to NORMAL mode with '/mode normal' or Shift+Tab to use this agent.",
+                        "content": "",
+                    }
+
         # Auto-detect Docker execution for subagents with docker_config
         # Only trigger if docker_handler is not already provided (to avoid recursion)
         if docker_handler is None:
@@ -1223,10 +1211,16 @@ Use ONLY the filename or relative path for all file operations.
         else:
             tool_registry = self._tool_registry
 
-        # If working_dir or docker_handler is provided, create a new agent
-        # Otherwise use the pre-registered agent
-        if working_dir is not None or docker_handler is not None:
+        # Determine if we're in PLAN mode (affects agent selection)
+        from swecli.core.runtime.mode_manager import OperationMode
+        is_plan_mode = deps.mode_manager and deps.mode_manager.current_mode == OperationMode.PLAN
+
+        # If working_dir, docker_handler, or PLAN mode requires a new agent instance
+        # PLAN mode needs PlanningAgent with read-only tools
+        if working_dir is not None or docker_handler is not None or is_plan_mode:
             from swecli.core.agents import SwecliAgent
+            from swecli.core.agents.planning_agent import PlanningAgent
+            from swecli.core.agents.components.tool_schema_builder import PLANNING_TOOLS
             from .agents import ALL_SUBAGENTS
 
             # Find the spec for this subagent
@@ -1239,23 +1233,40 @@ Use ONLY the filename or relative path for all file operations.
                 }
 
             # Get allowed tools from spec (for subagent tool filtering)
-            allowed_tools = spec.get("tools", self._all_tool_names)
+            # In PLAN mode, restrict to read-only planning tools
+            if is_plan_mode:
+                spec_tools = set(spec.get("tools", self._all_tool_names))
+                allowed_tools = list(spec_tools & PLANNING_TOOLS)
+            else:
+                allowed_tools = spec.get("tools", self._all_tool_names)
 
-            # Create new agent with overridden tool_registry and/or working_dir
+            # Create agent - PlanningAgent in PLAN mode, SwecliAgent otherwise
             import logging
             _logger = logging.getLogger(__name__)
-            _logger.info(f"Creating SwecliAgent with tool_registry type: {type(tool_registry).__name__}")
+            agent_type = "PlanningAgent" if is_plan_mode else "SwecliAgent"
+            _logger.info(f"Creating {agent_type} with tool_registry type: {type(tool_registry).__name__}")
             _logger.info(f"  docker_handler is None: {docker_handler is None}")
             _logger.info(f"  working_dir: {working_dir}")
+            _logger.info(f"  is_plan_mode: {is_plan_mode}")
             _logger.info(f"  allowed_tools: {allowed_tools}")
 
-            agent = SwecliAgent(
-                config=self._get_subagent_config(spec),
-                tool_registry=tool_registry,
-                mode_manager=self._mode_manager,
-                working_dir=working_dir if working_dir is not None else self._working_dir,
-                allowed_tools=allowed_tools,  # Pass tool filtering
-            )
+            if is_plan_mode:
+                # Use PlanningAgent with read-only tools
+                agent = PlanningAgent(
+                    config=self._get_subagent_config(spec),
+                    tool_registry=tool_registry,
+                    mode_manager=self._mode_manager,
+                    working_dir=working_dir if working_dir is not None else self._working_dir,
+                )
+            else:
+                agent = SwecliAgent(
+                    config=self._get_subagent_config(spec),
+                    tool_registry=tool_registry,
+                    mode_manager=self._mode_manager,
+                    working_dir=working_dir if working_dir is not None else self._working_dir,
+                    allowed_tools=allowed_tools,  # Pass tool filtering
+                )
+
             # Apply system prompt override
             if spec.get("system_prompt"):
                 base_prompt = spec["system_prompt"]

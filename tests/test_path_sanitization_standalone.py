@@ -158,7 +158,7 @@ def test_preserve_workspace_path():
 
 
 def test_sanitize_pdf_path():
-    """Test sanitizing PDF file paths (common Paper2Code case)."""
+    """Test sanitizing PDF file paths."""
     args = {"path": "/Users/nghibui/codes/test_opencli/2303.11366v4.pdf"}
     result = _sanitize_local_paths(args)
     assert result["path"] == "2303.11366v4.pdf", f"Expected '2303.11366v4.pdf', got '{result['path']}'"

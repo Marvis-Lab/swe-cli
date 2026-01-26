@@ -91,7 +91,7 @@ class TestSanitizeLocalPaths:
         assert result["output_path"] == "output.txt"
 
     def test_sanitize_pdf_path(self):
-        """Test sanitizing PDF file paths (common Paper2Code case)."""
+        """Test sanitizing PDF file paths."""
         registry = self._create_registry()
         args = {"path": "/Users/nghibui/codes/test_opencli/2303.11366v4.pdf"}
         result = registry._sanitize_local_paths(args)
