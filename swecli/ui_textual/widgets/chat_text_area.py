@@ -292,23 +292,29 @@ class ChatTextArea(TextArea):
                 if hasattr(app, "_cancel_exit_confirmation"):
                     app._cancel_exit_confirmation()
 
-        # Delegate ESC/Ctrl+C to InterruptManager for unified handling
-        # This centralizes interrupt logic and handles autocomplete, modals, and processing
-        interrupt_manager = getattr(app, "_interrupt_manager", None)
-        if event.key in {"escape", "ctrl+c"} and interrupt_manager:
-            # Special case: autocomplete visible - handle here for immediate response
-            if event.key == "escape" and self._completions:
+        # Handle ESC key for interrupt
+        if event.key == "escape":
+            # First check autocomplete - highest priority
+            if self._completions:
                 event.stop()
                 event.prevent_default()
                 self._dismiss_autocomplete()
                 return
 
-            # Let InterruptManager handle other ESC/Ctrl+C cases
-            if interrupt_manager.handle_interrupt():
+            # Delegate to InterruptManager for modal states
+            interrupt_manager = getattr(app, "_interrupt_manager", None)
+            if interrupt_manager and interrupt_manager.handle_interrupt():
                 event.stop()
                 event.prevent_default()
                 return
-            # If not consumed, let it fall through to action_interrupt via bindings
+
+            # Explicitly call action_interrupt for processing interrupt
+            # (can't rely on keybinding propagation from TextArea)
+            if hasattr(app, "action_interrupt"):
+                event.stop()
+                event.prevent_default()
+                app.action_interrupt()
+                return
 
         approval_controller = getattr(app, "_approval_controller", None)
         approval_mode = bool(approval_controller and getattr(approval_controller, "active", False))
