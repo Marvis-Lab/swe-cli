@@ -1,4 +1,4 @@
-"""Animated welcome panel widget with gradient color wave effect and spinning ASCII donut."""
+"""Animated welcome panel widget with gradient color wave effect and spinning 3D cube."""
 
 from __future__ import annotations
 
@@ -9,7 +9,6 @@ from pathlib import Path
 from typing import Callable, Optional, TYPE_CHECKING
 
 from rich.align import Align
-from rich.columns import Columns
 from rich.console import RenderableType
 from rich.panel import Panel
 from rich.text import Text
@@ -22,7 +21,7 @@ from swecli.core.runtime import OperationMode
 if TYPE_CHECKING:
     pass
 
-__all__ = ["AnimatedWelcomePanel", "DonutRenderer"]
+__all__ = ["AnimatedWelcomePanel", "CubeRenderer"]
 
 
 def hsl_to_ansi256(hue: float, saturation: float = 0.7, lightness: float = 0.6) -> int:
@@ -51,19 +50,21 @@ def hsl_to_ansi256(hue: float, saturation: float = 0.7, lightness: float = 0.6) 
     return 16 + 36 * r6 + 6 * g6 + b6
 
 
-class DonutRenderer:
-    """Renders a spinning 3D ASCII torus (donut).
+class CubeRenderer:
+    """Renders a spinning 3D wireframe cube.
 
-    Based on the famous donut.c algorithm by Andy Sloane.
-    Uses parametric equations for a torus with z-buffer depth sorting
-    and luminance-based ASCII character mapping.
+    Draws a cube with 8 vertices and 12 edges, rotating smoothly
+    in 3D space with perspective projection and line drawing.
     """
 
-    # Luminance characters (dark to bright based on surface normal angle to light)
-    CHARS = ".,-~:;=!*#$@"
+    # Edge characters for wireframe rendering
+    EDGE_CHAR = "#"
 
-    def __init__(self, width: int = 30, height: int = 15):
-        """Initialize the donut renderer.
+    # Terminal character aspect ratio (height/width) - typically ~2.0
+    CHAR_ASPECT = 2.0
+
+    def __init__(self, width: int = 35, height: int = 18):
+        """Initialize the cube renderer.
 
         Args:
             width: Output width in characters
@@ -71,88 +72,182 @@ class DonutRenderer:
         """
         self.width = width
         self.height = height
-        # Start with initial rotation for a nice 3D view
-        self.A = 1.0  # X-axis rotation angle (tilted forward)
-        self.B = 0.5  # Z-axis rotation angle (slight turn)
 
-        # Sampling density for torus surface
-        self._theta_step = 0.07
-        self._phi_step = 0.02
+        # Rotation angles around each axis
+        self.angle_x = 0.5  # Initial tilt for nice 3D view
+        self.angle_y = 0.3
+        self.angle_z = 0.0
+
+        # Define cube vertices (normalized -1 to 1)
+        self._vertices = [
+            (-1, -1, -1),  # 0: back-bottom-left
+            (1, -1, -1),  # 1: back-bottom-right
+            (1, 1, -1),  # 2: back-top-right
+            (-1, 1, -1),  # 3: back-top-left
+            (-1, -1, 1),  # 4: front-bottom-left
+            (1, -1, 1),  # 5: front-bottom-right
+            (1, 1, 1),  # 6: front-top-right
+            (-1, 1, 1),  # 7: front-top-left
+        ]
+
+        # Define edges as pairs of vertex indices
+        self._edges = [
+            (0, 1),
+            (1, 2),
+            (2, 3),
+            (3, 0),  # Back face
+            (4, 5),
+            (5, 6),
+            (6, 7),
+            (7, 4),  # Front face
+            (0, 4),
+            (1, 5),
+            (2, 6),
+            (3, 7),  # Connecting edges
+        ]
+
+    def _rotate_point(self, x: float, y: float, z: float) -> tuple[float, float, float]:
+        """Apply 3D rotation to a point.
+
+        Args:
+            x, y, z: Point coordinates
+
+        Returns:
+            Rotated (x, y, z) coordinates
+        """
+        # Rotation around X axis
+        cos_x, sin_x = math.cos(self.angle_x), math.sin(self.angle_x)
+        y, z = y * cos_x - z * sin_x, y * sin_x + z * cos_x
+
+        # Rotation around Y axis
+        cos_y, sin_y = math.cos(self.angle_y), math.sin(self.angle_y)
+        x, z = x * cos_y + z * sin_y, -x * sin_y + z * cos_y
+
+        # Rotation around Z axis
+        cos_z, sin_z = math.cos(self.angle_z), math.sin(self.angle_z)
+        x, y = x * cos_z - y * sin_z, x * sin_z + y * cos_z
+
+        return x, y, z
+
+    def _project_point(self, x: float, y: float, z: float) -> tuple[int, int, float]:
+        """Project 3D point to 2D screen coordinates with perspective.
+
+        Args:
+            x, y, z: 3D point coordinates
+
+        Returns:
+            Tuple of (screen_x, screen_y, depth) where depth is 1/(z+distance)
+        """
+        # Distance from viewer to cube center
+        distance = 4.0
+
+        # Perspective projection
+        z_offset = z + distance
+        if z_offset <= 0.1:
+            z_offset = 0.1  # Prevent division by zero
+
+        # Scale factor based on viewport size (0.45 for larger cube in vertical layout)
+        effective_height = self.height * self.CHAR_ASPECT
+        scale = min(self.width, effective_height) * 0.45
+
+        # Project to 2D with perspective
+        screen_x = int(self.width / 2 + (x * scale) / z_offset)
+        screen_y = int(self.height / 2 - (y * scale) / (z_offset * self.CHAR_ASPECT))
+
+        depth = 1.0 / z_offset  # Higher = closer
+
+        return screen_x, screen_y, depth
+
+    def _draw_line(
+        self,
+        output: list[list[tuple[str, float]]],
+        x0: int,
+        y0: int,
+        depth0: float,
+        x1: int,
+        y1: int,
+        depth1: float,
+        edge_index: int,
+    ) -> None:
+        """Draw a line between two points using Bresenham's algorithm.
+
+        Args:
+            output: 2D output grid to draw into
+            x0, y0: Start point screen coordinates
+            depth0: Depth at start point
+            x1, y1: End point screen coordinates
+            depth1: Depth at end point
+            edge_index: Index of this edge (for coloring)
+        """
+        dx = abs(x1 - x0)
+        dy = abs(y1 - y0)
+        sx = 1 if x0 < x1 else -1
+        sy = 1 if y0 < y1 else -1
+        err = dx - dy
+
+        # Total distance for depth interpolation
+        total_dist = max(dx, dy, 1)
+        step_count = 0
+
+        x, y = x0, y0
+
+        while True:
+            # Interpolate depth along the line
+            t = step_count / total_dist if total_dist > 0 else 0
+            depth = depth0 * (1 - t) + depth1 * t
+
+            # Draw if within bounds
+            if 0 <= x < self.width and 0 <= y < self.height:
+                # Store character with depth and edge index for coloring
+                # Use edge_index as part of the depth value for color variation
+                color_depth = depth + edge_index * 0.01
+                if output[y][x][1] < depth:  # Z-buffer check
+                    output[y][x] = (self.EDGE_CHAR, color_depth)
+
+            if x == x1 and y == y1:
+                break
+
+            e2 = 2 * err
+            if e2 > -dy:
+                err -= dy
+                x += sx
+            if e2 < dx:
+                err += dx
+                y += sy
+
+            step_count += 1
 
     def render_frame(self) -> list[list[tuple[str, float]]]:
-        """Render one frame of the spinning donut.
+        """Render one frame of the spinning cube.
 
         Returns:
             2D grid of (character, depth) tuples where depth is 1/z (higher = closer)
         """
-        # Initialize output buffer and z-buffer
+        # Initialize output buffer
         output = [[(" ", 0.0) for _ in range(self.width)] for _ in range(self.height)]
-        zbuffer = [[0.0 for _ in range(self.width)] for _ in range(self.height)]
 
-        # Torus parameters
-        R1 = 1.0  # Radius of the tube (cross-section)
-        R2 = 2.0  # Distance from center of torus to center of tube
-        K2 = 5.0  # Distance from viewer to donut
+        # Transform all vertices
+        projected = []
+        for vx, vy, vz in self._vertices:
+            # Rotate the vertex
+            rx, ry, rz = self._rotate_point(vx, vy, vz)
+            # Project to screen
+            sx, sy, depth = self._project_point(rx, ry, rz)
+            projected.append((sx, sy, depth))
 
-        # K1 controls the scale - calculated to fit the donut in the viewport
-        K1 = self.width * K2 * 3 / (8 * (R1 + R2))
-
-        # Precompute rotation sin/cos
-        cos_A, sin_A = math.cos(self.A), math.sin(self.A)
-        cos_B, sin_B = math.cos(self.B), math.sin(self.B)
-
-        # Sample the torus surface
-        theta = 0.0
-        while theta < 2 * math.pi:
-            cos_t, sin_t = math.cos(theta), math.sin(theta)
-
-            phi = 0.0
-            while phi < 2 * math.pi:
-                cos_p, sin_p = math.cos(phi), math.sin(phi)
-
-                # 3D coordinates on torus surface (before rotation)
-                # Circle in x-z plane, then sweep around y-axis
-                circle_x = R2 + R1 * cos_t
-                circle_y = R1 * sin_t
-
-                # Apply 3D rotations (rotate around x-axis by A, then z-axis by B)
-                x = circle_x * (cos_B * cos_p + sin_A * sin_B * sin_p) - circle_y * cos_A * sin_B
-                y = circle_x * (sin_B * cos_p - sin_A * cos_B * sin_p) + circle_y * cos_A * cos_B
-                z = K2 + cos_A * circle_x * sin_p + circle_y * sin_A
-                ooz = 1.0 / z  # One over z (for z-buffer and projection)
-
-                # Project 3D to 2D screen coordinates
-                xp = int(self.width / 2 + K1 * ooz * x)
-                yp = int(self.height / 2 - K1 * ooz * y * 0.5)  # 0.5 for aspect ratio
-
-                # Calculate luminance based on surface normal dot light direction
-                # Light comes from upper-left-front
-                L = (
-                    cos_p * cos_t * sin_B
-                    - cos_A * cos_t * sin_p
-                    - sin_A * sin_t
-                    + cos_B * (cos_A * sin_t - cos_t * sin_A * sin_p)
-                )
-
-                # Only render if within bounds and in front of what's already there
-                if 0 <= xp < self.width and 0 <= yp < self.height:
-                    if ooz > zbuffer[yp][xp]:
-                        zbuffer[yp][xp] = ooz
-                        # Map luminance to character (L ranges roughly -1 to 1)
-                        lum_idx = int((L + 1) * 4)  # Scale to 0-8 range
-                        lum_idx = max(0, min(lum_idx, len(self.CHARS) - 1))
-                        char = self.CHARS[lum_idx]
-                        output[yp][xp] = (char, ooz)
-
-                phi += self._phi_step
-            theta += self._theta_step
+        # Draw all edges
+        for edge_idx, (v0, v1) in enumerate(self._edges):
+            x0, y0, d0 = projected[v0]
+            x1, y1, d1 = projected[v1]
+            self._draw_line(output, x0, y0, d0, x1, y1, d1, edge_idx)
 
         return output
 
     def step(self) -> None:
         """Advance animation by one frame."""
-        self.A += 0.04  # Rotation speed around X
-        self.B += 0.02  # Rotation speed around Z
+        self.angle_x += 0.03  # Rotation speed around X
+        self.angle_y += 0.04  # Rotation speed around Y
+        self.angle_z += 0.01  # Rotation speed around Z
 
 
 class AnimatedWelcomePanel(Widget):
@@ -167,8 +262,8 @@ class AnimatedWelcomePanel(Widget):
     DEFAULT_CSS = """
     AnimatedWelcomePanel {
         width: 100%;
-        height: auto;
-        padding: 1 2;
+        height: 100%;
+        align: center middle;
         content-align: center middle;
     }
     """
@@ -202,8 +297,10 @@ class AnimatedWelcomePanel(Widget):
         self._fade_timer: Optional[Timer] = None
         self._is_fading = False
 
-        # Initialize the spinning donut renderer (compact size for side-by-side)
-        self._donut = DonutRenderer(width=28, height=14)
+        # Initialize the spinning cube renderer with default size
+        # Size will be recalculated dynamically based on terminal dimensions
+        self._cube = CubeRenderer(width=30, height=15)
+        self._last_cube_size: tuple[int, int] = (30, 15)
 
         # Cache the plain text content for gradient coloring
         self._content_lines = self._generate_content()
@@ -219,38 +316,21 @@ class AnimatedWelcomePanel(Widget):
             return "v0.1.7"
 
     def _generate_content(self) -> list[str]:
-        """Generate welcome content lines without colors.
+        """Generate horizontally spread welcome content.
 
         Returns:
-            List of plain text lines for gradient coloring
+            List of strings for welcome text section (spread horizontally)
         """
         version = self.get_version()
-        user = self._username.strip() or "Developer"
         mode = self._current_mode.value.upper()
 
-        # Create compact, visually appealing content
+        # Horizontal spread layout - 3 lines max
         lines = [
+            f"═══  S W E - C L I  {version}  ═══  Mode: {mode}  ═══",
             "",
-            f"Welcome back {user}!",
-            "",
-            "╔═══════════╗",
-            "║  SWE-CLI  ║",
-            "╚═══════════╝",
-            "",
-            f"Version {version}",
-            f"Mode: {mode}",
-            "",
-            "Essential Commands:",
-            "  /help      Show all commands",
-            "  /models    Configure AI models",
-            "  /mode      Toggle plan/normal mode",
-            "",
-            "Keyboard Shortcuts:",
-            "  Shift+Tab  Toggle mode",
-            "  @file      Mention file for context",
-            "  ↑ / ↓      Navigate history",
-            "",
+            "/help  │  /models  │  Shift+Tab plan mode  │  @file context",
         ]
+
         return lines
 
     def on_mount(self) -> None:
@@ -267,13 +347,45 @@ class AnimatedWelcomePanel(Widget):
             self._fade_timer = None
 
     def _update_gradient(self) -> None:
-        """Advance gradient wave and donut rotation animations."""
+        """Advance gradient wave and cube rotation animations."""
         if self._is_fading:
             return
         # Shift gradient offset (5 degrees per frame = full cycle in ~3.6s)
         self.gradient_offset = (self.gradient_offset + 5) % 360
-        # Advance donut rotation
-        self._donut.step()
+        # Advance cube rotation
+        self._cube.step()
+
+    def _calculate_cube_size(self) -> tuple[int, int]:
+        """Calculate dynamic cube size based on terminal dimensions.
+
+        Horizontal style - wider cube, shorter height.
+
+        Returns:
+            Tuple of (width, height) for the cube renderer
+        """
+        # Get available space
+        term_width = self.size.width if self.size.width > 0 else 100
+        term_height = self.size.height if self.size.height > 0 else 30
+
+        # Wide horizontal cube - use more width
+        available_width = term_width - 20
+        cube_width = max(50, min(80, int(available_width * 0.7)))
+
+        # Shorter height for horizontal look (less than standard aspect)
+        cube_height = max(8, min(14, int(cube_width / 4)))
+
+        # Reserve space for text lines below
+        max_height = max(8, term_height - 10)
+        cube_height = min(cube_height, max_height)
+
+        return (cube_width, cube_height)
+
+    def _update_cube_size(self) -> None:
+        """Update cube renderer size if terminal dimensions changed."""
+        new_size = self._calculate_cube_size()
+        if new_size != self._last_cube_size:
+            self._cube.width, self._cube.height = new_size
+            self._last_cube_size = new_size
 
     def _do_fade(self) -> None:
         """Execute one fade animation step."""
@@ -340,53 +452,51 @@ class AnimatedWelcomePanel(Widget):
 
         return result
 
-    def _render_donut(self) -> Text:
-        """Render the spinning donut with gradient coloring.
+    def _render_cube(self) -> Text:
+        """Render the spinning cube with rainbow gradient coloring.
 
         Returns:
-            Rich Text object containing the colored ASCII donut
+            Rich Text object containing the colored ASCII cube
         """
-        donut_text = Text()
-        donut_frame = self._donut.render_frame()
+        cube_text = Text()
+        cube_frame = self._cube.render_frame()
 
-        for row_idx, row in enumerate(donut_frame):
+        for row_idx, row in enumerate(cube_frame):
             if row_idx > 0:
-                donut_text.append("\n")
+                cube_text.append("\n")
 
             for col_idx, (char, depth) in enumerate(row):
                 if char != " ":
-                    # Color based on depth and gradient offset for flowing effect
-                    # Depth is 1/z, so higher = closer, use it to shift hue
-                    hue = (depth * 600 + col_idx * 5 + row_idx * 8 + self.gradient_offset) % 360
+                    # Color based on depth and gradient offset for flowing rainbow effect
+                    # The edge index is encoded in the fractional part of depth
+                    hue = (depth * 800 + col_idx * 6 + row_idx * 10 + self.gradient_offset) % 360
 
                     # Apply fade by reducing saturation and lightness
-                    saturation = 0.75 * self.fade_progress
+                    saturation = 0.85 * self.fade_progress
                     lightness = 0.55 * self.fade_progress + 0.1 * (1 - self.fade_progress)
 
                     color_code = hsl_to_ansi256(hue, saturation, lightness)
-                    donut_text.append(char, style=f"color({color_code})")
+                    cube_text.append(char, style=f"color({color_code})")
                 else:
-                    donut_text.append(char)
+                    cube_text.append(char)
 
-        return donut_text
+        return cube_text
 
     def _render_welcome_text(self) -> Text:
         """Render welcome content with gradient coloring.
 
         Returns:
-            Rich Text object with gradient-colored welcome text
+            Rich Text object with gradient-colored multi-line welcome text
         """
-        content = Text()
+        result = Text(justify="center")
 
         for line_idx, line in enumerate(self._content_lines):
             if line_idx > 0:
-                content.append("\n")
+                result.append("\n")
+            # Apply gradient with vertical wave offset for each line
+            result.append_text(self._apply_gradient(line, line_idx))
 
-            if line:
-                colored_line = self._apply_gradient(line, line_idx)
-                content.append_text(colored_line)
-
-        return content
+        return result
 
     def _get_border_style(self) -> str:
         """Get border style based on fade progress."""
@@ -399,30 +509,41 @@ class AnimatedWelcomePanel(Widget):
         return f"color({color_code})"
 
     def render(self) -> RenderableType:
-        """Render the animated welcome panel with side-by-side donut and text."""
+        """Render the animated welcome panel: cube on top, horizontal text below."""
+        from rich.console import Group
+
+        # Update cube size based on current terminal dimensions
+        self._update_cube_size()
+
         # Render both components
-        donut = self._render_donut()
+        cube = self._render_cube()
         welcome_text = self._render_welcome_text()
 
-        # Use Rich Columns for side-by-side layout
-        # Donut on the left, welcome text on the right
-        columns = Columns(
-            [Align.center(donut), Align.center(welcome_text)],
-            padding=2,
-            expand=False,
+        # Stack vertically: cube on top, horizontal text bar below
+        content = Group(
+            Align.center(cube),
+            Text(""),  # Spacer
+            Align.center(welcome_text),
         )
 
-        # Create centered panel with responsive width
-        panel_width = min(85, self.size.width - 4) if self.size.width > 0 else 85
+        # Calculate vertical padding to center the panel
+        term_height = self.size.height if self.size.height > 0 else 30
+        content_height = self._cube.height + len(self._content_lines) + 4
+        vertical_padding = max(0, (term_height - content_height) // 3)
 
+        # Panel auto-sizes to fit content
         panel = Panel(
-            Align.center(columns),
+            content,
             border_style=self._get_border_style(),
-            padding=(1, 2),
-            width=panel_width,
+            padding=(0, 2),
         )
 
-        return Align.center(panel)
+        # Add top padding for vertical centering
+        from rich.text import Text as RichText
+
+        top_padding = RichText("\n" * vertical_padding) if vertical_padding > 0 else RichText("")
+
+        return Align.center(Group(top_padding, panel))
 
     def watch_gradient_offset(self, _: int) -> None:
         """React to gradient offset changes."""

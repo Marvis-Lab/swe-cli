@@ -1,9 +1,8 @@
-"""Tests for AnimatedWelcomePanel widget and DonutRenderer."""
-
+"""Tests for AnimatedWelcomePanel widget and CubeRenderer."""
 
 from swecli.ui_textual.widgets.welcome_panel import (
     AnimatedWelcomePanel,
-    DonutRenderer,
+    CubeRenderer,
     hsl_to_ansi256,
 )
 from swecli.core.runtime import OperationMode
@@ -54,25 +53,28 @@ class TestAnimatedWelcomePanel:
         """Panel respects operation mode."""
         panel = AnimatedWelcomePanel(current_mode=OperationMode.PLAN)
         assert panel._current_mode == OperationMode.PLAN
-        # Check mode appears in content
-        assert any("PLAN" in line for line in panel._content_lines)
+        # Check mode appears in content (multi-line list)
+        content_text = "\n".join(panel._content_lines)
+        assert "PLAN" in content_text
 
     def test_creation_with_username(self):
-        """Panel shows username in greeting."""
+        """Panel stores username (no longer shown in horizontal bar)."""
         panel = AnimatedWelcomePanel(username="TestUser")
         assert panel._username == "TestUser"
-        assert any("TestUser" in line for line in panel._content_lines)
+        # Username is stored but not shown in the compact horizontal bar
 
     def test_content_generation(self):
-        """Content lines are generated correctly."""
+        """Content is generated as multi-line list."""
         panel = AnimatedWelcomePanel()
-        lines = panel._content_lines
+        content = panel._content_lines
 
-        # Check for expected content
-        assert len(lines) > 0
-        assert any("SWE-CLI" in line for line in lines)
-        assert any("/help" in line for line in lines)
-        assert any("Shift+Tab" in line for line in lines)
+        # Check for expected content in multi-line format
+        assert isinstance(content, list)
+        assert len(content) > 0
+        content_text = "\n".join(content)
+        assert "S W E - C L I" in content_text  # ASCII art title with spaces
+        assert "/help" in content_text
+        assert "Shift+Tab" in content_text
 
     def test_gradient_offset_reactive(self):
         """Gradient offset is reactive property."""
@@ -132,55 +134,55 @@ class TestAnimatedWelcomePanel:
         assert version.startswith("v")
 
 
-class TestDonutRenderer:
-    """Test DonutRenderer spinning 3D ASCII torus."""
+class TestCubeRenderer:
+    """Test CubeRenderer spinning 3D wireframe cube."""
 
     def test_creation_default(self):
-        """DonutRenderer can be created with defaults."""
-        donut = DonutRenderer()
-        assert donut.width == 30
-        assert donut.height == 15
-        assert donut.A != 0.0  # Initial rotation for 3D view
-        assert donut.B != 0.0
+        """CubeRenderer can be created with defaults."""
+        cube = CubeRenderer()
+        assert cube.width == 35
+        assert cube.height == 18
+        assert cube.angle_x != 0.0  # Initial rotation for 3D view
+        assert cube.angle_y != 0.0
 
     def test_creation_custom_size(self):
-        """DonutRenderer respects custom dimensions."""
-        donut = DonutRenderer(width=40, height=20)
-        assert donut.width == 40
-        assert donut.height == 20
+        """CubeRenderer respects custom dimensions."""
+        cube = CubeRenderer(width=40, height=20)
+        assert cube.width == 40
+        assert cube.height == 20
 
     def test_render_frame_dimensions(self):
         """render_frame returns correct grid dimensions."""
-        donut = DonutRenderer(width=25, height=12)
-        frame = donut.render_frame()
+        cube = CubeRenderer(width=25, height=12)
+        frame = cube.render_frame()
 
         assert len(frame) == 12  # height
         assert all(len(row) == 25 for row in frame)  # width
 
     def test_render_frame_produces_characters(self):
-        """render_frame produces donut characters (not all spaces)."""
-        donut = DonutRenderer()
-        frame = donut.render_frame()
+        """render_frame produces cube characters (not all spaces)."""
+        cube = CubeRenderer()
+        frame = cube.render_frame()
 
         # Count non-space characters
         char_count = sum(1 for row in frame for char, _ in row if char != " ")
-        assert char_count > 50, "Donut should have visible characters"
+        assert char_count > 20, "Cube should have visible characters"
 
-    def test_render_frame_uses_luminance_chars(self):
-        """render_frame uses the correct luminance character set."""
-        donut = DonutRenderer()
-        frame = donut.render_frame()
+    def test_render_frame_uses_edge_char(self):
+        """render_frame uses the correct edge character."""
+        cube = CubeRenderer()
+        frame = cube.render_frame()
 
-        # All characters should be from the CHARS set or space
-        valid_chars = set(donut.CHARS + " ")
+        # All characters should be EDGE_CHAR or space
+        valid_chars = {cube.EDGE_CHAR, " "}
         for row in frame:
             for char, _ in row:
                 assert char in valid_chars, f"Invalid character: {char}"
 
     def test_render_frame_includes_depth(self):
         """render_frame returns depth values for each cell."""
-        donut = DonutRenderer()
-        frame = donut.render_frame()
+        cube = CubeRenderer()
+        frame = cube.render_frame()
 
         # Check that visible characters have positive depth
         for row in frame:
@@ -192,35 +194,39 @@ class TestDonutRenderer:
 
     def test_step_advances_rotation(self):
         """step() advances the rotation angles."""
-        donut = DonutRenderer()
-        initial_A = donut.A
-        initial_B = donut.B
+        cube = CubeRenderer()
+        initial_x = cube.angle_x
+        initial_y = cube.angle_y
+        initial_z = cube.angle_z
 
-        donut.step()
+        cube.step()
 
-        assert donut.A > initial_A
-        assert donut.B > initial_B
+        assert cube.angle_x > initial_x
+        assert cube.angle_y > initial_y
+        assert cube.angle_z > initial_z
 
     def test_step_rotation_increments(self):
         """step() uses expected rotation increments."""
-        donut = DonutRenderer()
-        initial_A = donut.A
-        initial_B = donut.B
+        cube = CubeRenderer()
+        initial_x = cube.angle_x
+        initial_y = cube.angle_y
+        initial_z = cube.angle_z
 
-        donut.step()
+        cube.step()
 
-        assert donut.A == initial_A + 0.04
-        assert donut.B == initial_B + 0.02
+        assert cube.angle_x == initial_x + 0.03
+        assert cube.angle_y == initial_y + 0.04
+        assert cube.angle_z == initial_z + 0.01
 
     def test_multiple_steps_produce_different_frames(self):
         """Animation steps produce visually different frames."""
-        donut = DonutRenderer()
+        cube = CubeRenderer()
 
-        frame1 = donut.render_frame()
-        donut.step()
-        donut.step()
-        donut.step()
-        frame2 = donut.render_frame()
+        frame1 = cube.render_frame()
+        cube.step()
+        cube.step()
+        cube.step()
+        frame2 = cube.render_frame()
 
         # Compare character positions - should be different
         chars1 = [
@@ -238,37 +244,101 @@ class TestDonutRenderer:
 
         assert chars1 != chars2, "Frames after animation should differ"
 
-    def test_luminance_characters_ordering(self):
-        """CHARS are ordered from dark to bright."""
-        donut = DonutRenderer()
-        # The characters should progress from less dense to more dense
-        assert donut.CHARS == ".,-~:;=!*#$@"
+    def test_has_vertices_and_edges(self):
+        """CubeRenderer has 8 vertices and 12 edges."""
+        cube = CubeRenderer()
+        assert len(cube._vertices) == 8, "Cube should have 8 vertices"
+        assert len(cube._edges) == 12, "Cube should have 12 edges"
 
 
-class TestAnimatedWelcomePanelWithDonut:
-    """Test AnimatedWelcomePanel donut integration."""
+class TestAnimatedWelcomePanelWithCube:
+    """Test AnimatedWelcomePanel cube integration."""
 
-    def test_panel_has_donut_renderer(self):
-        """Panel creates a DonutRenderer instance."""
+    def test_panel_has_cube_renderer(self):
+        """Panel creates a CubeRenderer instance."""
         panel = AnimatedWelcomePanel()
-        assert hasattr(panel, "_donut")
-        assert isinstance(panel._donut, DonutRenderer)
+        assert hasattr(panel, "_cube")
+        assert isinstance(panel._cube, CubeRenderer)
 
-    def test_render_donut_method_exists(self):
-        """Panel has _render_donut method."""
+    def test_calculate_cube_size_small_terminal(self):
+        """Cube size adapts to small terminal."""
         panel = AnimatedWelcomePanel()
-        assert hasattr(panel, "_render_donut")
-        assert callable(panel._render_donut)
 
-    def test_render_donut_produces_text(self):
-        """_render_donut produces Rich Text with content."""
+        # Mock small terminal size
+        class MockSize:
+            width = 80
+            height = 24
+
+        panel._size = MockSize()
+        original_size = type(panel).size
+        type(panel).size = property(lambda self: self._size)
+
+        try:
+            width, height = panel._calculate_cube_size()
+            assert width >= 40  # Wide horizontal cube
+            assert height >= 8  # Short height for horizontal style
+            assert height <= 14  # Not too tall
+        finally:
+            type(panel).size = original_size
+
+    def test_calculate_cube_size_large_terminal(self):
+        """Cube size grows with large terminal."""
         panel = AnimatedWelcomePanel()
-        donut_text = panel._render_donut()
+
+        # Mock large terminal size
+        class MockSize:
+            width = 160
+            height = 50
+
+        panel._size = MockSize()
+        original_size = type(panel).size
+        type(panel).size = property(lambda self: self._size)
+
+        try:
+            width, height = panel._calculate_cube_size()
+            assert width >= 70  # Wide horizontal cube
+            assert height >= 10  # Short but reasonable height
+            assert height <= 14  # Capped for horizontal style
+        finally:
+            type(panel).size = original_size
+
+    def test_update_cube_size_changes_renderer(self):
+        """_update_cube_size updates the renderer dimensions."""
+        panel = AnimatedWelcomePanel()
+
+        # Mock a specific terminal size
+        class MockSize:
+            width = 120
+            height = 40
+
+        panel._size = MockSize()
+        original_size = type(panel).size
+        type(panel).size = property(lambda self: self._size)
+
+        try:
+            panel._update_cube_size()
+            # Verify cube dimensions were updated
+            expected_size = panel._calculate_cube_size()
+            assert panel._cube.width == expected_size[0]
+            assert panel._cube.height == expected_size[1]
+        finally:
+            type(panel).size = original_size
+
+    def test_render_cube_method_exists(self):
+        """Panel has _render_cube method."""
+        panel = AnimatedWelcomePanel()
+        assert hasattr(panel, "_render_cube")
+        assert callable(panel._render_cube)
+
+    def test_render_cube_produces_text(self):
+        """_render_cube produces Rich Text with content."""
+        panel = AnimatedWelcomePanel()
+        cube_text = panel._render_cube()
 
         from rich.text import Text
 
-        assert isinstance(donut_text, Text)
-        assert len(donut_text.plain) > 0
+        assert isinstance(cube_text, Text)
+        assert len(cube_text.plain) > 0
 
     def test_render_welcome_text_method_exists(self):
         """Panel has _render_welcome_text method."""
@@ -276,14 +346,48 @@ class TestAnimatedWelcomePanelWithDonut:
         assert hasattr(panel, "_render_welcome_text")
         assert callable(panel._render_welcome_text)
 
-    def test_update_gradient_steps_donut(self):
-        """_update_gradient advances the donut animation."""
+    def test_update_gradient_steps_cube(self):
+        """_update_gradient advances the cube animation."""
         panel = AnimatedWelcomePanel()
-        initial_A = panel._donut.A
+        initial_angle = panel._cube.angle_x
 
         panel._update_gradient()
 
-        assert panel._donut.A > initial_A
+        assert panel._cube.angle_x > initial_angle
+
+
+class TestWelcomePanelSessionResumption:
+    """Test welcome panel behavior on session resumption."""
+
+    def test_chat_app_new_session_defaults(self):
+        """New session should have welcome_visible=True by default."""
+        from swecli.ui_textual.chat_app import SWECLIChatApp
+
+        app = SWECLIChatApp(is_resumed_session=False)
+        assert app._is_resumed_session is False
+        assert app._welcome_visible is True
+
+    def test_chat_app_resumed_session_flags(self):
+        """Resumed session should have welcome_visible=False."""
+        from swecli.ui_textual.chat_app import SWECLIChatApp
+
+        app = SWECLIChatApp(is_resumed_session=True)
+        assert app._is_resumed_session is True
+        assert app._welcome_visible is False
+
+    def test_create_chat_app_accepts_resumed_flag(self):
+        """create_chat_app should accept is_resumed_session parameter."""
+        from swecli.ui_textual.chat_app import create_chat_app
+
+        # New session
+        app_new = create_chat_app(is_resumed_session=False)
+        assert app_new._is_resumed_session is False
+        assert app_new._welcome_visible is True
+
+        # Resumed session
+        app_resumed = create_chat_app(is_resumed_session=True)
+        assert app_resumed._is_resumed_session is True
+        assert app_resumed._welcome_visible is False
 
 
 class TestAnimatedWelcomePanelIntegration:
@@ -301,8 +405,8 @@ class TestAnimatedWelcomePanelIntegration:
         assert hasattr(panel, "DEFAULT_CSS")
         assert "AnimatedWelcomePanel" in panel.DEFAULT_CSS
 
-    def test_donut_renderer_exported(self):
-        """DonutRenderer is exported from module."""
-        from swecli.ui_textual.widgets.welcome_panel import DonutRenderer as Imported
+    def test_cube_renderer_exported(self):
+        """CubeRenderer is exported from module."""
+        from swecli.ui_textual.widgets.welcome_panel import CubeRenderer as Imported
 
-        assert Imported is DonutRenderer
+        assert Imported is CubeRenderer
