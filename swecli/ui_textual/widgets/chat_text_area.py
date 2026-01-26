@@ -283,7 +283,6 @@ class ChatTextArea(TextArea):
 
     async def _on_key(self, event: Key) -> None:
         """Intercept Enter to submit while preserving Shift+Enter for new lines."""
-
         app = getattr(self, "app", None)
 
         # Cancel exit confirmation on any key except Ctrl+C
