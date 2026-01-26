@@ -380,6 +380,12 @@ class TestSpawnSubagentToolSchema:
             "Code-Explorer": "Codebase exploration agent",
             "Web-clone": "Website cloning agent",
         }
+        # Mock get_agent_configs
+        from swecli.core.agents.subagents.manager import AgentConfig
+        manager.get_agent_configs.return_value = [
+            AgentConfig(name="Code-Explorer", description="Codebase exploration agent"),
+            AgentConfig(name="Web-clone", description="Website cloning agent"),
+        ]
         return manager
 
     def test_spawn_subagent_tool_name(self):
