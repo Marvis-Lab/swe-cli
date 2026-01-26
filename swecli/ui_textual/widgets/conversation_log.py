@@ -475,7 +475,7 @@ class ConversationLog(RichLog):
         self._approval_start = len(self.lines)
 
         for renderable in renderables:
-            self.write(renderable, wrappable=False)
+            self.write(renderable)
 
     def clear_approval_prompt(self) -> None:
         """Remove the approval prompt from the log."""
@@ -484,6 +484,8 @@ class ConversationLog(RichLog):
 
         if self._approval_start < len(self.lines):
             del self.lines[self._approval_start :]
+            # Also remove blocks from the registry to prevent stale re-renders
+            self._block_registry.remove_blocks_from(self._approval_start)
             self.refresh()
 
         self._approval_start = None
@@ -515,7 +517,7 @@ class ConversationLog(RichLog):
         self._ask_user_start = len(self.lines)
 
         for renderable in renderables:
-            self.write(renderable, wrappable=False)
+            self.write(renderable)
 
     def clear_ask_user_prompt(self) -> None:
         """Remove the ask-user prompt from the log."""
@@ -524,6 +526,8 @@ class ConversationLog(RichLog):
 
         if self._ask_user_start < len(self.lines):
             del self.lines[self._ask_user_start :]
+            # Also remove blocks from the registry to prevent stale re-renders
+            self._block_registry.remove_blocks_from(self._ask_user_start)
             self.refresh()
 
         self._ask_user_start = None

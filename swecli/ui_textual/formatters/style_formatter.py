@@ -8,13 +8,18 @@ from typing import Any, Dict, List
 from swecli.ui_textual.formatters_internal.formatter_base import STATUS_ICONS
 from swecli.ui_textual.utils.tool_display import get_tool_display_parts
 from swecli.ui_textual.constants import TOOL_ERROR_SENTINEL
-from swecli.ui_textual.utils.interrupt_utils import create_interrupt_message, STANDARD_INTERRUPT_MESSAGE
+from swecli.ui_textual.utils.interrupt_utils import (
+    create_interrupt_message,
+    STANDARD_INTERRUPT_MESSAGE,
+)
 
 
 class StyleFormatter:
     """Minimalist formatter for conversational tool output."""
 
-    def format_tool_result(self, tool_name: str, tool_args: Dict[str, Any], result: Dict[str, Any]) -> str:
+    def format_tool_result(
+        self, tool_name: str, tool_args: Dict[str, Any], result: Dict[str, Any]
+    ) -> str:
         tool_display = self._format_tool_call(tool_name, tool_args)
 
         if tool_name == "read_file":
@@ -108,7 +113,9 @@ class StyleFormatter:
             return value_repr[:97] + "..."
         return value_repr
 
-    def _format_read_file_result(self, tool_args: Dict[str, Any], result: Dict[str, Any]) -> List[str]:
+    def _format_read_file_result(
+        self, tool_args: Dict[str, Any], result: Dict[str, Any]
+    ) -> List[str]:
         if not result.get("success"):
             error_msg = result.get("error") or "Unknown error"
             if "interrupted by user" in error_msg.lower():
@@ -123,7 +130,9 @@ class StyleFormatter:
         size_display = f"{size_kb:.1f} KB" if size_kb >= 1 else f"{size_bytes} B"
         return [f"Read {lines} lines • {size_display}"]
 
-    def _format_write_file_result(self, tool_args: Dict[str, Any], result: Dict[str, Any]) -> List[str]:
+    def _format_write_file_result(
+        self, tool_args: Dict[str, Any], result: Dict[str, Any]
+    ) -> List[str]:
         if not result.get("success"):
             error_msg = result.get("error") or "Unknown error"
             if "interrupted by user" in error_msg.lower():
@@ -138,7 +147,9 @@ class StyleFormatter:
         size_display = f"{size_kb:.1f} KB" if size_kb >= 1 else f"{size_bytes} B"
         return [f"Created {Path(file_path).name} • {size_display} • {lines} lines"]
 
-    def _format_edit_file_result(self, tool_args: Dict[str, Any], result: Dict[str, Any]) -> List[str]:
+    def _format_edit_file_result(
+        self, tool_args: Dict[str, Any], result: Dict[str, Any]
+    ) -> List[str]:
         from swecli.ui_textual.formatters_internal.utils import DiffParser
 
         if not result.get("success"):
@@ -155,6 +166,7 @@ class StyleFormatter:
         # ANSI color codes
         GREEN = "\033[32m"
         RED = "\033[31m"
+        CYAN = "\033[36m"
         DIM = "\033[2m"
         RESET = "\033[0m"
 
@@ -162,38 +174,95 @@ class StyleFormatter:
             return f"{count} {singular}" if count == 1 else f"{count} {singular}s"
 
         lines = []
-        lines.append(f"Updated {file_path} with {_plural(lines_added, 'addition')} and {_plural(lines_removed, 'removal')}")
+        lines.append(
+            f"Updated {file_path} with {_plural(lines_added, 'addition')} and {_plural(lines_removed, 'removal')}"
+        )
 
         # Parse and display diff if available
         if diff_text:
             diff_entries = DiffParser.parse_unified_diff(diff_text)
             if diff_entries:
-                for entry_type, line_no, content in diff_entries:
-                    if entry_type == "hunk":
-                        continue
+                hunks = DiffParser.group_by_hunk(diff_entries)
+                total_hunks = len(hunks)
 
-                    display_no = f"{line_no:>3}" if line_no is not None else "   "
-                    sanitized = content.replace("\t", "    ")
+                for hunk_idx, (start_line, hunk_entries) in enumerate(hunks):
+                    # Add hunk header for multiple hunks
+                    if total_hunks > 1:
+                        lines.append("")  # Blank line before hunk
+                        lines.append(
+                            f"{CYAN}[Edit {hunk_idx + 1}/{total_hunks} at line {start_line}]{RESET}"
+                        )
 
-                    if entry_type == "add":
-                        lines.append(f"{DIM}{display_no}{RESET} {GREEN}+{RESET} {GREEN}{sanitized}{RESET}")
-                    elif entry_type == "del":
-                        lines.append(f"{DIM}{display_no}{RESET} {RED}-{RESET} {RED}{sanitized}{RESET}")
-                    else:
-                        lines.append(f"{DIM}{display_no}   {sanitized}{RESET}")
+                    for entry_type, line_no, content in hunk_entries:
+                        display_no = f"{line_no:>3}" if line_no is not None else "   "
+                        sanitized = content.replace("\t", "    ")
+
+                        if entry_type == "add":
+                            lines.append(
+                                f"{DIM}{display_no}{RESET} {GREEN}+{RESET} {GREEN}{sanitized}{RESET}"
+                            )
+                        elif entry_type == "del":
+                            lines.append(
+                                f"{DIM}{display_no}{RESET} {RED}-{RESET} {RED}{sanitized}{RESET}"
+                            )
+                        else:
+                            lines.append(f"{DIM}{display_no}   {sanitized}{RESET}")
 
         return lines
 
     # Binary file extensions to skip in search results
     _BINARY_EXTENSIONS = {
-        '.exe', '.dll', '.so', '.dylib', '.o', '.a', '.lib',
-        '.pyc', '.pyo', '.class', '.jar', '.war',
-        '.test', '.bin', '.dat', '.db', '.sqlite', '.sqlite3',
-        '.zip', '.tar', '.gz', '.bz2', '.xz', '.7z', '.rar',
-        '.png', '.jpg', '.jpeg', '.gif', '.bmp', '.ico', '.webp',
-        '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
-        '.mp3', '.mp4', '.avi', '.mov', '.mkv', '.wav', '.flac',
-        '.woff', '.woff2', '.ttf', '.otf', '.eot',
+        ".exe",
+        ".dll",
+        ".so",
+        ".dylib",
+        ".o",
+        ".a",
+        ".lib",
+        ".pyc",
+        ".pyo",
+        ".class",
+        ".jar",
+        ".war",
+        ".test",
+        ".bin",
+        ".dat",
+        ".db",
+        ".sqlite",
+        ".sqlite3",
+        ".zip",
+        ".tar",
+        ".gz",
+        ".bz2",
+        ".xz",
+        ".7z",
+        ".rar",
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".gif",
+        ".bmp",
+        ".ico",
+        ".webp",
+        ".pdf",
+        ".doc",
+        ".docx",
+        ".xls",
+        ".xlsx",
+        ".ppt",
+        ".pptx",
+        ".mp3",
+        ".mp4",
+        ".avi",
+        ".mov",
+        ".mkv",
+        ".wav",
+        ".flac",
+        ".woff",
+        ".woff2",
+        ".ttf",
+        ".otf",
+        ".eot",
     }
 
     def _is_binary_file(self, filepath: str) -> bool:
@@ -332,7 +401,9 @@ class StyleFormatter:
 
         return ["Command completed with no output"]
 
-    def _format_list_files_result(self, tool_args: Dict[str, Any], result: Dict[str, Any]) -> List[str]:
+    def _format_list_files_result(
+        self, tool_args: Dict[str, Any], result: Dict[str, Any]
+    ) -> List[str]:
         if not result.get("success"):
             error_msg = result.get("error") or "Unknown error"
             if "interrupted by user" in error_msg.lower():
@@ -357,7 +428,9 @@ class StyleFormatter:
             return [preview]
         return [f"{preview} ({len(lines)} lines)"]
 
-    def _format_fetch_url_result(self, tool_args: Dict[str, Any], result: Dict[str, Any]) -> List[str]:
+    def _format_fetch_url_result(
+        self, tool_args: Dict[str, Any], result: Dict[str, Any]
+    ) -> List[str]:
         if not result.get("success"):
             error_msg = result.get("error") or "Unknown error"
             if "interrupted by user" in error_msg.lower():
@@ -368,7 +441,9 @@ class StyleFormatter:
         status = result.get("status_code", 200)
         return [f"HTTP {status} in {elapsed:.2f}s"]
 
-    def _format_analyze_image_result(self, tool_args: Dict[str, Any], result: Dict[str, Any]) -> List[str]:
+    def _format_analyze_image_result(
+        self, tool_args: Dict[str, Any], result: Dict[str, Any]
+    ) -> List[str]:
         if not result.get("success"):
             error_msg = result.get("error") or "Unknown error"
             if "interrupted by user" in error_msg.lower():
@@ -376,7 +451,9 @@ class StyleFormatter:
             return [self._error_line(error_msg)]
         return [result.get("summary", "Analysis complete")]
 
-    def _format_process_output_result(self, tool_args: Dict[str, Any], result: Dict[str, Any]) -> List[str]:
+    def _format_process_output_result(
+        self, tool_args: Dict[str, Any], result: Dict[str, Any]
+    ) -> List[str]:
         if not result.get("success"):
             error_msg = result.get("error") or "Unknown error"
             if "interrupted by user" in error_msg.lower():
@@ -395,7 +472,9 @@ class StyleFormatter:
         preview = first_line[:70] + ("..." if len(first_line) > 70 else "")
         return [f"{preview} ({len(lines)} lines)"]
 
-    def _format_write_todos_result(self, tool_args: Dict[str, Any], result: Dict[str, Any]) -> List[str]:
+    def _format_write_todos_result(
+        self, tool_args: Dict[str, Any], result: Dict[str, Any]
+    ) -> List[str]:
         """Format write_todos result showing all created todos."""
         if not result.get("success"):
             error_msg = result.get("error") or "Unknown error"
@@ -409,7 +488,9 @@ class StyleFormatter:
 
         return ["Todos created"]
 
-    def _format_search_tools_result(self, tool_args: Dict[str, Any], result: Dict[str, Any]) -> List[str]:
+    def _format_search_tools_result(
+        self, tool_args: Dict[str, Any], result: Dict[str, Any]
+    ) -> List[str]:
         """Format search_tools result with concise summary."""
         if not result.get("success"):
             error_msg = result.get("error") or "Unknown error"
@@ -434,7 +515,9 @@ class StyleFormatter:
         # For brief/names, just show count
         return [f"Found {count} tool(s)."]
 
-    def _format_generic_result(self, tool_name: str, tool_args: Dict[str, Any], result: Dict[str, Any]) -> List[str]:
+    def _format_generic_result(
+        self, tool_name: str, tool_args: Dict[str, Any], result: Dict[str, Any]
+    ) -> List[str]:
         if not result.get("success"):
             error_msg = result.get("error") or "Unknown error"
             if "interrupted by user" in error_msg.lower():

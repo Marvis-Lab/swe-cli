@@ -155,3 +155,32 @@ class DiffParser:
                 new_line += 1
 
         return entries
+
+    @staticmethod
+    def group_by_hunk(entries):
+        """Group diff entries by hunk.
+
+        Returns:
+            List of (start_line, entries) tuples where entries excludes hunk headers
+        """
+        import re
+
+        hunks = []
+        current_entries = []
+        current_start = 1
+        hunk_pattern = re.compile(r"@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@")
+
+        for entry_type, line_no, content in entries:
+            if entry_type == "hunk":
+                if current_entries:
+                    hunks.append((current_start, current_entries))
+                    current_entries = []
+                match = hunk_pattern.match(content)
+                current_start = int(match.group(1)) if match else 1
+            else:
+                current_entries.append((entry_type, line_no, content))
+
+        if current_entries:
+            hunks.append((current_start, current_entries))
+
+        return hunks

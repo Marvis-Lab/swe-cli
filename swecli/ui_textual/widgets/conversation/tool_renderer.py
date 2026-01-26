@@ -2008,32 +2008,54 @@ class DefaultToolRenderer:
             return
 
         indent = "  " * depth
+        hunks = DiffParser.group_by_hunk(diff_entries)
+        total_hunks = len(hunks)
 
-        for i, (entry_type, line_no, content) in enumerate(diff_entries):
-            formatted = Text()
-            formatted.append(indent)
+        # Track overall line index for ⎿ prefix logic
+        line_idx = 0
 
-            # First line gets ⎿ prefix, subsequent lines get spaces for alignment
-            prefix = "    ⎿  " if i == 0 else "       "
-            formatted.append(prefix, style=GREY)
+        for hunk_idx, (start_line, hunk_entries) in enumerate(hunks):
+            # Add hunk header for multiple hunks
+            if total_hunks > 1:
+                # Add blank line between hunks (except before first)
+                if hunk_idx > 0:
+                    self.log.write(Text(""), scroll_end=True, animate=False, wrappable=False)
 
-            if entry_type == "hunk":
-                formatted.append(content, style=SUBTLE)
-            elif entry_type == "add":
-                display_no = f"{line_no:>4} " if line_no is not None else "     "
-                formatted.append(display_no, style=SUBTLE)
-                formatted.append("+ ", style=SUCCESS)
-                formatted.append(content.replace("\t", "    "), style=SUCCESS)
-            elif entry_type == "del":
-                display_no = f"{line_no:>4} " if line_no is not None else "     "
-                formatted.append(display_no, style=SUBTLE)
-                formatted.append("- ", style=ERROR)
-                formatted.append(content.replace("\t", "    "), style=ERROR)
-            else:
-                display_no = f"{line_no:>4} " if line_no is not None else "     "
-                formatted.append(display_no, style=SUBTLE)
-                formatted.append("  ", style=SUBTLE)
-                formatted.append(content.replace("\t", "    "), style=SUBTLE)
+                # Write hunk header
+                formatted = Text()
+                formatted.append(indent)
+                prefix = "    ⎿  " if line_idx == 0 else "       "
+                formatted.append(prefix, style=GREY)
+                formatted.append(
+                    f"[Edit {hunk_idx + 1}/{total_hunks} at line {start_line}]", style=CYAN
+                )
+                self.log.write(formatted, scroll_end=True, animate=False, wrappable=False)
+                line_idx += 1
 
-            # Diff lines have line numbers and fixed formatting, don't re-wrap
-            self.log.write(formatted, scroll_end=True, animate=False, wrappable=False)
+            for entry_type, line_no, content in hunk_entries:
+                formatted = Text()
+                formatted.append(indent)
+
+                # First line gets ⎿ prefix, subsequent lines get spaces for alignment
+                prefix = "    ⎿  " if line_idx == 0 else "       "
+                formatted.append(prefix, style=GREY)
+
+                if entry_type == "add":
+                    display_no = f"{line_no:>4} " if line_no is not None else "     "
+                    formatted.append(display_no, style=SUBTLE)
+                    formatted.append("+ ", style=SUCCESS)
+                    formatted.append(content.replace("\t", "    "), style=SUCCESS)
+                elif entry_type == "del":
+                    display_no = f"{line_no:>4} " if line_no is not None else "     "
+                    formatted.append(display_no, style=SUBTLE)
+                    formatted.append("- ", style=ERROR)
+                    formatted.append(content.replace("\t", "    "), style=ERROR)
+                else:
+                    display_no = f"{line_no:>4} " if line_no is not None else "     "
+                    formatted.append(display_no, style=SUBTLE)
+                    formatted.append("  ", style=SUBTLE)
+                    formatted.append(content.replace("\t", "    "), style=SUBTLE)
+
+                # Diff lines have line numbers and fixed formatting, don't re-wrap
+                self.log.write(formatted, scroll_end=True, animate=False, wrappable=False)
+                line_idx += 1
