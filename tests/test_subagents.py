@@ -269,6 +269,38 @@ class TestSubAgentManager:
         passed_config = call_args[1]["config"] if call_args[1] else call_args[0][0]
         assert passed_config.model == "gpt-3.5-turbo"
 
+    @patch("swecli.core.agents.SwecliAgent")
+    def test_execute_with_docker_handler(self, mock_agent_class, manager):
+        """Test executing subagent with custom docker handler."""
+        mock_agent_class.return_value = MagicMock()
+
+        # Setup mocks
+        manager._docker_executor = MagicMock()
+        manager._docker_executor.create_docker_nested_callback.return_value = MagicMock()
+
+        manager.execute_subagent = MagicMock(return_value={"success": True})
+
+        spec = SubAgentSpec(
+            name="test-agent",
+            description="Test",
+            system_prompt="Prompt",
+        )
+        manager.register_subagent(spec)
+
+        deps = SubAgentDeps(MagicMock(), MagicMock(), MagicMock())
+        docker_handler = MagicMock()
+
+        result = manager.execute_with_docker_handler(
+            name="test-agent",
+            task="Task",
+            deps=deps,
+            docker_handler=docker_handler
+        )
+
+        assert result["success"] is True
+        manager.execute_subagent.assert_called_once()
+        manager._docker_executor.create_docker_nested_callback.assert_called_once()
+
 
 class TestSubAgentManagerAsync:
     """Tests for async subagent execution."""
@@ -374,12 +406,14 @@ class TestSpawnSubagentToolSchema:
     @pytest.fixture
     def mock_manager(self):
         """Create a mock SubAgentManager."""
+        from swecli.core.agents.subagents.manager import AgentConfig
+
         manager = MagicMock()
-        manager.get_available_types.return_value = ["Code-Explorer", "Web-clone"]
-        manager.get_descriptions.return_value = {
-            "Code-Explorer": "Codebase exploration agent",
-            "Web-clone": "Website cloning agent",
-        }
+        configs = [
+            AgentConfig(name="Code-Explorer", description="Codebase exploration agent"),
+            AgentConfig(name="Web-clone", description="Website cloning agent"),
+        ]
+        manager.get_agent_configs.return_value = configs
         return manager
 
     def test_spawn_subagent_tool_name(self):
