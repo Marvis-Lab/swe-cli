@@ -1,7 +1,6 @@
 """Test the new interactive approval menu."""
 
 import sys
-from pathlib import Path
 from rich.console import Console
 
 from swecli.core.approval import ApprovalManager
@@ -35,7 +34,7 @@ def test_approval_menu():
         console.print("[yellow]Please interact with the menu below:[/yellow]")
         result = approval_manager.request_approval(operation, preview)
 
-        console.print(f"\n[green]✓ Result:[/green]")
+        console.print("\n[green]✓ Result:[/green]")
         console.print(f"  Approved: {result.approved}")
         console.print(f"  Choice: {result.choice.value}")
         console.print(f"  Apply to all: {result.apply_to_all}")
@@ -60,7 +59,7 @@ def test_approval_menu():
     try:
         result2 = approval_manager.request_approval(operation2, preview2)
 
-        console.print(f"\n[green]✓ Result:[/green]")
+        console.print("\n[green]✓ Result:[/green]")
         console.print(f"  Approved: {result2.approved}")
         console.print(f"  Choice: {result2.choice.value}")
         console.print(f"  Apply to all: {result2.apply_to_all}\n")

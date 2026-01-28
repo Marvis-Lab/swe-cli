@@ -1,6 +1,4 @@
-import types
 
-import pytest
 from rich.text import Text
 
 from swecli.ui_textual.chat_app import SWECLIChatApp

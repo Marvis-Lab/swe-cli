@@ -280,7 +280,6 @@ class TestFormatToolHeader:
 
     def test_header_resolves_paths(self, service: ToolDisplayService, tmp_path: Path) -> None:
         """Test header has resolved paths."""
-        from rich.text import Text
 
         header = service.format_tool_header("read_file", {"file_path": "src/main.py"})
         plain = header.plain

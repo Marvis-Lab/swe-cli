@@ -657,7 +657,6 @@ class TestSemanticSimilarity:
 
     def test_embedding_cache_file_persistence(self, tmp_path):
         """Test embedding cache can be saved to and loaded from file."""
-        import tempfile
         cache_file = tmp_path / "test_cache.json"
 
         # Create cache and add embeddings

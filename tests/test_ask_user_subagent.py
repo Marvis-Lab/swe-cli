@@ -467,7 +467,6 @@ class TestAskUserE2ERealAPI:
         Tests the _execute_ask_user method end-to-end by mocking the app's
         ask_user_controller and the call_from_thread/run_worker pattern.
         """
-        import threading
 
         mock_config = MagicMock()
         mock_config.model = "gpt-4o"

@@ -3,7 +3,6 @@
 import pytest
 from swecli.core.context_engineering.memory import (
     Playbook,
-    Bullet,
     AgentResponse,
     Reflector,
     Curator,

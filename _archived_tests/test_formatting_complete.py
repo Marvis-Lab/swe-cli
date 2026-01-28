@@ -118,7 +118,7 @@ def test_welcome_message():
             print(f"  Message {msg_num}: {length} chars - {preview}")
         return False
     else:
-        print(f"\n✅ PASS: All lines ≤78 characters")
+        print("\n✅ PASS: All lines ≤78 characters")
         return True
 
 
@@ -159,7 +159,7 @@ def test_multi_paragraph():
         print(f"\n✅ PASS: Paragraphs preserved and lines ≤76 chars (max: {max_len})")
         return True
     else:
-        print(f"\n❌ FAIL: Issue with wrapping or paragraph preservation")
+        print("\n❌ FAIL: Issue with wrapping or paragraph preservation")
         return False
 
 

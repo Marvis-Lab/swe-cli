@@ -36,10 +36,10 @@ def test_fix():
     print(f"  ✓ Console texts enqueued during query: {enqueued_count}")
 
     if enqueued_count == 0:
-        print(f"  ✅ PASS: No console output captured (duplication prevented!)")
+        print("  ✅ PASS: No console output captured (duplication prevented!)")
         test1_pass = True
     else:
-        print(f"  ❌ FAIL: Console output still being captured")
+        print("  ❌ FAIL: Console output still being captured")
         test1_pass = False
 
     # Test 2: Session should have exactly 1 user + 1 assistant message
@@ -52,7 +52,7 @@ def test_fix():
     print(f"  ✓ Assistant messages: {len(assistant_msgs)}")
 
     if len(assistant_msgs) == 1:
-        print(f"  ✅ PASS: Exactly 1 assistant message in session")
+        print("  ✅ PASS: Exactly 1 assistant message in session")
         test2_pass = True
     else:
         print(f"  ❌ FAIL: Expected 1 assistant message, got {len(assistant_msgs)}")
@@ -70,10 +70,10 @@ def test_fix():
     print(f"  ✓ Messages to be rendered: {render_count}")
 
     if render_count == 1:
-        print(f"  ✅ PASS: Only 1 message will be rendered")
+        print("  ✅ PASS: Only 1 message will be rendered")
         test3_pass = True
     else:
-        print(f"  ❌ FAIL: Multiple messages would be rendered")
+        print("  ❌ FAIL: Multiple messages would be rendered")
         test3_pass = False
 
     # Summary

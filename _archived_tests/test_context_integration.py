@@ -7,14 +7,11 @@ import tempfile
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from swecli.core.context import ContextTokenMonitor
-from swecli.core.context import ContextCompactor
 from swecli.core.context import ContextRetriever
 from swecli.core.context import CodebaseIndexer
 from swecli.core.monitoring import TaskMonitor
 from swecli.core.management import SessionManager
 from swecli.models.message import ChatMessage, Role
-from swecli.models.session import Session
 
 
 def test_full_workflow():
@@ -47,7 +44,7 @@ def test_full_workflow():
 
         stats = session.get_token_stats()
         print(f"Usage: {stats['usage_percent']:.2f}%")
-        print(f"✓ Token monitoring working\n")
+        print("✓ Token monitoring working\n")
 
         # === Phase 2: Task Monitor Integration ===
         print("2. Task Monitor with Context Display")
@@ -99,7 +96,7 @@ def test_full_workflow():
             print(f"Compacted {result.messages_compacted} messages")
             print(f"Saved {result.tokens_saved:,} tokens ({result.reduction_percent:.1f}% reduction)")
             print(f"New usage: {session.get_token_stats()['usage_percent']:.1f}%")
-            print(f"✓ Compaction successful\n")
+            print("✓ Compaction successful\n")
         else:
             print("⚠️  Compaction not performed (might be below threshold now)")
 
@@ -119,7 +116,7 @@ def test_full_workflow():
         for file_info in context["files_found"][:3]:
             print(f"  - {Path(file_info['path']).name} ({file_info['reason']})")
 
-        print(f"✓ Context retrieval working\n")
+        print("✓ Context retrieval working\n")
 
         # === Phase 5: Codebase Indexing ===
         print("5. Codebase Index Generation")
@@ -131,7 +128,7 @@ def test_full_workflow():
         index_stats = indexer.get_stats(index_content)
         print(f"Index tokens: {index_stats['tokens']:,}")
         print(f"Under 3k limit: {index_stats['under_limit']}")
-        print(f"✓ Codebase indexing working\n")
+        print("✓ Codebase indexing working\n")
 
     print("=" * 60)
     print("✅ Full workflow test passed!")
@@ -234,9 +231,9 @@ def test_display_formats():
 
             # Check pattern matches
             if "context:" in expected_format:
-                assert "context:" in display, f"Should contain 'context:'"
+                assert "context:" in display, "Should contain 'context:'"
             elif "until compact" in expected_format:
-                assert "until compact" in display, f"Should contain 'until compact'"
+                assert "until compact" in display, "Should contain 'until compact'"
 
         print("\n✓ Display formats correct")
 
@@ -290,7 +287,7 @@ def test_compaction_preserves_context():
             assert summary_msg.role == Role.SYSTEM, "First message should be summary"
             assert "summary" in summary_msg.content.lower(), "Should be a summary"
 
-            print(f"\n✓ Compaction preserved context in summary")
+            print("\n✓ Compaction preserved context in summary")
         else:
             print("⚠️  Compaction not performed")
 

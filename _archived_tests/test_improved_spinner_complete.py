@@ -27,7 +27,7 @@ def test_complete_spinner_flow():
     thinking_verbs = ["Thinking", "Analyzing", "Processing", "Reasoning"]
     random_verb = random.choice(thinking_verbs)
 
-    console.print(f"\n[bold cyan]Step 1: Start with random thinking verb[/bold cyan]")
+    console.print("\n[bold cyan]Step 1: Start with random thinking verb[/bold cyan]")
     console.print(f"[dim]Random verb selected: '{random_verb}'[/dim]\n")
 
     # Step 1: Start spinner with random verb
@@ -45,13 +45,13 @@ def test_complete_spinner_flow():
     # Step 3: LLM responds with verbose description
     llm_response = "I'll search through the configuration files to find the mode toggle implementation and analyze the current structure to understand how it works"
 
-    console.print(f"\n[bold cyan]Step 2: LLM responds with action description[/bold cyan]")
+    console.print("\n[bold cyan]Step 2: LLM responds with action description[/bold cyan]")
     console.print(f"[dim]LLM says: '{llm_response[:80]}...'[/dim]\n")
 
     # Step 4: Summarize into concise action
     concise_action = summarizer.summarize_fast(llm_response, max_length=60)
 
-    console.print(f"[bold cyan]Step 3: Summarize to concise action[/bold cyan]")
+    console.print("[bold cyan]Step 3: Summarize to concise action[/bold cyan]")
     console.print(f"[dim]Concise action: '{concise_action}'[/dim]\n")
 
     # Step 5: Update spinner
@@ -141,11 +141,11 @@ def test_comparison():
     ]
 
     for llm_response, before, after in examples:
-        console.print(f"\n[bold]LLM Response:[/bold]")
+        console.print("\n[bold]LLM Response:[/bold]")
         console.print(f"  {llm_response}")
-        console.print(f"\n[red]Before (raw):[/red]")
+        console.print("\n[red]Before (raw):[/red]")
         console.print(f"  {before}")
-        console.print(f"[green]After (summarized):[/green]")
+        console.print("[green]After (summarized):[/green]")
         console.print(f"  {after}")
 
 

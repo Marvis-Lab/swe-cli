@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Optional
 
 from textual.widgets import Static
 
-from swecli.ui_textual.style_tokens import SUCCESS, WARNING
+from swecli.ui_textual.style_tokens import WARNING
 
 logger = logging.getLogger(__name__)
 

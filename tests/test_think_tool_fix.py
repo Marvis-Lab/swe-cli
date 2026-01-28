@@ -7,10 +7,9 @@ These tests verify that:
 4. Regular tools still work correctly
 """
 
-import json
 import os
 import sys
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 

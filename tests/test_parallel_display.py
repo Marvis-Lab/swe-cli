@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 """Unit tests for parallel agent display - no API calls."""
 import sys
-import time
 
 sys.path.insert(0, "/Users/nghibui/codes/swe-cli")
 
@@ -327,7 +326,7 @@ def test_ui_callback_allows_spawn_subagent_outside_parallel_mode():
 
     # on_single_agent_start SHOULD have been called
     assert len(conversation.single_agent_starts) > initial_starts, (
-        f"spawn_subagent should call on_single_agent_start when not in parallel mode"
+        "spawn_subagent should call on_single_agent_start when not in parallel mode"
     )
 
     # Flag should be set to suppress nested tool display

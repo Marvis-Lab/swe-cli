@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import Any, TYPE_CHECKING
 
 from rich.console import RenderableType
-from rich.text import Text
 
 from swecli.ui_textual.components.agent_creator_panels import (
     create_location_panel,
@@ -536,7 +535,7 @@ class AgentCreatorController:
 
     def _get_agents_dir(self) -> Path:
         """Get the appropriate agents directory based on location choice."""
-        from swecli.core.paths import get_paths, APP_DIR_NAME
+        from swecli.core.paths import get_paths
 
         state = self.state
         if not state:

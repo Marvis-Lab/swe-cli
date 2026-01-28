@@ -8,7 +8,6 @@ from io import StringIO
 sys.path.insert(0, str(Path(__file__).parent))
 
 from rich.console import Console
-from rich.text import Text
 from rich.panel import Panel
 from swecli.ui.conversation_buffer import ConversationBuffer
 from swecli.ui.dual_console import DualConsole

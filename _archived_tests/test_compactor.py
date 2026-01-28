@@ -6,9 +6,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from swecli.core.context import CompactionResult, ContextCompactor
-from swecli.core.context import ContextTokenMonitor
-from swecli.models.message import ChatMessage, Role, ToolCall
+from swecli.core.context import ContextCompactor
+from swecli.models.message import ChatMessage, Role
 from swecli.models.session import Session
 
 
@@ -40,7 +39,7 @@ def test_should_compact():
     print(f"Created {len(messages)} messages")
     total_tokens = compactor.token_monitor.count_messages_total(messages)
     print(f"Total tokens: {total_tokens:,}")
-    print(f"Context limit: 256,000")
+    print("Context limit: 256,000")
     print(f"Usage: {(total_tokens / 256000) * 100:.1f}%")
 
     should_compact = compactor.should_compact(messages)
@@ -67,7 +66,7 @@ def test_compaction_basic(messages):
 
     result = compactor.compact(messages, preserve_recent=5)
 
-    print(f"\nAfter compaction:")
+    print("\nAfter compaction:")
     print(f"  Messages compacted: {result.messages_compacted}")
     print(f"  Original tokens: {result.original_token_count:,}")
     print(f"  New tokens: {result.new_token_count:,}")
@@ -112,7 +111,7 @@ def test_compaction_summary():
 
     print(f"Summary message role: {result.summary_message.role.value}")
     print(f"Summary length: {len(result.summary_message.content)} chars")
-    print(f"\nSummary preview:")
+    print("\nSummary preview:")
     print("-" * 60)
     print(result.summary_message.content[:500])
     if len(result.summary_message.content) > 500:
@@ -172,7 +171,7 @@ def test_preserve_recent():
 
     print(f"Total messages: {len(messages)}")
     print(f"Messages compacted: {result.messages_compacted}")
-    print(f"Messages preserved: 3")
+    print("Messages preserved: 3")
 
     # Check that we compacted 17 messages (20 - 3)
     assert result.messages_compacted == 17, "Should compact 17 messages"

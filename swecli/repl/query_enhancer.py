@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-import os
 import re
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from swecli.repl.file_content_injector import InjectionResult
+    pass
 
 
 class QueryEnhancer:

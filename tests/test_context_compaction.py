@@ -1,7 +1,5 @@
 """Test context compaction with 1000 token limit."""
 
-import asyncio
-from swecli.models.config import AppConfig
 from swecli.core.context_engineering.retrieval.token_monitor import ContextTokenMonitor
 # CompactAgent has been removed/moved - skipping that test
 

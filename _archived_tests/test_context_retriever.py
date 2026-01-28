@@ -4,7 +4,6 @@
 import sys
 from pathlib import Path
 import tempfile
-import shutil
 
 sys.path.insert(0, str(Path(__file__).parent))
 
@@ -372,10 +371,10 @@ def test_retrieval_precision():
         precision = (correct / total) * 100
         print(f"\n{'='*60}")
         print(f"Precision: {correct}/{total} = {precision:.1f}%")
-        print(f"Target: >85%")
+        print("Target: >85%")
 
         if precision >= 85:
-            print(f"✓ Retrieval precision meets target!")
+            print("✓ Retrieval precision meets target!")
         else:
             print(f"⚠️  Note: Precision {precision:.1f}% below target 85%")
             print("   (This is expected with simple pattern matching)")

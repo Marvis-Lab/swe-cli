@@ -1,6 +1,5 @@
 """Tests for incremental conversation summarization."""
 
-import pytest
 from swecli.core.context_engineering.memory.conversation_summarizer import (
     ConversationSummarizer,
     ConversationSummary,

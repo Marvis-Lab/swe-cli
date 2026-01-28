@@ -6,12 +6,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from swecli.models.config import AppConfig
 from swecli.ui.conversation_buffer import ConversationBuffer
 from swecli.ui.dual_console import DualConsole
 from rich.panel import Panel
 from rich.text import Text
-import time
 
 
 def test_split_display():

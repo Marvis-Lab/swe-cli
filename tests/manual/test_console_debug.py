@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Console-only debug script to trace the exact message flow."""
 
-import asyncio
 import sys
 from pathlib import Path
 
@@ -42,7 +41,7 @@ def main():
         # Step 1: Initialize the runner
         print("\n1️⃣ Initializing TextualRunner...")
         runner = TextualRunner(working_dir=Path.cwd())
-        print(f"   ✅ Runner initialized")
+        print("   ✅ Runner initialized")
         print(f"   📋 Model: {runner.config.model_provider}/{runner.config.model}")
         print(f"   📁 Working dir: {runner.working_dir}")
 
@@ -81,7 +80,7 @@ def main():
         if new_messages:
             print(f"✅ SUCCESS! Backend processed the query and returned {len(new_messages)} messages")
 
-            print(f"\n📨 Message details:")
+            print("\n📨 Message details:")
             for i, msg in enumerate(new_messages, 1):
                 print(f"   {i}. Role: {msg.role.value}")
                 print(f"      Content: {msg.content[:100]}{'...' if len(msg.content) > 100 else ''}")
@@ -96,7 +95,7 @@ def main():
             print(f"📝 Total messages in session: {len(session_after.messages)}")
 
             # Show all messages in session
-            print(f"\n📨 All messages in session:")
+            print("\n📨 All messages in session:")
             for i, msg in enumerate(session_after.messages, 1):
                 print(f"   {i}. [{msg.role.value}] {msg.content[:80]}{'...' if len(msg.content) > 80 else ''}")
 

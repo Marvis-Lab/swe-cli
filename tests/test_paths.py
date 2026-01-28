@@ -1,9 +1,6 @@
 """Tests for centralized paths module."""
 
-import os
-from pathlib import Path
 
-import pytest
 
 from swecli.core.paths import (
     APP_DIR_NAME,

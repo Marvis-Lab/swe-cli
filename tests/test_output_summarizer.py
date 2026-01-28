@@ -1,6 +1,5 @@
 """Tests for output_summarizer utility."""
 
-import pytest
 from swecli.ui_textual.utils.output_summarizer import (
     summarize_output,
     get_expansion_hint,

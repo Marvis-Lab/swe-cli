@@ -1,7 +1,6 @@
 """Tests for TodoPanel widget behavior, focusing on auto-hide functionality."""
 
 import pytest
-from unittest.mock import MagicMock, patch
 
 from swecli.core.context_engineering.tools.handlers.todo_handler import TodoHandler, TodoItem
 
