@@ -26,7 +26,8 @@ from .exceptions import (
 )
 from .deployment import DockerDeployment, DockerConfig
 from .remote_runtime import RemoteRuntime
-from .tool_handler import DockerToolHandler, DockerToolRegistry
+from .tool_handler import DockerToolHandler
+from .tool_registry import DockerToolRegistry
 
 __all__ = [
     # Models
