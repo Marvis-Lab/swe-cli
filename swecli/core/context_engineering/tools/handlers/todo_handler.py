@@ -6,7 +6,6 @@ from datetime import datetime
 from typing import Dict, List, Optional
 
 from rich.console import Console
-from rich.panel import Panel
 from rich.table import Table
 
 # Configure logger for todo ID validation warnings
@@ -499,41 +498,6 @@ class TodoHandler:
             "todo": asdict(todo),
         }
 
-    def _format_todo_list_simple(self) -> list[str]:
-        """Format todo list for display after updates.
-
-        Returns:
-            List of formatted todo lines with status indicators and strikethrough for completed items.
-        """
-        if not self._todos:
-            return []
-
-        lines = []
-        status_order = {"doing": 0, "todo": 1, "done": 2}
-
-        def extract_id_number(todo_id: str) -> int:
-            """Extract numeric part from 'todo-X' format."""
-            if todo_id.startswith("todo-"):
-                return int(todo_id[5:])
-            return int(todo_id)
-
-        sorted_todos = sorted(
-            self._todos.values(),
-            key=lambda t: (status_order.get(t.status, 3), extract_id_number(t.id)),
-        )
-
-        for todo in sorted_todos:
-            if todo.status == "done":
-                # Completed: green with strikethrough
-                lines.append(f"  [green]✓ ~~{todo.title}~~[/green]")
-            elif todo.status == "doing":
-                # In progress: yellow
-                lines.append(f"  [yellow]▶ {todo.title}[/yellow]")
-            else:
-                # Pending: cyan
-                lines.append(f"  [cyan]○ {todo.title}[/cyan]")
-
-        return lines
 
     def complete_and_activate_next(self, id: str, log: Optional[str] = None) -> dict:
         """Complete a todo and automatically activate the next pending one.

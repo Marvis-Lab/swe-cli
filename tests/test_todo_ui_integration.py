@@ -1,7 +1,5 @@
 """Integration tests for todo UI callback flow."""
 
-import pytest
-from unittest.mock import MagicMock, patch, PropertyMock
 
 from swecli.core.context_engineering.tools.handlers.todo_handler import TodoHandler
 

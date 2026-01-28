@@ -12,7 +12,7 @@ from rich.text import Text
 
 from swecli.core.runtime import OperationMode
 from swecli.ui_textual.components import WelcomeMessage
-from swecli.ui_textual.style_tokens import BLUE_BRIGHT, SUBTLE, GREEN_BRIGHT, PRIMARY, CYAN
+from swecli.ui_textual.style_tokens import BLUE_BRIGHT, SUBTLE, GREEN_BRIGHT, CYAN
 
 
 def render_welcome_panel(

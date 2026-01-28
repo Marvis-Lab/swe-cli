@@ -138,7 +138,7 @@ def test_incremental_summarization(summarizer, initial_messages):
     # Check what was sent to LLM
     if messages_sent:
         prompt = messages_sent[0]
-        print(f"\nPrompt analysis:")
+        print("\nPrompt analysis:")
 
         # Should contain previous summary
         has_prev_summary = "(No previous summary)" not in prompt

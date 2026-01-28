@@ -86,7 +86,7 @@ class ErrorHandler:
         options.append("c - Cancel all remaining operations")
 
         # Prompt user
-        self.console.print(f"\n[yellow]What would you like to do?[/yellow]")
+        self.console.print("\n[yellow]What would you like to do?[/yellow]")
         for option in options:
             self.console.print(f"  {option}")
 
@@ -141,7 +141,7 @@ class ErrorHandler:
         Returns:
             True if user confirms
         """
-        self.console.print(f"\n[bold yellow]⚠️  Warning:[/bold yellow] This is a potentially dangerous operation")
+        self.console.print("\n[bold yellow]⚠️  Warning:[/bold yellow] This is a potentially dangerous operation")
         self.console.print(f"[dim]Operation: {operation.type.value}[/dim]")
         self.console.print(f"[dim]Target: {operation.target}[/dim]")
 

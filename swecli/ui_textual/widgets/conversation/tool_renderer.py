@@ -6,21 +6,16 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
-from rich.console import Group
-from rich.panel import Panel
-from rich.syntax import Syntax
 from rich.text import Text
 from textual.strip import Strip
 from textual.timer import Timer
 
 from swecli.ui_textual.constants import TOOL_ERROR_SENTINEL
 from swecli.ui_textual.style_tokens import (
-    BLUE_PATH,
     CYAN,
     ERROR,
     GREEN_BRIGHT,
     GREEN_GRADIENT,
-    GREEN_PROMPT,
     GREY,
     PRIMARY,
     SUBTLE,
@@ -94,18 +89,6 @@ class ParallelAgentGroup:
     expanded: bool = False
     start_time: float = field(default_factory=time.monotonic)
     completed: bool = False
-
-
-@dataclass
-class AgentStats:
-    """Stats tracking for a single agent type in a parallel group (legacy)."""
-
-    tool_count: int = 0
-    token_count: int = 0
-    current_tool: str = ""
-    status: str = "running"  # running, completed, failed
-    agent_count: int = 1  # Number of agents of this type (for "Running 2 Explore agents")
-    completed_count: int = 0  # Number of agents that have completed
 
 
 class DefaultToolRenderer:

@@ -1072,7 +1072,7 @@ class TextualUICallback:
         self._in_parallel_agent_group = True
 
         if hasattr(self.conversation, "on_parallel_agents_start") and self._app is not None:
-            print(f"[DEBUG] Calling conversation.on_parallel_agents_start", file=sys.stderr)
+            print("[DEBUG] Calling conversation.on_parallel_agents_start", file=sys.stderr)
             self._app.call_from_thread(
                 self.conversation.on_parallel_agents_start,
                 agent_infos,

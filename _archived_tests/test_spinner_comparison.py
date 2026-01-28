@@ -18,8 +18,8 @@ print("=" * 60)
 print()
 
 # Current speed
-print(f"✓ New Braille Dots Spinner")
-print(f"  Frames: ⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏")
+print("✓ New Braille Dots Spinner")
+print("  Frames: ⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏")
 print(f"  Speed: {Spinner.INTERVAL}s ({int(Spinner.INTERVAL * 1000)}ms) per frame")
 print(f"  Full cycle: {Spinner.INTERVAL * len(Spinner.FRAMES):.2f}s")
 print(f"  Cycles per second: {1 / (Spinner.INTERVAL * len(Spinner.FRAMES)):.1f}")

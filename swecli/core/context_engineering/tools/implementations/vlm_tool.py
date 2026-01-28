@@ -54,7 +54,7 @@ class VLMTool:
                 return base64.b64encode(image_file.read()).decode("utf-8")
         except FileNotFoundError:
             return None
-        except Exception as e:
+        except Exception:
             return None
 
     def analyze_image(
@@ -154,7 +154,7 @@ class VLMTool:
             if not image_url.startswith(("http://", "https://", "data:")):
                 return {
                     "success": False,
-                    "error": f"Invalid image URL: must start with http://, https://, or data:",
+                    "error": "Invalid image URL: must start with http://, https://, or data:",
                     "content": None,
                 }
             final_image_url = image_url

@@ -1,6 +1,5 @@
 """Unit tests for SwecliAgent todo completion validation."""
 
-import pytest
 from unittest.mock import MagicMock
 
 from swecli.core.context_engineering.tools.handlers.todo_handler import TodoHandler

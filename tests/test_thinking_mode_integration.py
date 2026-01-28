@@ -10,7 +10,6 @@ Requires OPENAI_API_KEY environment variable to be set.
 
 import os
 import pytest
-from unittest.mock import MagicMock
 
 from swecli.core.agents.swecli_agent import SwecliAgent
 from swecli.models.config import AppConfig

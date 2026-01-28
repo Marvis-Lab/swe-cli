@@ -11,7 +11,6 @@ from rich.text import Text
 
 from swecli.core.context_engineering.tools.implementations.ask_user_tool import (
     Question,
-    QuestionOption,
 )
 
 if TYPE_CHECKING:

@@ -1,7 +1,6 @@
 """Centralized color mapping for file types in autocomplete."""
 
 from pathlib import Path
-from typing import Tuple
 
 
 class FileTypeColors:

@@ -38,9 +38,9 @@ def create_mcp_viewer_message(
 
     if view_mode == "server":
         # Server details view
-        lines.append(f"┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓")
+        lines.append("┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓")
         lines.append(f"┃ MCP Server: {server_name:<45}┃")
-        lines.append(f"┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛")
+        lines.append("┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛")
         lines.append("")
 
         # Status
@@ -96,9 +96,9 @@ def create_mcp_viewer_message(
 
     elif view_mode == "tools":
         # Tools list view - only show names
-        lines.append(f"┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓")
+        lines.append("┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓")
         lines.append(f"┃ Tools for {server_name} ({len(tools)} tools){' ' * (38 - len(server_name))}┃")
-        lines.append(f"┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛")
+        lines.append("┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛")
         lines.append("")
 
         # Show tools with pagination - only names
@@ -136,9 +136,9 @@ def create_mcp_viewer_message(
             # Generate full name with mcp__ prefix
             full_name = f"mcp__{server_name}__{tool_name}"
 
-            lines.append(f"┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓")
+            lines.append("┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓")
             lines.append(f"┃ {tool_name} ({server_name}){' ' * (56 - len(tool_name) - len(server_name))}┃")
-            lines.append(f"┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛")
+            lines.append("┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛")
             lines.append("")
             lines.append(f"  Tool name: {tool_name}")
             lines.append(f"  Full name: {full_name}")

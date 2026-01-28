@@ -100,7 +100,7 @@ def test_error_display_format():
     # Command that fails with stderr
     result = bash_tool.execute("ls /nonexistent_dir_xyz")
 
-    print(f"\n[Error message format]")
+    print("\n[Error message format]")
     print(f"Error: {result.error}")
 
     if result.error:

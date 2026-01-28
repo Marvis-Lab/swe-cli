@@ -5,7 +5,6 @@ This script tests if your terminal properly supports alternate screen buffer.
 """
 
 import sys
-import time
 
 
 def test_ansi_alternate_screen():

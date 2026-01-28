@@ -8,7 +8,6 @@ from swecli.core.paths import get_paths
 from swecli.core.plugins.models import (
     KnownMarketplaces,
     InstalledPlugins,
-    MarketplaceInfo,
     InstalledPlugin,
     DirectPlugin,
     DirectPlugins,

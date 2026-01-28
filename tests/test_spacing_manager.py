@@ -4,7 +4,6 @@ Tests the centralized spacing logic for UI rendering to ensure
 exactly 1 blank line between ANY two visible content elements.
 """
 
-import pytest
 from rich.text import Text
 from textual.strip import Strip
 

@@ -1,6 +1,5 @@
 """Query processing for REPL."""
 
-import json
 from typing import TYPE_CHECKING, Iterable
 
 from swecli.core.context_engineering.memory import (

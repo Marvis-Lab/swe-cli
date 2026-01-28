@@ -29,7 +29,7 @@ def test_session_playbook():
 
     # Update session with playbook
     session.update_playbook(playbook)
-    print(f"✓ Updated session with playbook")
+    print("✓ Updated session with playbook")
 
     # Verify it persists
     playbook2 = session.get_playbook()
@@ -50,7 +50,7 @@ def test_reflector():
     print("=" * 60)
 
     reflector = ExecutionReflector(min_tool_calls=2, min_confidence=0.6)
-    print(f"✓ Created reflector")
+    print("✓ Created reflector")
 
     # Simulate tool calls: list_files -> read_file
     tool_calls = [
@@ -77,13 +77,13 @@ def test_reflector():
     )
 
     if result:
-        print(f"✓ Extracted learning!")
+        print("✓ Extracted learning!")
         print(f"  Category: {result.category}")
         print(f"  Content: {result.content}")
         print(f"  Confidence: {result.confidence:.2f}")
         print(f"  Reasoning: {result.reasoning}")
     else:
-        print(f"✗ No learning extracted (this might be OK depending on min_confidence)")
+        print("✗ No learning extracted (this might be OK depending on min_confidence)")
 
     print("\n✅ Test 2 PASSED\n")
 
@@ -118,7 +118,7 @@ def test_effectiveness_tracking():
 
     # Test playbook stats
     stats = playbook.stats()
-    print(f"\n✓ Playbook stats:")
+    print("\n✓ Playbook stats:")
     print(f"  Total strategies: {stats['total_strategies']}")
     print(f"  Helpful total: {stats['helpful_total']}")
     print(f"  Harmful total: {stats['harmful_total']}")
@@ -138,16 +138,16 @@ def test_serialization():
     playbook.add_strategy("file_operations", "Strategy 1")
     playbook.add_strategy("code_navigation", "Strategy 2")
     session1.update_playbook(playbook)
-    print(f"✓ Created session with 2 strategies")
+    print("✓ Created session with 2 strategies")
 
     # Serialize to dict
     session_dict = session1.model_dump()
-    print(f"✓ Serialized to dict")
+    print("✓ Serialized to dict")
 
     # Deserialize
     session2 = Session(**session_dict)
     playbook2 = session2.get_playbook()
-    print(f"✓ Deserialized from dict")
+    print("✓ Deserialized from dict")
 
     # Verify strategies persisted
     assert len(playbook2) == 2, "Should have 2 strategies"

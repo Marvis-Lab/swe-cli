@@ -98,7 +98,7 @@ def test_context_display():
                     tokens_saved = result.tokens_saved
                     reduction = result.reduction_percent
 
-                    print(f"✅ Auto-compaction executed!")
+                    print("✅ Auto-compaction executed!")
                     print(f"   Messages: {messages_before} → {messages_after}")
                     print(f"   Tokens: {tokens_before:,} → {tokens_after:,}")
                     print(f"   Saved: {tokens_saved:,} tokens ({reduction:.1f}% reduction)")

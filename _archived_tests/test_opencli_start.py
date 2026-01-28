@@ -10,7 +10,6 @@ sys.path.insert(0, str(Path(__file__).parent))
 try:
     print("Testing imports...")
     from swecli.ui.chat_app import ChatApplication
-    from swecli.ui.chat_console import ChatConsole
     from swecli.ui.chat_formatters import ChatBoxFormatter
     print("✓ All imports successful")
 

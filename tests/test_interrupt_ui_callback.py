@@ -42,7 +42,7 @@ def test_on_interrupt_removes_blank_line_and_shows_message():
     ui_callback.on_interrupt()
 
     # Verify the blank line was removed
-    print(f"\n=== Test Results ===")
+    print("\n=== Test Results ===")
     print(f"Number of calls to _truncate_from: {len(truncate_calls)}")
     if truncate_calls:
         print(f"Truncated at index: {truncate_calls[0]}")

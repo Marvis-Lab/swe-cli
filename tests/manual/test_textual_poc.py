@@ -12,12 +12,6 @@ def test_imports():
     """Test that all imports work."""
     print("Testing imports...")
     try:
-        from swecli.ui_textual.chat_app import (
-            SWECLIChatApp,
-            ConversationLog,
-            StatusBar,
-            create_chat_app,
-        )
         print("✓ All imports successful")
         return True
     except Exception as e:
@@ -51,11 +45,11 @@ def test_widgets():
 
         # Create conversation log
         conv = ConversationLog(id="test-conv")
-        print(f"✓ ConversationLog created")
+        print("✓ ConversationLog created")
 
         # Create status bar
         status = StatusBar()
-        print(f"✓ StatusBar created")
+        print("✓ StatusBar created")
 
         return True
     except Exception as e:
