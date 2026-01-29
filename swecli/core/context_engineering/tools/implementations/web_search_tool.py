@@ -27,7 +27,6 @@ class WebSearchTool:
         """
         self.config = config
         self.working_dir = working_dir
-        self.default_max_results = 10
 
     def search(
         self,

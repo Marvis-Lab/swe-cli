@@ -4,7 +4,6 @@ from .box_styles import BoxStyles
 from .console_animations import Spinner, FlashingSymbol, ProgressIndicator
 from .tips import TipsManager
 from .welcome import WelcomeMessage
-from .status_line import StatusLine
 from .notifications import NotificationCenter, Notification
 from .task_progress import TaskProgressDisplay
 from .category_selector_message import create_category_selector_message, get_category_items
@@ -18,7 +17,6 @@ __all__ = [
     "Spinner",
     "FlashingSymbol",
     "ProgressIndicator",
-    "StatusLine",
     "NotificationCenter",
     "Notification",
     "TaskProgressDisplay",

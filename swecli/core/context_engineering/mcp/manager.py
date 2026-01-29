@@ -42,7 +42,7 @@ class _SuppressStderr:
         os.dup2(self.devnull_fd, 2)
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(self, _exc_type, _exc_val, _exc_tb):
         # Restore stderr
         os.dup2(self.old_stderr_fd, 2)
         # Close file descriptors

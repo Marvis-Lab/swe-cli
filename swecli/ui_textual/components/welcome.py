@@ -32,10 +32,6 @@ class WelcomeMessage:
             return "v0.1.7"
 
     @classmethod
-    def _inner_width(cls) -> int:
-        return cls.TOTAL_WIDTH - 2
-
-    @classmethod
     def _fit(cls, text: str, width: int) -> str:
         if len(text) <= width:
             return text.ljust(width)
@@ -101,37 +97,6 @@ class WelcomeMessage:
         if len(text) <= width:
             return text
         return f"…{text[-(width - 1):]}" if width > 1 else text[:width]
-
-    @classmethod
-    def generate_banner(cls) -> List[str]:
-        version = cls.get_version()
-        header = cls._header_line(f"SWE-CLI {version}")
-        welcome_line = cls._two_column(
-            "Welcome to your coding assistant",
-            "Quick start: /help · /models · /mode plan",
-            left_align="center",
-        )
-        footer = cls._footer_line()
-        return [header, welcome_line, footer]
-
-    @staticmethod
-    def generate_commands_section() -> List[str]:
-        return [
-            "Essential Commands",
-            " • /help           Show all commands",
-            " • /models         Configure AI models",
-            " • /mode normal    Run with approvals",
-            " • /mode plan      Plan without execution",
-        ]
-
-    @staticmethod
-    def generate_shortcuts_section() -> List[str]:
-        return [
-            "Keyboard Shortcuts",
-            " • Shift+Tab       Toggle plan/normal mode",
-            " • @file           Mention a file for context",
-            " • ↑ / ↓           Navigate command history",
-        ]
 
     @classmethod
     def generate_full_welcome(

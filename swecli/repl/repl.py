@@ -30,7 +30,7 @@ from swecli.core.context_engineering.tools.implementations import (
     BashTool,
 )
 from swecli.ui_textual.components.console_animations import Spinner
-from swecli.ui_textual.components import StatusLine, NotificationCenter
+from swecli.ui_textual.components import NotificationCenter
 from swecli.ui_textual.autocomplete import SwecliCompleter
 from swecli.ui_textual.formatters_internal.output_formatter import OutputFormatter
 from swecli.ui_textual.style_tokens import (
@@ -188,7 +188,6 @@ class REPL:
         """Initialize UI components and state."""
         # UI Components
         self.spinner = Spinner(self.console)
-        self.status_line = StatusLine(self.console)
         self.output_formatter = OutputFormatter(self.console, use_claude_style=True)
         self._notification_center = NotificationCenter(self.console)
 
@@ -319,7 +318,6 @@ class REPL:
             self.mode_manager,
             self.file_ops,
             self.output_formatter,
-            self.status_line,
             self._print_markdown_message,
         )
         self.query_processor.set_notification_center(self._notification_center)

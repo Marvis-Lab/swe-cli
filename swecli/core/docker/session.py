@@ -17,7 +17,6 @@ import pexpect
 from .exceptions import (
     BashSyntaxError,
     CommandTimeoutError,
-    NoExitCodeError,
     NonZeroExitCodeError,
     SessionNotInitializedError,
 )

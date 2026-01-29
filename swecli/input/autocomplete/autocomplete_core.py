@@ -27,7 +27,7 @@ class SwecliAutocompleteCore(Completer):
         self.formatter = CompletionFormatter(self.file_finder)
 
     def get_completions(
-        self, document: Document, complete_event
+        self, document: Document, _complete_event
     ) -> Iterable[Completion]:
         """Get completions based on current input.
 
@@ -113,7 +113,7 @@ class FileMentionCompleter(Completer):
         self.formatter = CompletionFormatter(self.file_finder)
 
     def get_completions(
-        self, document: Document, complete_event
+        self, document: Document, _complete_event
     ) -> Iterable[Completion]:
         """Get file mention completions.
 
@@ -158,7 +158,7 @@ class SlashCommandCompleter(Completer):
         self.formatter = CompletionFormatter(None)
 
     def get_completions(
-        self, document: Document, complete_event
+        self, document: Document, _complete_event
     ) -> Iterable[Completion]:
         """Get slash command completions.
 

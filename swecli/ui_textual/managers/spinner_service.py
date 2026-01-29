@@ -589,7 +589,7 @@ class SpinnerService:
                 return
             instance.metadata.update(kwargs)
 
-    def stop_all(self, immediate: bool = True) -> None:
+    def stop_all(self, _immediate: bool = True) -> None:
         """Stop all active spinners.
 
         Args:
