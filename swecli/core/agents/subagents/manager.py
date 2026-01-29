@@ -874,7 +874,8 @@ Use ONLY the filename or relative path for all file operations.
         """
         import asyncio
         from swecli.core.docker.deployment import DockerDeployment
-        from swecli.core.docker.tool_handler import DockerToolHandler, DockerToolRegistry
+        from swecli.core.docker.tool_handler import DockerToolHandler
+        from swecli.core.docker.tool_registry import DockerToolRegistry
 
         docker_config = spec.get("docker_config")
         if docker_config is None:
@@ -1202,7 +1203,7 @@ Use ONLY the filename or relative path for all file operations.
             # Use Docker-based tool registry for Docker execution
             # Pass local registry for fallback on tools not supported in Docker (e.g., read_pdf)
             # Pass path_mapping to remap Docker paths to local paths for local-only tools
-            from swecli.core.docker.tool_handler import DockerToolRegistry
+            from swecli.core.docker.tool_registry import DockerToolRegistry
             tool_registry = DockerToolRegistry(
                 docker_handler,
                 local_registry=self._tool_registry,
