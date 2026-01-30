@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import re
 import shutil
 from dataclasses import dataclass, field
 from enum import Enum
@@ -12,6 +11,8 @@ from pathlib import Path
 from typing import Any
 
 from swecli.models.config import AppConfig
+from .docker_execution import DockerSubAgentExecutor
+from .ask_user_handler import AskUserSubAgentHandler
 
 from .specs import CompiledSubAgent, SubAgentSpec
 
@@ -95,6 +96,10 @@ class SubAgentManager:
         self._working_dir = working_dir
         self._agents: dict[str, CompiledSubAgent] = {}
         self._all_tool_names: list[str] = self._get_all_tool_names()
+
+        # New executors
+        self.docker_executor = DockerSubAgentExecutor(self)
+        self.ask_user_handler = AskUserSubAgentHandler()
 
     def _get_all_tool_names(self) -> list[str]:
         """Get list of all available tool names from registry.
@@ -345,319 +350,10 @@ class SubAgentManager:
 Complete the task given to you, using available tools as needed.
 Be thorough and provide a clear summary when done."""
 
-    def _is_docker_available(self) -> bool:
-        """Check if Docker is available on the system."""
-        return shutil.which("docker") is not None
-
     def _get_spec_for_subagent(self, name: str) -> SubAgentSpec | None:
         """Get the SubAgentSpec for a registered subagent."""
         from .agents import ALL_SUBAGENTS
         return next((s for s in ALL_SUBAGENTS if s["name"] == name), None)
-
-    def _extract_input_files(self, task: str, local_working_dir: Path) -> list[Path]:
-        """Extract DOCUMENT file paths referenced in the task.
-
-        Only extracts PDF, DOC, DOCX - formats that can contain research papers.
-        Images (PNG, JPEG, SVG) and data files (CSV) are NOT extracted.
-
-        Looks for:
-        - @filename patterns (e.g., @paper.pdf)
-        - Quoted file paths (e.g., "paper.pdf")
-        - Unquoted document filenames (e.g., PDF paper.pdf)
-
-        Args:
-            task: The task description string
-            local_working_dir: Local working directory to resolve relative paths
-
-        Returns:
-            List of existing document file paths to copy into Docker
-        """
-        import re
-        files: list[Path] = []
-        seen: set[str] = set()  # Track by resolved filename to avoid duplicates
-
-        # Only document formats (PDF, DOC, DOCX)
-        doc_pattern = r'pdf|docx?'
-
-        # Pattern 1: @filename (e.g., @paper.pdf)
-        at_mentions = re.findall(rf'@([\w\-\.]+\.(?:{doc_pattern}))\b', task, re.I)
-        for filename in at_mentions:
-            path = local_working_dir / filename
-            if path.exists() and path.is_file() and path.name not in seen:
-                files.append(path)
-                seen.add(path.name)
-
-        # Pattern 2: Quoted file paths (e.g., "paper.pdf", 'paper.pdf', `paper.pdf`)
-        quoted_paths = re.findall(
-            rf'["\'\`]([^"\'\`]+\.(?:{doc_pattern}))["\'\`]',
-            task,
-            re.I
-        )
-        for p in quoted_paths:
-            path = Path(p) if Path(p).is_absolute() else local_working_dir / p
-            if path.exists() and path.is_file() and path.name not in seen:
-                files.append(path)
-                seen.add(path.name)
-
-        # Pattern 3: Unquoted document filenames (e.g., "PDF paper.pdf")
-        unquoted_docs = re.findall(
-            rf'(?:^|[\s(,])([^\s"\'()<>]+\.(?:{doc_pattern}))\b',
-            task,
-            re.I
-        )
-        for filename in unquoted_docs:
-            path = Path(filename) if Path(filename).is_absolute() else local_working_dir / filename
-            if path.exists() and path.is_file() and path.name not in seen:
-                files.append(path)
-                seen.add(path.name)
-
-        # Pattern 4: Stems without extension (e.g., "paper 2303.11366v4" without .pdf)
-        # Match alphanumeric+dots patterns that could be paper IDs (e.g., arXiv IDs)
-        # Then check if a corresponding .pdf/.doc/.docx exists
-        stem_pattern = r'(?:^|[\s(,])(\d[\w\.\-]+v\d+|\d{4}\.\d+(?:v\d+)?)\b'
-        stems = re.findall(stem_pattern, task, re.I)
-        for stem in stems:
-            # Try adding document extensions
-            for ext in ['pdf', 'PDF', 'docx', 'DOCX', 'doc', 'DOC']:
-                candidate = local_working_dir / f"{stem}.{ext}"
-                if candidate.exists() and candidate.is_file():
-                    # Check if this file was already found (use resolved name)
-                    if candidate.name not in seen:
-                        files.append(candidate)
-                        seen.add(candidate.name)
-                    break
-
-        return files
-
-    def _extract_github_info(self, task: str) -> tuple[str, str, str] | None:
-        """Extract GitHub repo URL and issue number from task.
-
-        Looks for GitHub issue URLs in the format:
-        https://github.com/owner/repo/issues/123
-
-        Args:
-            task: The task description string
-
-        Returns:
-            Tuple of (repo_url, owner_repo, issue_number) or None if not found
-        """
-        import re
-        match = re.search(r'https://github\.com/([^/]+/[^/]+)/issues/(\d+)', task)
-        if match:
-            owner_repo = match.group(1)
-            issue_number = match.group(2)
-            repo_url = f"https://github.com/{owner_repo}.git"
-            return (repo_url, owner_repo, issue_number)
-        return None
-
-    def _copy_files_to_docker(
-        self,
-        container_name: str,
-        files: list[Path],
-        workspace_dir: str,
-        ui_callback: Any = None,
-    ) -> dict[str, str]:
-        """Copy local files into Docker container using docker cp.
-
-        Args:
-            container_name: Docker container name or ID
-            files: List of local file paths to copy
-            workspace_dir: Target directory in Docker container
-            ui_callback: Optional UI callback for progress display
-
-        Returns:
-            Mapping of Docker paths to local paths (for local-only tool remapping)
-        """
-        import subprocess
-
-        path_mapping: dict[str, str] = {}
-
-        for local_file in files:
-            # Show copy progress - use on_nested_tool_call for proper display
-            if ui_callback:
-                if hasattr(ui_callback, 'on_nested_tool_call'):
-                    # Direct nested callback - use proper method
-                    ui_callback.on_nested_tool_call(
-                        "docker_copy",
-                        {"file": local_file.name},
-                        depth=getattr(ui_callback, '_depth', 1),
-                        parent=getattr(ui_callback, '_context', 'Docker'),
-                    )
-                elif hasattr(ui_callback, 'on_tool_call'):
-                    ui_callback.on_tool_call("docker_copy", {"file": local_file.name})
-
-            try:
-                docker_target = f"{workspace_dir}/{local_file.name}"
-                docker_path = f"{container_name}:{docker_target}"
-
-                # Use docker cp for reliable file transfer (handles any size/binary)
-                result = subprocess.run(
-                    ["docker", "cp", str(local_file), docker_path],
-                    capture_output=True,
-                    text=True,
-                    timeout=60.0,
-                )
-
-                if result.returncode != 0:
-                    raise RuntimeError(f"docker cp failed: {result.stderr}")
-
-                # Store mapping: Docker path → local path
-                path_mapping[docker_target] = str(local_file)
-
-                # Show completion - use on_nested_tool_result for proper display
-                if ui_callback:
-                    result_data = {"success": True, "output": f"Copied to {docker_target}"}
-                    if hasattr(ui_callback, 'on_nested_tool_result'):
-                        ui_callback.on_nested_tool_result(
-                            "docker_copy",
-                            {"file": local_file.name},
-                            result_data,
-                            depth=getattr(ui_callback, '_depth', 1),
-                            parent=getattr(ui_callback, '_context', 'Docker'),
-                        )
-                    elif hasattr(ui_callback, 'on_tool_result'):
-                        ui_callback.on_tool_result("docker_copy", {"file": local_file.name}, result_data)
-
-            except Exception as e:
-                if ui_callback:
-                    result_data = {"success": False, "error": str(e)}
-                    if hasattr(ui_callback, 'on_nested_tool_result'):
-                        ui_callback.on_nested_tool_result(
-                            "docker_copy",
-                            {"file": local_file.name},
-                            result_data,
-                            depth=getattr(ui_callback, '_depth', 1),
-                            parent=getattr(ui_callback, '_context', 'Docker'),
-                        )
-                    elif hasattr(ui_callback, 'on_tool_result'):
-                        ui_callback.on_tool_result("docker_copy", {"file": local_file.name}, result_data)
-
-        return path_mapping
-
-    def _rewrite_task_for_docker(
-        self,
-        task: str,
-        input_files: list[Path],
-        workspace_dir: str,
-    ) -> str:
-        """Rewrite task to reference Docker paths instead of local paths.
-
-        Args:
-            task: Original task description
-            input_files: List of files that were copied to Docker
-            workspace_dir: Docker workspace directory
-
-        Returns:
-            Task with paths rewritten to Docker paths, including Docker context
-        """
-        new_task = task
-
-        # Remove phrases that hint at local filesystem
-        new_task = re.sub(r'\blocal\s+', '', new_task, flags=re.IGNORECASE)
-        new_task = re.sub(r'\bin this repo\b', f'in {workspace_dir}', new_task, flags=re.IGNORECASE)
-        new_task = re.sub(r'\bthis repo\b', workspace_dir, new_task, flags=re.IGNORECASE)
-
-        # Replace any reference to the local working directory with workspace
-        local_working_dir = self._working_dir
-        if local_working_dir:
-            local_dir_str = str(local_working_dir)
-            # Replace the local directory path with workspace
-            new_task = new_task.replace(local_dir_str, workspace_dir)
-            # Also try without trailing slash
-            new_task = new_task.replace(local_dir_str.rstrip("/"), workspace_dir)
-
-        for local_file in input_files:
-            docker_path = f"{workspace_dir}/{local_file.name}"
-            # Replace @filename with Docker path
-            new_task = new_task.replace(f"@{local_file.name}", docker_path)
-            # Also replace any absolute local paths
-            new_task = new_task.replace(str(local_file), docker_path)
-            # Replace plain filename references (be careful to avoid partial matches)
-            # Use word boundary matching by checking surrounding chars
-            new_task = re.sub(
-                rf'\b{re.escape(local_file.name)}\b',
-                docker_path,
-                new_task
-            )
-
-        # Prepend Docker context with strong emphasis
-        docker_context = f"""## CRITICAL: Docker Environment
-
-YOU ARE RUNNING INSIDE A DOCKER CONTAINER.
-
-Working directory: {workspace_dir}
-All file paths MUST be relative (e.g., `file.py`, `src/file.py`) or start with {workspace_dir}/.
-
-NEVER use paths like:
-- /Users/...
-- /home/...
-- Any absolute path outside {workspace_dir}
-
-ALWAYS use paths like:
-- pyproject.toml
-- src/model.py
-- config.yaml
-
-Use ONLY the filename or relative path for all file operations.
-
-"""
-        return docker_context + new_task
-
-    def _create_docker_path_sanitizer(
-        self,
-        workspace_dir: str,
-        local_dir: str,
-        image_name: str,
-        container_id: str,
-    ):
-        """Create a path sanitizer for Docker mode UI display.
-
-        Converts local paths to Docker workspace paths with container prefix:
-        - /Users/.../test_opencli/src/file.py → [uv:a1b2c3d4]:/workspace/src/file.py
-        - README.md → [uv:a1b2c3d4]:/workspace/README.md
-
-        Args:
-            workspace_dir: The Docker workspace directory (e.g., /workspace)
-            local_dir: The local working directory (e.g., /Users/.../test_opencli)
-            image_name: Full Docker image name (e.g., ghcr.io/astral-sh/uv:python3.11)
-            container_id: Short container ID (e.g., a1b2c3d4)
-
-        Returns:
-            A callable that sanitizes paths for display
-        """
-        # Extract short image name: "ghcr.io/astral-sh/uv:python3.11-bookworm" → "uv"
-        short_image = image_name.split("/")[-1].split(":")[0]
-        prefix = f"[{short_image}:{container_id}]:"
-
-        def sanitize(path: str) -> str:
-            # If path starts with local_dir, replace with workspace_dir
-            if path.startswith(local_dir):
-                relative = path[len(local_dir):].lstrip("/")
-                docker_path = f"{workspace_dir}/{relative}" if relative else workspace_dir
-                return f"{prefix}{docker_path}"
-
-            # Handle Docker-internal absolute paths (e.g., /workspace/..., /testbed/...)
-            # These are paths the LLM outputs when running inside Docker
-            if path.startswith(workspace_dir):
-                return f"{prefix}{path}"
-
-            # Fallback: extract filename from other absolute paths
-            match = re.match(r'^(/Users/|/home/|/var/|/tmp/).+/([^/]+)$', path)
-            if match:
-                return f"{prefix}{workspace_dir}/{match.group(2)}"
-
-            # Convert relative paths to full Docker paths
-            # e.g., "README.md" → "[uv:a1b2c3d4]:/workspace/README.md"
-            # e.g., "." → "[uv:a1b2c3d4]:/workspace"
-            # e.g., "src/model.py" → "[uv:a1b2c3d4]:/workspace/src/model.py"
-            if not path.startswith("/"):
-                clean_path = path.lstrip("./")
-                if not clean_path:
-                    return f"{prefix}{workspace_dir}"
-                return f"{prefix}{workspace_dir}/{clean_path}"
-
-            return path
-        return sanitize
 
     def create_docker_nested_callback(
         self,
@@ -683,35 +379,14 @@ Use ONLY the filename or relative path for all file operations.
 
         Returns:
             NestedUICallback wrapped with Docker path sanitizer, or None if ui_callback is None
-
-        Usage:
-            nested_callback = manager.create_docker_nested_callback(
-                ui_callback=self.ui_callback,
-                subagent_name="Web-clone",
-                workspace_dir="/workspace",
-                image_name=docker_image,
-                container_id=container_id,
-            )
-            result = manager.execute_subagent(..., ui_callback=nested_callback)
         """
-        if ui_callback is None:
-            return None
-
-        from swecli.ui_textual.nested_callback import NestedUICallback
-
-        # Use existing _create_docker_path_sanitizer
-        path_sanitizer = self._create_docker_path_sanitizer(
+        return self.docker_executor.create_nested_callback(
+            ui_callback=ui_callback,
+            subagent_name=subagent_name,
             workspace_dir=workspace_dir,
-            local_dir=local_dir or str(self._working_dir or Path.cwd()),
             image_name=image_name,
             container_id=container_id,
-        )
-
-        return NestedUICallback(
-            parent_callback=ui_callback,
-            parent_context=subagent_name,
-            depth=1,
-            path_sanitizer=path_sanitizer,
+            local_dir=local_dir,
         )
 
     def execute_with_docker_handler(
@@ -750,59 +425,17 @@ Use ONLY the filename or relative path for all file operations.
         Returns:
             Result dict with success, content, etc.
         """
-        compiled = self._agents.get(name)
-        if not compiled:
-            return {"success": False, "error": f"Unknown subagent: {name}"}
-
-        # Extract description from task if not provided
-        if description is None:
-            description = self._extract_task_description(task)
-
-        # Show Spawn header
-        spawn_args = {
-            "subagent_type": name,
-            "description": description,
-        }
-        if ui_callback and hasattr(ui_callback, "on_tool_call"):
-            ui_callback.on_tool_call("spawn_subagent", spawn_args)
-
-        # Create nested callback with Docker context
-        nested_callback = self.create_docker_nested_callback(
+        return self.docker_executor.execute_with_handler(
+            name=name,
+            task=task,
+            deps=deps,
+            docker_handler=docker_handler,
             ui_callback=ui_callback,
-            subagent_name=name,
-            workspace_dir=workspace_dir,
-            image_name=image_name,
             container_id=container_id,
+            image_name=image_name,
+            workspace_dir=workspace_dir,
+            description=description,
         )
-
-        try:
-            # Execute subagent with nested callback and docker handler
-            result = self.execute_subagent(
-                name=name,
-                task=task,
-                deps=deps,
-                ui_callback=nested_callback,
-                docker_handler=docker_handler,
-                show_spawn_header=False,  # Already shown
-            )
-
-            # Show Spawn result
-            if ui_callback and hasattr(ui_callback, "on_tool_result"):
-                success = isinstance(result, str) or result.get("success", True)
-                ui_callback.on_tool_result("spawn_subagent", spawn_args, {
-                    "success": success,
-                    "output": result.get("content", "") if isinstance(result, dict) else str(result),
-                })
-
-            return result
-
-        except Exception as e:
-            if ui_callback and hasattr(ui_callback, "on_tool_result"):
-                ui_callback.on_tool_result("spawn_subagent", spawn_args, {
-                    "success": False,
-                    "error": str(e),
-                })
-            return {"success": False, "error": str(e)}
 
     def _extract_task_description(self, task: str) -> str:
         """Extract a short description from the task for Spawn header display.
@@ -815,6 +448,7 @@ Use ONLY the filename or relative path for all file operations.
         """
         # Look for PDF filename in task
         if ".pdf" in task.lower():
+            import re
             match = re.search(r'([^\s/]+\.pdf)', task, re.IGNORECASE)
             if match:
                 return f"Implement {match.group(1)}"
@@ -823,293 +457,6 @@ Use ONLY the filename or relative path for all file operations.
         if len(task.split('\n')[0]) > 50:
             return first_line + "..."
         return first_line
-
-    def _get_agent_display_type(self, name: str) -> str:
-        """Get the display type for an agent.
-
-        Args:
-            name: The subagent name
-
-        Returns:
-            The display type (e.g., "Explore" for "Explore" agent)
-        """
-        # Map internal agent names to display types
-        # For now, just return the name as-is
-        # Could add special handling for specific agents
-        return name
-
-    def _execute_with_docker(
-        self,
-        name: str,
-        task: str,
-        deps: SubAgentDeps,
-        spec: SubAgentSpec,
-        ui_callback: Any = None,
-        task_monitor: Any = None,
-        show_spawn_header: bool = True,
-        local_output_dir: Path | None = None,
-    ) -> dict[str, Any]:
-        """Execute a subagent inside Docker with automatic container lifecycle.
-
-        This method:
-        1. Starts a Docker container with the spec's docker_config
-        2. Executes the subagent with all tools routed through Docker
-        3. Copies generated files from container to local working directory
-        4. Stops the container
-
-        Args:
-            name: The subagent type name
-            task: The task description
-            deps: Dependencies for tool execution
-            spec: The subagent specification with docker_config
-            ui_callback: Optional UI callback
-            task_monitor: Optional task monitor
-            show_spawn_header: Whether to show the Spawn[] header. Set to False when
-                called via tool_registry (react_executor already showed it).
-            local_output_dir: Local directory where files should be copied after Docker
-                execution. If None, uses self._working_dir or cwd.
-
-        Returns:
-            Result dict with content, success, and messages
-        """
-        import asyncio
-        from swecli.core.docker.deployment import DockerDeployment
-        from swecli.core.docker.tool_handler import DockerToolHandler, DockerToolRegistry
-
-        docker_config = spec.get("docker_config")
-        if docker_config is None:
-            return {
-                "success": False,
-                "error": "No docker_config in subagent spec",
-                "content": "",
-            }
-
-        # Workspace inside Docker container
-        workspace_dir = "/workspace"
-        local_working_dir = local_output_dir or (Path(self._working_dir) if self._working_dir else Path.cwd())
-
-        deployment = None
-        loop = None
-        nested_callback = None
-
-        # Show Spawn header only for direct invocations (e.g., /paper2code)
-        # When called via tool_registry, react_executor already showed the header
-        spawn_args = None
-        if show_spawn_header:
-            spawn_args = {
-                "subagent_type": name,
-                "description": self._extract_task_description(task),
-            }
-            if ui_callback and hasattr(ui_callback, "on_tool_call"):
-                ui_callback.on_tool_call("spawn_subagent", spawn_args)
-
-        try:
-            # Create Docker deployment first to get container name
-            # (container name is generated in __init__, before start())
-            deployment = DockerDeployment(config=docker_config)
-
-            # Extract container ID (last 8 chars of container name)
-            # Container name format: "swecli-runtime-a1b2c3d4"
-            container_id = deployment._container_name.split("-")[-1]
-
-            # Create nested callback wrapper with container info using standardized interface
-            # This ensures docker_start, docker_copy, and all subagent tool calls
-            # appear properly nested under the Spawn[subagent_name] parent
-            nested_callback = self.create_docker_nested_callback(
-                ui_callback=ui_callback,
-                subagent_name=name,
-                workspace_dir=workspace_dir,
-                image_name=docker_config.image,
-                container_id=container_id,
-                local_dir=str(local_working_dir),
-            )
-
-            # Show Docker start as a tool call with spinner (using nested callback)
-            if nested_callback and hasattr(nested_callback, 'on_tool_call'):
-                nested_callback.on_tool_call("docker_start", {"image": docker_config.image})
-
-            # Run async start in sync context - use a single event loop for the whole operation
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            loop.run_until_complete(deployment.start())
-
-            # Show Docker start completion (using nested callback)
-            if nested_callback and hasattr(nested_callback, 'on_tool_result'):
-                nested_callback.on_tool_result("docker_start", {"image": docker_config.image}, {
-                    "success": True,
-                    "output": docker_config.image,
-                })
-
-            # Create workspace directory in Docker container
-            # (some images like uv don't have /workspace by default)
-            loop.run_until_complete(
-                deployment.runtime.run(f"mkdir -p {workspace_dir}")
-            )
-
-            # Create Docker tool handler with local registry fallback for tools like read_pdf
-            runtime = deployment.runtime
-            shell_init = docker_config.shell_init if hasattr(docker_config, 'shell_init') else ""
-            docker_handler = DockerToolHandler(
-                runtime,
-                workspace_dir=workspace_dir,
-                shell_init=shell_init,
-            )
-
-            # Extract input files from task (PDFs, images, etc.)
-            input_files = self._extract_input_files(task, local_working_dir)
-
-            # Copy input files into Docker container using docker cp
-            # Returns mapping of Docker paths to local paths for local-only tools
-            # Note: Individual docker_copy calls will show progress for each file
-            path_mapping: dict[str, str] = {}
-            if input_files:
-                path_mapping = self._copy_files_to_docker(
-                    deployment._container_name,
-                    input_files,
-                    workspace_dir,
-                    nested_callback,  # Use nested callback for proper nesting
-                )
-
-            # Rewrite task to use Docker paths
-            docker_task = self._rewrite_task_for_docker(task, input_files, workspace_dir)
-
-            # Execute subagent with Docker tools (local_registry passed for fallback)
-            # Pass nested_callback - execute_subagent will detect it's already nested
-            result = self.execute_subagent(
-                name=name,
-                task=docker_task,  # Use rewritten task with Docker paths
-                deps=deps,
-                ui_callback=nested_callback,  # Already nested, will be used directly
-                task_monitor=task_monitor,
-                working_dir=workspace_dir,
-                docker_handler=docker_handler,
-                path_mapping=path_mapping,  # For local-only tool path remapping
-            )
-
-            # Copy generated files from Docker to local working directory
-            if result.get("success"):
-                self._copy_files_from_docker(
-                    container_name=deployment._container_name,
-                    workspace_dir=workspace_dir,
-                    local_dir=local_working_dir,
-                    spec=spec,
-                    ui_callback=nested_callback,
-                )
-
-            # Show Spawn completion only if we showed the header
-            if spawn_args and ui_callback and hasattr(ui_callback, "on_tool_result"):
-                ui_callback.on_tool_result("spawn_subagent", spawn_args, {
-                    "success": result.get("success", True),
-                })
-
-            return result
-
-        except Exception as e:
-            import traceback
-            # Stop the docker_start spinner by reporting failure
-            if nested_callback and hasattr(nested_callback, 'on_tool_result'):
-                nested_callback.on_tool_result("docker_start", {"image": docker_config.image}, {
-                    "success": False,
-                    "error": str(e),
-                })
-            # Show Spawn failure only if we showed the header
-            if spawn_args and ui_callback and hasattr(ui_callback, "on_tool_result"):
-                ui_callback.on_tool_result("spawn_subagent", spawn_args, {
-                    "success": False,
-                    "error": str(e),
-                })
-            return {
-                "success": False,
-                "error": f"Docker execution failed: {str(e)}\n{traceback.format_exc()}",
-                "content": "",
-            }
-        finally:
-            # Show Docker stop as a tool call (matching docker_start pattern)
-            if deployment is not None and nested_callback and hasattr(nested_callback, 'on_tool_call'):
-                nested_callback.on_tool_call("docker_stop", {"container": deployment._container_name[:12]})
-
-            # Always stop the container
-            if deployment is not None and loop is not None:
-                try:
-                    loop.run_until_complete(deployment.stop())
-                except Exception:
-                    pass  # Ignore cleanup errors
-
-                # Show Docker stop completion with container ID
-                if nested_callback and hasattr(nested_callback, 'on_tool_result'):
-                    container_id = deployment._container_name
-                    nested_callback.on_tool_result("docker_stop", {"container": container_id}, {"success": True, "output": container_id})
-
-            # Close the loop after all async operations
-            if loop is not None:
-                try:
-                    loop.close()
-                except Exception:
-                    pass
-
-    def _copy_files_from_docker(
-        self,
-        container_name: str,
-        workspace_dir: str,
-        local_dir: Path,
-        spec: SubAgentSpec | None = None,
-        ui_callback: Any = None,
-    ) -> None:
-        """Copy generated files from Docker container to local directory using docker cp.
-
-        Uses docker cp for recursive directory copy, which is more reliable and
-        handles nested directories properly (e.g., reflexion_minimal/*.py).
-
-        Args:
-            container_name: Docker container name/ID
-            workspace_dir: Path inside container (e.g., /workspace)
-            local_dir: Local directory to copy files to
-            spec: SubAgentSpec for copy configuration
-            ui_callback: UI callback for progress display
-        """
-        import subprocess
-
-        recursive = spec.get("copy_back_recursive", True) if spec else True
-
-        if not recursive:
-            return  # Skip copy if not configured
-
-        try:
-            # Show copy operation in UI
-            if ui_callback and hasattr(ui_callback, 'on_tool_call'):
-                ui_callback.on_tool_call("docker_copy_back", {
-                    "from": f"{container_name}:{workspace_dir}",
-                    "to": str(local_dir),
-                })
-
-            # Use docker cp to copy entire workspace recursively
-            # The "/." at the end copies contents without creating workspace folder
-            result = subprocess.run(
-                ["docker", "cp", f"{container_name}:{workspace_dir}/.", str(local_dir)],
-                capture_output=True,
-                text=True,
-                timeout=120.0,
-            )
-
-            if result.returncode == 0:
-                logger.info(f"Copied workspace from Docker to {local_dir}")
-                if ui_callback and hasattr(ui_callback, 'on_tool_result'):
-                    ui_callback.on_tool_result("docker_copy_back", {}, {
-                        "success": True,
-                        "output": f"Copied to {local_dir}",
-                    })
-            else:
-                logger.warning(f"docker cp failed: {result.stderr}")
-                if ui_callback and hasattr(ui_callback, 'on_tool_result'):
-                    ui_callback.on_tool_result("docker_copy_back", {}, {
-                        "success": False,
-                        "error": result.stderr,
-                    })
-
-        except subprocess.TimeoutExpired:
-            logger.error("docker cp timed out after 120 seconds")
-        except Exception as e:
-            logger.error(f"Failed to copy from Docker: {e}")
 
     def execute_subagent(
         self,
@@ -1150,7 +497,7 @@ Use ONLY the filename or relative path for all file operations.
         # SPECIAL CASE: ask-user subagent
         # This is a built-in that shows UI panel instead of running LLM
         if name == "ask-user":
-            return self._execute_ask_user(task, ui_callback)
+            return self.ask_user_handler.execute(task, ui_callback)
 
         # Block Docker subagents in PLAN mode - they require write access
         if docker_handler is None:
@@ -1170,9 +517,9 @@ Use ONLY the filename or relative path for all file operations.
         if docker_handler is None:
             spec = self._get_spec_for_subagent(name)
             if spec is not None and spec.get("docker_config") is not None:
-                if self._is_docker_available():
+                if self.docker_executor.is_docker_available():
                     # Execute with Docker lifecycle management
-                    return self._execute_with_docker(
+                    return self.docker_executor.execute(
                         name=name,
                         task=task,
                         deps=deps,
@@ -1244,11 +591,11 @@ Use ONLY the filename or relative path for all file operations.
             import logging
             _logger = logging.getLogger(__name__)
             agent_type = "PlanningAgent" if is_plan_mode else "SwecliAgent"
-            _logger.info(f"Creating {agent_type} with tool_registry type: {type(tool_registry).__name__}")
-            _logger.info(f"  docker_handler is None: {docker_handler is None}")
-            _logger.info(f"  working_dir: {working_dir}")
-            _logger.info(f"  is_plan_mode: {is_plan_mode}")
-            _logger.info(f"  allowed_tools: {allowed_tools}")
+            # _logger.info(f"Creating {agent_type} with tool_registry type: {type(tool_registry).__name__}")
+            # _logger.info(f"  docker_handler is None: {docker_handler is None}")
+            # _logger.info(f"  working_dir: {working_dir}")
+            # _logger.info(f"  is_plan_mode: {is_plan_mode}")
+            # _logger.info(f"  allowed_tools: {allowed_tools}")
 
             if is_plan_mode:
                 # Use PlanningAgent with read-only tools
@@ -1309,7 +656,7 @@ ALWAYS use relative paths (just the filename or relative path like src/file.py).
                 # No path_sanitizer for local subagents - Docker subagents should
                 # use create_docker_nested_callback() before calling execute_subagent()
                 import sys
-                print(f"[DEBUG MANAGER] Creating NestedUICallback: tool_call_id={tool_call_id!r}, name={name!r}, parent_context={tool_call_id or name!r}", file=sys.stderr)
+                # print(f"[DEBUG MANAGER] Creating NestedUICallback: tool_call_id={tool_call_id!r}, name={name!r}, parent_context={tool_call_id or name!r}", file=sys.stderr)
                 nested_callback = NestedUICallback(
                     parent_callback=ui_callback,
                     parent_context=tool_call_id or name,
@@ -1327,196 +674,7 @@ ALWAYS use relative paths (just the filename or relative path like src/file.py).
             task_monitor=task_monitor,  # Pass task monitor for interrupt support
         )
 
-        # Note: UI callback completion notification is handled by
-        # TextualUICallback.on_tool_result() for spawn_subagent
-
         return result
-
-    def _execute_ask_user(
-        self,
-        task: str,
-        ui_callback: Any,
-    ) -> dict[str, Any]:
-        """Execute the ask-user built-in subagent.
-
-        This is a special subagent that shows a UI panel for user input
-        instead of running an LLM. It parses questions from the task JSON
-        and displays them in an interactive panel.
-
-        Args:
-            task: JSON string containing questions (from spawn_subagent prompt)
-            ui_callback: UI callback with access to app
-
-        Returns:
-            Result dict with user's answers
-        """
-        import json
-
-        # Parse questions from task (JSON string)
-        try:
-            questions_data = json.loads(task)
-            questions = self._parse_ask_user_questions(questions_data.get("questions", []))
-        except json.JSONDecodeError:
-            return {
-                "success": False,
-                "error": "Invalid questions format - expected JSON",
-                "content": "",
-            }
-
-        if not questions:
-            return {
-                "success": False,
-                "error": "No questions provided",
-                "content": "",
-            }
-
-        # Get app reference from ui_callback
-        app = getattr(ui_callback, "chat_app", None) or getattr(ui_callback, "_app", None)
-        if app is None:
-            # Try to get app from nested callback parent
-            parent = getattr(ui_callback, "_parent_callback", None)
-            if parent:
-                app = getattr(parent, "chat_app", None) or getattr(parent, "_app", None)
-
-        if app is None:
-            return {
-                "success": False,
-                "error": "UI app not available for ask-user",
-                "content": "",
-            }
-
-        # Show panel and wait for user response using call_from_thread pattern
-        # (similar to approval_manager.py)
-        import threading
-
-        if not hasattr(app, "call_from_thread") or not getattr(app, "is_running", False):
-            return {
-                "success": False,
-                "error": "UI app not available or not running for ask-user",
-                "content": "",
-            }
-
-        done_event = threading.Event()
-        result_holder: dict[str, Any] = {"answers": None, "error": None}
-
-        def invoke_panel() -> None:
-            async def run_panel() -> None:
-                try:
-                    result_holder["answers"] = await app._ask_user_controller.start(
-                        questions
-                    )
-                except Exception as exc:
-                    result_holder["error"] = exc
-                finally:
-                    done_event.set()
-
-            app.run_worker(
-                run_panel(),
-                name="ask-user-panel",
-                exclusive=True,
-                exit_on_error=False,
-            )
-
-        try:
-            app.call_from_thread(invoke_panel)
-
-            # Wait for user response with timeout
-            if not done_event.wait(timeout=600):  # 10 min timeout
-                return {
-                    "success": False,
-                    "error": "Ask user timed out",
-                    "content": "",
-                }
-
-            if result_holder["error"]:
-                raise result_holder["error"]
-
-            answers = result_holder["answers"]
-        except Exception as e:
-            logger.exception("Ask user failed")
-            return {
-                "success": False,
-                "error": f"Ask user failed: {e}",
-                "content": "",
-            }
-
-        if answers is None:
-            return {
-                "success": True,
-                "content": "User cancelled/skipped the question(s).",
-                "answers": {},
-                "cancelled": True,
-            }
-
-        # Format answers for agent consumption (compact single line for clean UI display)
-        # Get headers from original questions for better formatting
-        answer_parts = []
-        for idx, ans in answers.items():
-            if isinstance(ans, list):
-                ans_text = ", ".join(str(a) for a in ans)
-            else:
-                ans_text = str(ans)
-            # Try to get header from question, fall back to Q#
-            q_idx = int(idx) if idx.isdigit() else 0
-            header = f"Q{q_idx + 1}"
-            if q_idx < len(questions):
-                q = questions[q_idx]
-                if hasattr(q, "header") and q.header:
-                    header = q.header
-            answer_parts.append(f"[{header}]={ans_text}")
-
-        total = len(questions)
-        answered = len(answers)
-        answer_summary = ", ".join(answer_parts) if answer_parts else "No answers"
-
-        return {
-            "success": True,
-            "content": f"Received {answered}/{total} answers: {answer_summary}",
-            "answers": answers,
-            "cancelled": False,
-        }
-
-    def _parse_ask_user_questions(self, questions_data: list) -> list:
-        """Parse question dicts into Question objects.
-
-        Args:
-            questions_data: List of question dictionaries from JSON
-
-        Returns:
-            List of Question objects
-        """
-        from swecli.core.context_engineering.tools.implementations.ask_user_tool import (
-            Question,
-            QuestionOption,
-        )
-
-        questions = []
-        for q in questions_data:
-            if not isinstance(q, dict):
-                continue
-
-            options = []
-            for opt in q.get("options", []):
-                if isinstance(opt, dict):
-                    options.append(
-                        QuestionOption(
-                            label=opt.get("label", ""),
-                            description=opt.get("description", ""),
-                        )
-                    )
-                else:
-                    options.append(QuestionOption(label=str(opt)))
-
-            if options:
-                questions.append(
-                    Question(
-                        question=q.get("question", ""),
-                        header=q.get("header", "")[:12],
-                        options=options,
-                        multi_select=q.get("multiSelect", False),
-                    )
-                )
-        return questions
 
     async def execute_subagent_async(
         self,

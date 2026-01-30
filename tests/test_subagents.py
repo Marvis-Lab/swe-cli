@@ -374,7 +374,14 @@ class TestSpawnSubagentToolSchema:
     @pytest.fixture
     def mock_manager(self):
         """Create a mock SubAgentManager."""
+        from swecli.core.agents.subagents.manager import AgentConfig
+
         manager = MagicMock()
+        # Mock get_agent_configs which is used by create_task_tool_schema
+        config1 = AgentConfig(name="Code-Explorer", description="Codebase exploration agent")
+        config2 = AgentConfig(name="Web-clone", description="Website cloning agent")
+        manager.get_agent_configs.return_value = [config1, config2]
+
         manager.get_available_types.return_value = ["Code-Explorer", "Web-clone"]
         manager.get_descriptions.return_value = {
             "Code-Explorer": "Codebase exploration agent",

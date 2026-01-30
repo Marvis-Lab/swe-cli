@@ -58,7 +58,7 @@ class TestAskUserJsonParsing:
             }
         ]
 
-        result = manager._parse_ask_user_questions(questions_data)
+        result = manager.ask_user_handler.parse_questions(questions_data)
 
         assert len(result) == 1
         assert isinstance(result[0], Question)
@@ -76,7 +76,7 @@ class TestAskUserJsonParsing:
             {"question": "Q4?", "header": "H4", "options": [{"label": "G"}, {"label": "H"}]},
         ]
 
-        result = manager._parse_ask_user_questions(questions_data)
+        result = manager.ask_user_handler.parse_questions(questions_data)
 
         assert len(result) == 4
         for i, q in enumerate(result):
@@ -91,7 +91,7 @@ class TestAskUserJsonParsing:
         mock_callback.chat_app = None
         mock_callback._app = None
 
-        result = manager._execute_ask_user(invalid_json, mock_callback)
+        result = manager.ask_user_handler.execute(invalid_json, mock_callback)
 
         assert result["success"] is False
         assert "Invalid questions format" in result["error"]
@@ -104,7 +104,7 @@ class TestAskUserJsonParsing:
         mock_callback.chat_app = None
         mock_callback._app = None
 
-        result = manager._execute_ask_user(json_without_questions, mock_callback)
+        result = manager.ask_user_handler.execute(json_without_questions, mock_callback)
 
         assert result["success"] is False
         assert "No questions provided" in result["error"]
@@ -122,7 +122,7 @@ class TestAskUserJsonParsing:
             }
         ]
 
-        result = manager._parse_ask_user_questions(questions_data)
+        result = manager.ask_user_handler.parse_questions(questions_data)
 
         assert result[0].options[0].label == "Option A"
         assert result[0].options[0].description == "Description for A"
@@ -348,7 +348,7 @@ class TestAskUserSubAgentManagerIntegration:
     """Integration tests for SubAgentManager with ask-user."""
 
     def test_execute_subagent_detects_ask_user(self):
-        """Test 14: execute_subagent routes to _execute_ask_user."""
+        """Test 14: execute_subagent routes to ask_user_handler.execute."""
         mock_config = MagicMock()
         mock_config.model = "gpt-4o"
         mock_config.temperature = 0.7
@@ -362,9 +362,9 @@ class TestAskUserSubAgentManagerIntegration:
             mode_manager=MagicMock(),
         )
 
-        # Patch _execute_ask_user to verify it's called
+        # Patch ask_user_handler.execute to verify it's called
         with patch.object(
-            manager, "_execute_ask_user", return_value={"success": True}
+            manager.ask_user_handler, "execute", return_value={"success": True}
         ) as mock_exec:
             deps = SubAgentDeps(
                 mode_manager=MagicMock(),
@@ -380,6 +380,81 @@ class TestAskUserSubAgentManagerIntegration:
             )
 
             mock_exec.assert_called_once()
+
+
+    def test_e2e_subagent_manager_integration(self):
+        """Test 20: Full integration with mocked controller response.
+
+        Tests the ask_user_handler.execute method end-to-end by mocking the app's
+        ask_user_controller and the call_from_thread/run_worker pattern.
+        """
+        import threading
+
+        mock_config = MagicMock()
+        mock_config.model = "gpt-4o"
+        mock_config.temperature = 0.7
+        mock_config.max_tokens = 4096
+        mock_config.api_key = "test-key"
+        mock_config.api_base_url = None
+
+        manager = SubAgentManager(
+            config=mock_config,
+            tool_registry=MagicMock(),
+            mode_manager=MagicMock(),
+        )
+
+        # Create mock app with controller that returns a canned response
+        mock_app = MagicMock()
+        mock_app.is_running = True
+
+        async def mock_start(questions):
+            return {"0": "PostgreSQL"}
+
+        mock_controller = MagicMock()
+        mock_controller.start = mock_start
+        mock_app._ask_user_controller = mock_controller
+
+        # Mock run_worker to run the coroutine and set result
+        def mock_run_worker(coro, **kwargs):
+            # Run the coroutine in a new event loop
+            loop = asyncio.new_event_loop()
+            try:
+                loop.run_until_complete(coro)
+            finally:
+                loop.close()
+            return MagicMock()
+
+        mock_app.run_worker = mock_run_worker
+
+        # Mock call_from_thread to execute callback immediately
+        def mock_call_from_thread(func):
+            func()
+
+        mock_app.call_from_thread = mock_call_from_thread
+
+        mock_callback = MagicMock()
+        mock_callback.chat_app = mock_app
+
+        task = json.dumps(
+            {
+                "questions": [
+                    {
+                        "question": "Which database?",
+                        "header": "Database",
+                        "options": [
+                            {"label": "PostgreSQL", "description": "SQL"},
+                            {"label": "MongoDB", "description": "NoSQL"},
+                        ],
+                    }
+                ]
+            }
+        )
+
+        result = manager.ask_user_handler.execute(task, mock_callback)
+
+        assert result["success"] is True
+        assert result["cancelled"] is False
+        assert "PostgreSQL" in result["content"]
 
     def test_ask_user_in_all_subagents(self):
         """Test 15: ask-user is registered in ALL_SUBAGENTS."""
@@ -461,76 +536,3 @@ class TestAskUserE2ERealAPI:
         assert len(parsed["questions"][0]["header"]) <= 12
         assert 2 <= len(parsed["questions"][0]["options"]) <= 4
 
-    def test_e2e_subagent_manager_integration(self):
-        """Test 20: Full integration with mocked controller response.
-
-        Tests the _execute_ask_user method end-to-end by mocking the app's
-        ask_user_controller and the call_from_thread/run_worker pattern.
-        """
-        import threading
-
-        mock_config = MagicMock()
-        mock_config.model = "gpt-4o"
-        mock_config.temperature = 0.7
-        mock_config.max_tokens = 4096
-        mock_config.api_key = "test-key"
-        mock_config.api_base_url = None
-
-        manager = SubAgentManager(
-            config=mock_config,
-            tool_registry=MagicMock(),
-            mode_manager=MagicMock(),
-        )
-
-        # Create mock app with controller that returns a canned response
-        mock_app = MagicMock()
-        mock_app.is_running = True
-
-        async def mock_start(questions):
-            return {"0": "PostgreSQL"}
-
-        mock_controller = MagicMock()
-        mock_controller.start = mock_start
-        mock_app._ask_user_controller = mock_controller
-
-        # Mock run_worker to run the coroutine and set result
-        def mock_run_worker(coro, **kwargs):
-            # Run the coroutine in a new event loop
-            loop = asyncio.new_event_loop()
-            try:
-                loop.run_until_complete(coro)
-            finally:
-                loop.close()
-            return MagicMock()
-
-        mock_app.run_worker = mock_run_worker
-
-        # Mock call_from_thread to execute callback immediately
-        def mock_call_from_thread(func):
-            func()
-
-        mock_app.call_from_thread = mock_call_from_thread
-
-        mock_callback = MagicMock()
-        mock_callback.chat_app = mock_app
-
-        task = json.dumps(
-            {
-                "questions": [
-                    {
-                        "question": "Which database?",
-                        "header": "Database",
-                        "options": [
-                            {"label": "PostgreSQL", "description": "SQL"},
-                            {"label": "MongoDB", "description": "NoSQL"},
-                        ],
-                    }
-                ]
-            }
-        )
-
-        result = manager._execute_ask_user(task, mock_callback)
-
-        assert result["success"] is True
-        assert result["cancelled"] is False
-        assert "PostgreSQL" in result["content"]
