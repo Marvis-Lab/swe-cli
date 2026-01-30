@@ -13,11 +13,7 @@ class ParsedPlan:
 
     goal: str = ""
     context: str = ""
-    files_to_modify: list[str] = field(default_factory=list)
-    new_files: list[str] = field(default_factory=list)
     steps: list[str] = field(default_factory=list)
-    verification: list[str] = field(default_factory=list)
-    risks: list[str] = field(default_factory=list)
     raw_text: str = ""
 
     def is_valid(self) -> bool:
@@ -128,20 +124,6 @@ def parse_plan(text: str) -> Optional[ParsedPlan]:
     if context_match:
         plan.context = context_match.group(1).strip()
 
-    # Parse Files to Modify section
-    files_match = re.search(
-        r"##\s*Files to Modify\s*\n(.*?)(?=\n##|\Z)", plan_content, re.DOTALL
-    )
-    if files_match:
-        plan.files_to_modify = _parse_bullet_list(files_match.group(1))
-
-    # Parse New Files to Create section
-    new_files_match = re.search(
-        r"##\s*New Files to Create\s*\n(.*?)(?=\n##|\Z)", plan_content, re.DOTALL
-    )
-    if new_files_match:
-        plan.new_files = _parse_bullet_list(new_files_match.group(1))
-
     # Parse Implementation Steps section
     steps_match = re.search(
         r"##\s*Implementation Steps\s*\n(.*?)(?=\n##|\Z)", plan_content, re.DOTALL
@@ -149,35 +131,7 @@ def parse_plan(text: str) -> Optional[ParsedPlan]:
     if steps_match:
         plan.steps = _parse_numbered_list(steps_match.group(1))
 
-    # Parse Verification section
-    verification_match = re.search(
-        r"##\s*Verification\s*\n(.*?)(?=\n##|\Z)", plan_content, re.DOTALL
-    )
-    if verification_match:
-        plan.verification = _parse_checkbox_list(verification_match.group(1))
-
-    # Parse Risks & Considerations section
-    risks_match = re.search(
-        r"##\s*Risks\s*(?:&|and)?\s*Considerations?\s*\n(.*?)(?=\n##|\Z)",
-        plan_content,
-        re.DOTALL | re.IGNORECASE,
-    )
-    if risks_match:
-        plan.risks = _parse_bullet_list(risks_match.group(1))
-
     return plan
-
-
-def _parse_bullet_list(text: str) -> list[str]:
-    """Parse a bullet list (- item) into list of strings."""
-    items = []
-    for line in text.strip().split("\n"):
-        line = line.strip()
-        if line.startswith("- "):
-            items.append(line[2:].strip())
-        elif line.startswith("* "):
-            items.append(line[2:].strip())
-    return items
 
 
 def _parse_numbered_list(text: str) -> list[str]:
@@ -187,18 +141,6 @@ def _parse_numbered_list(text: str) -> list[str]:
         line = line.strip()
         # Match "1. ", "2. ", etc.
         match = re.match(r"^\d+\.\s+(.+)$", line)
-        if match:
-            items.append(match.group(1).strip())
-    return items
-
-
-def _parse_checkbox_list(text: str) -> list[str]:
-    """Parse a checkbox list (- [ ] item) into list of strings."""
-    items = []
-    for line in text.strip().split("\n"):
-        line = line.strip()
-        # Match "- [ ] item" or "- [x] item"
-        match = re.match(r"^-\s*\[[x ]?\]\s*(.+)$", line, re.IGNORECASE)
         if match:
             items.append(match.group(1).strip())
     return items
