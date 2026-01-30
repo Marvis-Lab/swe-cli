@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import os
 import re
+import subprocess
 
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -92,6 +94,19 @@ class EntityExtractor:
 class ContextRetriever:
     """Retrieve relevant context based on user intent."""
 
+    IGNORED_DIRS = {
+        "node_modules",
+        ".git",
+        "venv",
+        ".venv",
+        "__pycache__",
+        "build",
+        "dist",
+        ".idea",
+        ".vscode",
+        "coverage",
+    }
+
     def __init__(self, working_dir: Optional[Path] = None) -> None:
         self.working_dir = Path(working_dir or Path.cwd())
         self.extractor = EntityExtractor()
@@ -146,15 +161,17 @@ class ContextRetriever:
         # Use native python traversal instead of subprocess find
         target_name = Path(file_path).name
         try:
-            for item in self.working_dir.rglob(target_name):
-                if item.is_file():
-                    return item
+            for root, dirs, files in os.walk(self.working_dir):
+                dirs[:] = [d for d in dirs if d not in self.IGNORED_DIRS]
+                if target_name in files:
+                    return Path(root) / target_name
         except Exception:
             pass
 
         return None
 
     def _grep_pattern(self, pattern: str, limit: int = 5) -> List[str]:
+        # Try ripgrep first
         try:
             result = subprocess.run(
                 ["rg", "-l", pattern, str(self.working_dir)],
@@ -162,13 +179,27 @@ class ContextRetriever:
                 text=True,
                 timeout=5,
             )
-            if result.returncode != 0:
-                result = subprocess.run(
-                    ["grep", "-r", "-l", pattern, str(self.working_dir)],
-                    capture_output=True,
-                    text=True,
-                    timeout=5,
-                )
+            if result.returncode == 0:
+                matches = [line.strip() for line in result.stdout.strip().split("\n") if line]
+                return matches[:limit]
+        except FileNotFoundError:
+            pass  # rg not installed
+        except Exception:
+            pass
+
+        # Fallback to grep with exclusions
+        try:
+            cmd = ["grep", "-r", "-l"]
+            for ignore in self.IGNORED_DIRS:
+                cmd.extend(["--exclude-dir", ignore])
+            cmd.extend([pattern, str(self.working_dir)])
+
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
 
             if result.returncode == 0:
                 matches = [line.strip() for line in result.stdout.strip().split("\n") if line]

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import fnmatch
 import json
+import os
 import subprocess
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -12,6 +14,19 @@ from .token_monitor import ContextTokenMonitor
 
 class CodebaseIndexer:
     """Generate concise codebase summaries for context."""
+
+    IGNORED_DIRS = {
+        "node_modules",
+        ".git",
+        "venv",
+        ".venv",
+        "__pycache__",
+        "build",
+        "dist",
+        ".idea",
+        ".vscode",
+        "coverage",
+    }
 
     def __init__(self, working_dir: Optional[Path] = None) -> None:
         self.working_dir = Path(working_dir or Path.cwd())
@@ -38,16 +53,12 @@ class CodebaseIndexer:
     def _generate_overview(self) -> str:
         lines = ["## Overview\n"]
         try:
-            result = subprocess.run(
-                ["find", ".", "-type", "f"],
-                capture_output=True,
-                text=True,
-                cwd=self.working_dir,
-                timeout=5,
-            )
-            if result.returncode == 0:
-                file_count = len(result.stdout.strip().split("\n"))
-                lines.append(f"**Total Files:** {file_count}")
+            file_count = 0
+            for root, dirs, files in os.walk(self.working_dir):
+                dirs[:] = [d for d in dirs if d not in self.IGNORED_DIRS]
+                file_count += len(files)
+
+            lines.append(f"**Total Files:** {file_count}")
         except Exception:
             pass
 
@@ -180,8 +191,29 @@ class CodebaseIndexer:
 
     def _find_files(self, patterns: List[str]) -> List[Path]:
         matches: List[Path] = []
-        for pattern in patterns:
-            matches.extend(self.working_dir.glob(f"**/{pattern}"))
+        file_patterns = []
+        dir_patterns = []
+        for p in patterns:
+            if p.endswith("/"):
+                dir_patterns.append(p.rstrip("/"))
+            else:
+                file_patterns.append(p)
+
+        for root, dirs, files in os.walk(self.working_dir):
+            dirs[:] = [d for d in dirs if d not in self.IGNORED_DIRS]
+
+            for filename in files:
+                for p in file_patterns:
+                    if fnmatch.fnmatch(filename, p):
+                        matches.append(Path(root) / filename)
+                        break
+
+            if dir_patterns:
+                for dirname in dirs:
+                    for p in dir_patterns:
+                        if fnmatch.fnmatch(dirname, p):
+                            matches.append(Path(root) / dirname)
+                            break
         return matches
 
     def _basic_structure(self) -> str:
@@ -205,9 +237,16 @@ class CodebaseIndexer:
     def _compress_content(self, content: str, max_tokens: int) -> str:
         paragraphs = content.split("\n\n")
         compressed: List[str] = []
+        current_tokens = 0
+        separator_tokens = self.token_monitor.count_tokens("\n\n")
+
         for paragraph in paragraphs:
-            compressed.append(paragraph)
-            tokens = self.token_monitor.count_tokens("\n\n".join(compressed))
-            if tokens >= max_tokens:
+            para_tokens = self.token_monitor.count_tokens(paragraph)
+            added_tokens = para_tokens + (separator_tokens if compressed else 0)
+
+            if current_tokens + added_tokens > max_tokens:
                 break
+
+            compressed.append(paragraph)
+            current_tokens += added_tokens
         return "\n\n".join(compressed)
