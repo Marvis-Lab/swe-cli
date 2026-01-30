@@ -12,7 +12,7 @@ from swecli.core.agents.subagents import (
     TASK_TOOL_NAME,
     ALL_SUBAGENTS,
 )
-from swecli.core.agents.subagents.manager import SubAgentDeps
+from swecli.core.agents.subagents.manager import SubAgentDeps, AgentConfig
 from swecli.models.config import AppConfig
 
 
@@ -326,46 +326,6 @@ class TestSubAgentManagerAsync:
 
         assert result["success"] is True
 
-    @patch("swecli.core.agents.SwecliAgent")
-    @pytest.mark.asyncio
-    async def test_execute_parallel(self, mock_agent_class, manager):
-        """Test parallel subagent execution."""
-        call_count = 0
-
-        def mock_run_sync(*args, **kwargs):
-            nonlocal call_count
-            call_count += 1
-            return {"success": True, "content": f"Task {call_count} done"}
-
-        mock_agent = MagicMock()
-        mock_agent.run_sync.side_effect = mock_run_sync
-        mock_agent_class.return_value = mock_agent
-
-        # Register multiple agents
-        for name in ["agent-1", "agent-2", "agent-3"]:
-            spec = SubAgentSpec(
-                name=name,
-                description=f"Agent {name}",
-                system_prompt="Test prompt",
-            )
-            manager.register_subagent(spec)
-
-        deps = SubAgentDeps(
-            mode_manager=MagicMock(),
-            approval_manager=MagicMock(),
-            undo_manager=MagicMock(),
-        )
-
-        tasks = [
-            ("agent-1", "Task 1"),
-            ("agent-2", "Task 2"),
-            ("agent-3", "Task 3"),
-        ]
-
-        results = await manager.execute_parallel(tasks, deps)
-
-        assert len(results) == 3
-        assert all(r["success"] for r in results)
 
 
 class TestSpawnSubagentToolSchema:
@@ -375,11 +335,12 @@ class TestSpawnSubagentToolSchema:
     def mock_manager(self):
         """Create a mock SubAgentManager."""
         manager = MagicMock()
-        manager.get_available_types.return_value = ["Code-Explorer", "Web-clone"]
-        manager.get_descriptions.return_value = {
-            "Code-Explorer": "Codebase exploration agent",
-            "Web-clone": "Website cloning agent",
-        }
+        # Mock get_agent_configs to return a list of AgentConfig objects
+        configs = [
+            AgentConfig(name="Code-Explorer", description="Codebase exploration agent"),
+            AgentConfig(name="Web-clone", description="Website cloning agent"),
+        ]
+        manager.get_agent_configs.return_value = configs
         return manager
 
     def test_spawn_subagent_tool_name(self):

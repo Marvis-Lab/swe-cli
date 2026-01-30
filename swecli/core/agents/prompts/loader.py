@@ -41,14 +41,3 @@ def load_prompt(prompt_name: str, fallback: Optional[str] = None) -> str:
         raise FileNotFoundError(f"Prompt file not found: {prompt_file}")
 
     return prompt_file.read_text(encoding="utf-8").strip()
-
-
-def save_prompt(prompt_name: str, content: str) -> None:
-    """Save a prompt to file (useful for customization).
-
-    Args:
-        prompt_name: Name of the prompt file (without .txt extension)
-        content: Prompt content to save
-    """
-    prompt_file = get_prompt_path(prompt_name)
-    prompt_file.write_text(content, encoding="utf-8")
