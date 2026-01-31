@@ -114,22 +114,3 @@ def create_task_tool_schema(manager: "SubAgentManager") -> dict[str, Any]:
     }
 
 
-def format_task_result(result: dict[str, Any], subagent_type: str) -> str:
-    """Format the task result for display.
-
-    Args:
-        result: The result from subagent execution
-        subagent_type: The type of subagent that was used
-
-    Returns:
-        Formatted result string
-    """
-    if not result.get("success"):
-        error = result.get("error", "Unknown error")
-        return f"[{subagent_type}] Task failed: {error}"
-
-    content = result.get("content", "")
-    if not content:
-        return f"[{subagent_type}] Task completed (no output)"
-
-    return f"[{subagent_type}] {content}"
