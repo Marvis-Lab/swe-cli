@@ -34,78 +34,15 @@ from swecli.ui_textual.widgets.conversation.protocols import RichLogInterface
 from swecli.ui_textual.widgets.conversation.spacing_manager import SpacingManager
 from swecli.ui_textual.models.collapsible_output import CollapsibleOutput
 from swecli.ui_textual.utils.output_summarizer import summarize_output, get_expansion_hint
-
-# Tree connector characters
-TREE_BRANCH = "├─"
-TREE_LAST = "└─"
-TREE_VERTICAL = "│"
-TREE_CONTINUATION = "⎿"
-
-
-@dataclass
-class NestedToolState:
-    """State tracking for a single nested tool call."""
-
-    line_number: int
-    tool_text: Text
-    depth: int
-    timer_start: float
-    color_index: int = 0
-    parent: str = ""
-    tool_id: str = ""
-
-
-@dataclass
-class AgentInfo:
-    """Info for a single parallel agent tracked by tool_call_id."""
-
-    agent_type: str
-    description: str
-    tool_call_id: str
-    line_number: int = 0  # Line for agent row
-    status_line: int = 0  # Line for status/current tool
-    tool_count: int = 0  # Total tool call count
-    current_tool: str = "Initializing...."
-    status: str = "running"  # running, completed, failed
-    is_last: bool = False  # For tree connector rendering
-
-
-@dataclass
-class SingleAgentInfo:
-    """Info for a single (non-parallel) agent execution."""
-
-    agent_type: str
-    description: str
-    tool_call_id: str
-    header_line: int = 0  # Line for header "⠋ Explore(description)"
-    status_line: int = 0  # Line for "   ⏺ N tools" or "      ⎿  current_tool"
-    tool_line: int = 0  # Line for "      ⎿  current_tool"
-    tool_count: int = 0  # Total tool call count
-    current_tool: str = "Initializing..."
-    status: str = "running"
-
-
-@dataclass
-class ParallelAgentGroup:
-    """Tracks a group of parallel agents for collapsed display."""
-
-    agents: Dict[str, AgentInfo] = field(default_factory=dict)  # key = tool_call_id
-    header_line: int = 0
-    expanded: bool = False
-    start_time: float = field(default_factory=time.monotonic)
-    completed: bool = False
-
-
-@dataclass
-class AgentStats:
-    """Stats tracking for a single agent type in a parallel group (legacy)."""
-
-    tool_count: int = 0
-    token_count: int = 0
-    current_tool: str = ""
-    status: str = "running"  # running, completed, failed
-    agent_count: int = 1  # Number of agents of this type (for "Running 2 Explore agents")
-    completed_count: int = 0  # Number of agents that have completed
+from swecli.ui_textual.widgets.conversation.renderers.parallel_agent_renderer import ParallelAgentRenderer
+from swecli.ui_textual.widgets.conversation.renderers.single_agent_renderer import SingleAgentRenderer
+from swecli.ui_textual.widgets.conversation.renderers.nested_tool_renderer import NestedToolRenderer
+from swecli.ui_textual.widgets.conversation.renderers.utils import (
+    TREE_BRANCH,
+    TREE_LAST,
+    TREE_VERTICAL,
+    TREE_CONTINUATION,
+)
 
 
 class DefaultToolRenderer:
@@ -130,31 +67,17 @@ class DefaultToolRenderer:
         self._tool_thread_timer: threading.Timer | None = None
         self._nested_tool_thread_timer: threading.Timer | None = None
 
-        # Nested tool state - multi-tool tracking for parallel agents
-        self._nested_spinner_char = "⏺"
-        # Multi-tool tracking: (parent, tool_id) -> NestedToolState
-        self._nested_tools: Dict[Tuple[str, str], NestedToolState] = {}
+        # Nested tool state
+        self.nested_tool_renderer = NestedToolRenderer(log, self._spacing)
         self._nested_tool_timer: Timer | None = None
         self._nested_tool_thread_timer: threading.Timer | None = None
 
         # Parallel agent group tracking
-        self._parallel_group: Optional[ParallelAgentGroup] = None
+        self.parallel_renderer = ParallelAgentRenderer(log, self._spacing)
         self._parallel_expanded: bool = False  # Default to collapsed view
-        self._agent_spinner_states: Dict[str, int] = {}  # tool_call_id -> spinner_index
 
         # Single agent tracking (treat single agents like parallel group of 1)
-        self._single_agent: Optional[SingleAgentInfo] = None
-
-        # Animation indices for single agent
-        self._header_spinner_index = 0  # For ⠋⠙⠹... rotation
-        self._bullet_gradient_index = 0  # For ⏺ gradient pulse
-
-        # Legacy single-tool state (for backwards compatibility)
-        self._nested_color_index = 0
-        self._nested_tool_line: int | None = None
-        self._nested_tool_text: Text | None = None
-        self._nested_tool_depth: int = 1
-        self._nested_tool_timer_start: float | None = None
+        self.single_agent_renderer = SingleAgentRenderer(log, self._spacing)
 
         # Streaming terminal box state
         self._streaming_box_header_line: int | None = None
@@ -207,31 +130,13 @@ class DefaultToolRenderer:
 
         # Adjust tool call tracking
         self._tool_call_start = adj(self._tool_call_start)
-        self._nested_tool_line = adj(self._nested_tool_line)
 
-        # Adjust nested tools (multi-tool tracking)
-        for state in self._nested_tools.values():
-            if state.line_number >= first_affected:
-                state.line_number += delta
-
-        # Adjust parallel group
-        if self._parallel_group is not None:
-            if self._parallel_group.header_line >= first_affected:
-                self._parallel_group.header_line += delta
-            for agent in self._parallel_group.agents.values():
-                if agent.line_number >= first_affected:
-                    agent.line_number += delta
-                if agent.status_line >= first_affected:
-                    agent.status_line += delta
+        # Adjust renderers
+        self.nested_tool_renderer.adjust_indices(delta, first_affected)
+        self.parallel_renderer.adjust_indices(delta, first_affected)
 
         # Adjust single agent
-        if self._single_agent is not None:
-            if self._single_agent.header_line >= first_affected:
-                self._single_agent.header_line += delta
-            if self._single_agent.status_line >= first_affected:
-                self._single_agent.status_line += delta
-            if self._single_agent.tool_line >= first_affected:
-                self._single_agent.tool_line += delta
+        self.single_agent_renderer.adjust_indices(delta, first_affected)
 
         # Adjust streaming box lines
         self._streaming_box_header_line = adj(self._streaming_box_header_line)
@@ -256,13 +161,9 @@ class DefaultToolRenderer:
 
         # Check if there are any active animations that need to be restarted
         has_active = (
-            self._nested_tools
-            or self._nested_tool_line is not None
-            or (
-                self._parallel_group is not None
-                and any(a.status == "running" for a in self._parallel_group.agents.values())
-            )
-            or (self._single_agent is not None and self._single_agent.status == "running")
+            self.nested_tool_renderer.has_active_tools
+            or self.parallel_renderer.is_active
+            or self.single_agent_renderer.is_active
         )
 
         if has_active and self._nested_tool_timer is None:
@@ -416,38 +317,14 @@ class DefaultToolRenderer:
         tool_id: str = "",
         is_last: bool = False,
     ) -> None:
-        """Add a nested tool call with multi-tool tracking support.
-
-        Args:
-            display: Tool display text
-            depth: Nesting depth (1 = direct child)
-            parent: Parent agent name
-            tool_id: Unique tool call ID for tracking parallel tools
-            is_last: Whether this is the last tool in its group (for tree connectors)
-
-        DEBUG: Parallel agent tracking
-        """
-        import sys
-
-        if self._parallel_group is not None:
-            print(f"[DEBUG PARALLEL] add_nested_tool_call: parent={parent!r}", file=sys.stderr)
-            print(
-                f"[DEBUG PARALLEL] agents keys={list(self._parallel_group.agents.keys())}",
-                file=sys.stderr,
-            )
-            agent = self._parallel_group.agents.get(parent)
-            print(f"[DEBUG PARALLEL] agent found={agent is not None}", file=sys.stderr)
-            if agent:
-                print(
-                    f"[DEBUG PARALLEL] agent.tool_call_id={agent.tool_call_id!r}", file=sys.stderr
-                )
+        """Add a nested tool call with multi-tool tracking support."""
         if isinstance(display, Text):
             tool_text = display.copy()
         else:
             tool_text = Text(str(display), style=SUBTLE)
 
         # NEW: If single agent is active, track its tools and update display
-        if self._single_agent is not None and self._single_agent.status == "running":
+        if self.single_agent_renderer.is_active:
             # Extract tool name
             plain_text = tool_text.plain if hasattr(tool_text, "plain") else str(tool_text)
             if ":" in plain_text:
@@ -457,116 +334,28 @@ class DefaultToolRenderer:
             else:
                 tool_name = plain_text.split()[0] if plain_text.split() else "unknown"
 
-            # Count tool calls
-            self._single_agent.tool_count += 1
-            self._single_agent.current_tool = plain_text
-
-            # Update header with rotating spinner
-            self._update_header_spinner()
-
-            # Update status line with tool count (gradient bullet)
-            self._update_single_agent_status_line()
-
-            # Update current tool line
-            self._update_single_agent_tool_line()
-
-            # Don't expand individual tools for single agent (collapsed mode like parallel)
+            self.single_agent_renderer.update_tool(tool_name)
             return
 
         # If active parallel group: update agent stats and status line in-place
-        if self._parallel_group is not None:
+        if self.parallel_renderer.is_active:
             # parent is now tool_call_id for parallel agents
-            agent = self._parallel_group.agents.get(parent)
-            if agent is not None:
-                # Track unique tools: extract tool name from display text
-                plain_text = tool_text.plain if hasattr(tool_text, "plain") else str(tool_text)
-                # Extract tool name (e.g., "Read (file.py)" -> "Read", or "list_files: src" -> "list_files")
-                if ":" in plain_text:
-                    tool_name = plain_text.split(":")[0].strip()
-                elif "(" in plain_text:
-                    tool_name = plain_text.split("(")[0].strip()
-                else:
-                    tool_name = plain_text.split()[0] if plain_text.split() else "unknown"
+            plain_text = tool_text.plain if hasattr(tool_text, "plain") else str(tool_text)
+            if ":" in plain_text:
+                tool_name = plain_text.split(":")[0].strip()
+            elif "(" in plain_text:
+                tool_name = plain_text.split("(")[0].strip()
+            else:
+                tool_name = plain_text.split()[0] if plain_text.split() else "unknown"
 
-                # Count tool calls
-                agent.tool_count += 1
+            # Update renderer state
+            self.parallel_renderer.update_agent_tool(parent, plain_text)
 
-                # Update display text
-                agent.current_tool = plain_text
+            if not self.parallel_renderer.is_expanded:
+                return  # DON'T write individual tool line when collapsed
 
-                # Update agent row to show unique tool count
-                self._update_agent_row(agent)
-
-                # Update status line with current tool
-                self._update_status_line(agent)
-
-                if not self._parallel_expanded:
-                    return  # DON'T write individual tool line when collapsed
-
-        # Expanded mode: write the tool call line
-        self._spacing.before_nested_tool_call()
-
-        # Build tree-style indentation
-        formatted = Text()
-        indent = self._build_tree_indent(depth, parent, is_last)
-        formatted.append(indent)
-        formatted.append(f"{self._nested_spinner_char} ", style=GREEN_GRADIENT[0])
-        formatted.append_text(tool_text)
-        formatted.append(" (0s)", style=GREY)
-
-        # Nested tool lines have tree structure and are updated in-place, don't re-wrap
-        self.log.write(formatted, scroll_end=True, animate=False, wrappable=False)
-
-        # Generate tool_id if not provided
-        if not tool_id:
-            tool_id = f"{parent}_{len(self._nested_tools)}_{time.monotonic()}"
-
-        # Store state in multi-tool tracking dict
-        key = (parent, tool_id)
-        self._nested_tools[key] = NestedToolState(
-            line_number=len(self.log.lines) - 1,
-            tool_text=tool_text.copy(),
-            depth=depth,
-            timer_start=time.monotonic(),
-            color_index=0,
-            parent=parent,
-            tool_id=tool_id,
-        )
-
-        # Note: parallel group stats are already updated at the top of this method
-        # when we found the agent by tool_call_id
-
-        # Maintain legacy single-tool state for backwards compat
-        self._nested_tool_line = len(self.log.lines) - 1
-        self._nested_tool_text = tool_text.copy()
-        self._nested_tool_depth = depth
-        self._nested_color_index = 0
-        self._nested_tool_timer_start = time.monotonic()
-
+        self.nested_tool_renderer.add_tool(tool_text, depth, parent, tool_id, is_last)
         self._start_nested_tool_timer()
-
-    def _build_tree_indent(self, depth: int, parent: str, is_last: bool) -> str:
-        """Build tree connector prefix for nested tool display.
-
-        Args:
-            depth: Nesting depth
-            parent: Parent agent name
-            is_last: Whether this is the last tool in its group
-
-        Returns:
-            String like "   ├─ " or "   └─ " or "   │  ├─ "
-        """
-        if depth == 1:
-            # First level: simple tree connector
-            connector = TREE_LAST if is_last else TREE_BRANCH
-            return f"   {connector} "
-        else:
-            # Deeper nesting: add vertical lines for continuation
-            return (
-                "   "
-                + f"{TREE_VERTICAL}  " * (depth - 1)
-                + (f"{TREE_LAST} " if is_last else f"{TREE_BRANCH} ")
-            )
 
     def complete_nested_tool_call(
         self,
@@ -576,77 +365,17 @@ class DefaultToolRenderer:
         success: bool,
         tool_id: str = "",
     ) -> None:
-        """Complete a nested tool call, updating the display.
-
-        Args:
-            tool_name: Name of the tool
-            depth: Nesting depth
-            parent: Parent agent name
-            success: Whether the tool succeeded
-            tool_id: Unique tool call ID for tracking
-        """
-        # Try to find the tool in multi-tool tracking dict
-        state: Optional[NestedToolState] = None
-
-        if tool_id:
-            key = (parent, tool_id)
-            state = self._nested_tools.pop(key, None)
-
-        # Fallback: find most recent tool for this parent
-        if state is None:
-            for key in list(self._nested_tools.keys()):
-                if key[0] == parent:
-                    state = self._nested_tools.pop(key)
-                    break
-
-        # Final fallback: use legacy single-tool state
-        if state is None:
-            if self._nested_tool_line is None or self._nested_tool_text is None:
-                return
-            state = NestedToolState(
-                line_number=self._nested_tool_line,
-                tool_text=self._nested_tool_text,
-                depth=self._nested_tool_depth,
-                timer_start=self._nested_tool_timer_start or time.monotonic(),
-                parent=parent,
-            )
-            self._nested_tool_line = None
-            self._nested_tool_text = None
-            self._nested_tool_timer_start = None
+        """Complete a nested tool call, updating the display."""
+        self.nested_tool_renderer.complete_tool(tool_name, depth, parent, success, tool_id)
 
         # Stop timers only if no more active tools
-        if not self._nested_tools:
+        if not self.nested_tool_renderer.has_active_tools:
             if self._nested_tool_timer:
                 self._nested_tool_timer.stop()
                 self._nested_tool_timer = None
             if self._nested_tool_thread_timer:
                 self._nested_tool_thread_timer.cancel()
                 self._nested_tool_thread_timer = None
-
-        # Build completed tool display
-        formatted = Text()
-        indent = self._build_tree_indent(state.depth, state.parent, is_last=False)
-        formatted.append(indent)
-
-        status_char = "✓" if success else "✗"
-        status_color = SUCCESS if success else ERROR
-
-        formatted.append(f"{status_char} ", style=status_color)
-        formatted.append_text(state.tool_text)
-
-        elapsed = round(time.monotonic() - state.timer_start)
-        formatted.append(f" ({elapsed}s)", style=GREY)
-
-        # In-place update
-        from rich.console import Console
-
-        console = Console(width=1000, force_terminal=True, no_color=False)
-        segments = list(formatted.render(console))
-        strip = Strip(segments)
-
-        if state.line_number < len(self.log.lines):
-            self.log.lines[state.line_number] = strip
-            self.log.refresh_line(state.line_number)
 
     def _start_nested_tool_timer(self) -> None:
         """Start or continue the nested tool animation timer."""
@@ -664,54 +393,24 @@ class DefaultToolRenderer:
             self._nested_tool_thread_timer = None
 
         # Check if there are any active tools, parallel agents, or single agent to animate
-        has_active_tools = self._nested_tools or (
-            self._nested_tool_line is not None or self._nested_tool_text is not None
-        )
-        has_active_agents = self._parallel_group is not None and any(
-            a.status == "running" for a in self._parallel_group.agents.values()
-        )
-        has_single_agent = self._single_agent is not None and self._single_agent.status == "running"
+        has_active_tools = self.nested_tool_renderer.has_active_tools
+        has_active_agents = self.parallel_renderer.is_active
+        has_single_agent = self.single_agent_renderer.is_active
 
         if not has_active_tools and not has_active_agents and not has_single_agent:
             self._nested_tool_timer = None
             return
 
         # Animate all tools in the multi-tool tracking dict
-        for key, state in self._nested_tools.items():
-            state.color_index = (state.color_index + 1) % len(GREEN_GRADIENT)
-            self._render_nested_tool_line_for_state(state)
+        self.nested_tool_renderer.animate()
 
-        # Also animate legacy single-tool state if present
-        if self._nested_tool_line is not None and self._nested_tool_text is not None:
-            self._nested_color_index = (self._nested_color_index + 1) % len(GREEN_GRADIENT)
-            self._render_nested_tool_line()
+        # Animate parallel agents
+        if self.parallel_renderer.is_active:
+            self.parallel_renderer.animate()
 
-        # Animate parallel agents: header spinner and agent row gradient bullets
-        if self._parallel_group is not None:
-            # Animate header with rotating spinner
-            if any(a.status == "running" for a in self._parallel_group.agents.values()):
-                self._header_spinner_index += 1  # Increment spinner frame for animation
-                self._update_parallel_header()
-
-            # Animate agent rows with gradient bullets
-            for tool_call_id, agent in self._parallel_group.agents.items():
-                if agent.status == "running":
-                    # Update gradient color index
-                    idx = self._agent_spinner_states.get(tool_call_id, 0)
-                    idx = (idx + 1) % len(GREEN_GRADIENT)
-                    self._agent_spinner_states[tool_call_id] = idx
-
-                    # Update agent row with gradient animation
-                    self._update_agent_row_gradient(agent, idx)
-
-        # Animate single agent: header spinner and status line gradient bullet
-        if self._single_agent is not None and self._single_agent.status == "running":
-            # Update header with rotating spinner
-            self._update_header_spinner()
-
-            # Update status line with gradient bullet
-            self._bullet_gradient_index = (self._bullet_gradient_index + 1) % len(GREEN_GRADIENT)
-            self._update_single_agent_status_line()
+        # Animate single agent
+        if self.single_agent_renderer.is_active:
+            self.single_agent_renderer.animate()
 
         # Schedule next animation frame
         interval = 0.15
@@ -723,7 +422,7 @@ class DefaultToolRenderer:
     def _on_nested_tool_thread_tick(self) -> None:
         """Thread timer callback for nested tool animation."""
         # Check if there are any active tools
-        if not self._nested_tools and self._nested_tool_line is None:
+        if not self.nested_tool_renderer.has_active_tools:
             return
         try:
             if self.app:
@@ -731,406 +430,24 @@ class DefaultToolRenderer:
         except Exception:
             pass
 
-    def _render_nested_tool_line_for_state(self, state: NestedToolState) -> None:
-        """Render a specific nested tool line from its state.
-
-        Args:
-            state: The NestedToolState to render
-        """
-        if state.line_number >= len(self.log.lines):
-            return
-
-        elapsed = round(time.monotonic() - state.timer_start)
-
-        formatted = Text()
-        indent = self._build_tree_indent(state.depth, state.parent, is_last=False)
-        formatted.append(indent)
-        color = GREEN_GRADIENT[state.color_index]
-        formatted.append(f"{self._nested_spinner_char} ", style=color)
-        formatted.append_text(state.tool_text.copy())
-        formatted.append(f" ({elapsed}s)", style=GREY)
-
-        from rich.console import Console
-
-        console = Console(width=1000, force_terminal=True, no_color=False)
-        segments = list(formatted.render(console))
-        strip = Strip(segments)
-
-        self.log.lines[state.line_number] = strip
-        self.log.refresh_line(state.line_number)
-
-    def _render_nested_tool_line(self) -> None:
-        """Render the legacy single nested tool line."""
-        if self._nested_tool_line is None or self._nested_tool_text is None:
-            return
-
-        if self._nested_tool_line >= len(self.log.lines):
-            return
-
-        elapsed = 0
-        if self._nested_tool_timer_start:
-            elapsed = round(time.monotonic() - self._nested_tool_timer_start)
-
-        formatted = Text()
-        indent = "  " * self._nested_tool_depth
-        formatted.append(indent)
-        color = GREEN_GRADIENT[self._nested_color_index]
-        formatted.append(f"{self._nested_spinner_char} ", style=color)
-        formatted.append_text(self._nested_tool_text.copy())
-        formatted.append(f" ({elapsed}s)", style=GREY)
-
-        from rich.console import Console
-
-        console = Console(width=1000, force_terminal=True, no_color=False)
-        segments = list(formatted.render(console))
-        strip = Strip(segments)
-
-        self.log.lines[self._nested_tool_line] = strip
-        self.log.refresh_line(self._nested_tool_line)
-        if self.app and hasattr(self.app, "refresh"):
-            self.app.refresh()
-
     # --- Parallel Agent Group Management ---
 
     def on_parallel_agents_start(self, agent_infos: List[dict]) -> None:
-        """Called when parallel agents start executing.
-
-        Creates a parallel group and renders header + individual agent lines with status.
-
-        Args:
-            agent_infos: List of agent info dicts with keys:
-                - agent_type: Type of agent (e.g., "Explore")
-                - description: Short description of agent's task
-                - tool_call_id: Unique ID for tracking this agent
-        """
-        self._spacing.before_parallel_agents()
-
-        # Write header line - updated in-place with spinner, don't re-wrap
-        header = Text()
-        header.append("⠋ ", style=CYAN)  # Rotating spinner for header
-        header.append(f"Running {len(agent_infos)} agents… ")
-        self.log.write(header, scroll_end=True, animate=False, wrappable=False)
-        header_line = len(self.log.lines) - 1
-
-        # Create agents dict keyed by tool_call_id
-        agents: Dict[str, AgentInfo] = {}
-        for i, info in enumerate(agent_infos):
-            is_last = i == len(agent_infos) - 1
-            tool_call_id = info.get("tool_call_id", f"agent_{i}")
-            description = info.get("description") or info.get("agent_type", "Agent")
-            agent_type = info.get("agent_type", "Agent")
-
-            # Agent row: "   ⏺ Description · 0 tools" (gradient flashing bullet)
-            # Updated in-place with spinner animation, don't re-wrap
-            agent_row = Text()
-            agent_row.append("   ⏺ ", style=GREEN_BRIGHT)  # Gradient bullet for agent rows
-            agent_row.append(description)
-            agent_row.append(" · 0 tools", style=GREY)
-            self.log.write(agent_row, scroll_end=True, animate=False, wrappable=False)
-            agent_line = len(self.log.lines) - 1
-
-            # Status row: "      ⎿  Initializing...." (no tree connector for agent row)
-            # Updated in-place, don't re-wrap
-            status_row = Text()
-            status_row.append("      ⎿  ", style=GREY)
-            status_row.append("Initializing....", style=SUBTLE)
-            self.log.write(status_row, scroll_end=True, animate=False, wrappable=False)
-            status_line_num = len(self.log.lines) - 1
-
-            agents[tool_call_id] = AgentInfo(
-                agent_type=agent_type,
-                description=description,
-                tool_call_id=tool_call_id,
-                line_number=agent_line,
-                status_line=status_line_num,
-                is_last=is_last,
-            )
-
-        self._parallel_group = ParallelAgentGroup(
-            agents=agents,
-            header_line=header_line,
-            expanded=self._parallel_expanded,
-            start_time=time.monotonic(),
-        )
-
-        # Reset animation indices for parallel agents
-        self._header_spinner_index = 0
-        self._agent_spinner_states.clear()
-
-        # Start animation timer for spinner and gradient effects
+        """Called when parallel agents start executing."""
+        self.parallel_renderer.on_start(agent_infos, self._parallel_expanded)
         self._start_nested_tool_timer()
 
-    def _render_parallel_header(self) -> Text:
-        """Render the parallel agents header line.
-
-        Returns:
-            Text object for the header line
-        """
-        if self._parallel_group is None:
-            return Text("")
-
-        group = self._parallel_group
-        total_agents = len(group.agents)
-        total_tools = sum(a.tool_count for a in group.agents.values())
-        all_completed = all(a.status in ("completed", "failed") for a in group.agents.values())
-        any_failed = any(a.status == "failed" for a in group.agents.values())
-
-        # Count agents by type for description
-        type_counts: Dict[str, int] = {}
-        for agent in group.agents.values():
-            type_counts[agent.agent_type] = type_counts.get(agent.agent_type, 0) + 1
-
-        # Build agent type description (e.g., "2 Explore agents" or "1 Explore + 1 Bash agents")
-        type_descriptions = []
-        for agent_type, count in type_counts.items():
-            type_descriptions.append(f"{count} {agent_type}")
-        agent_desc = (
-            " + ".join(type_descriptions)
-            if len(type_descriptions) > 1
-            else type_descriptions[0] if type_descriptions else "0"
-        )
-        agent_word = "agent" if total_agents == 1 else "agents"
-
-        text = Text()
-
-        if all_completed:
-            if any_failed:
-                text.append("⏺ ", style=ERROR)
-            else:
-                text.append("⏺ ", style=SUCCESS)
-            elapsed = round(time.monotonic() - group.start_time)
-            text.append(f"Completed {agent_desc} {agent_word} ")
-            text.append(f"({total_tools} tools · {elapsed}s)", style=GREY)
-        else:
-            # Use rotating spinner character from _header_spinner_index
-            spinner_char = self._spinner_chars[
-                self._header_spinner_index % len(self._spinner_chars)
-            ]
-            text.append(f"{spinner_char} ", style=CYAN)
-            text.append(f"Running {agent_desc} {agent_word}… ")
-
-        return text
-
-    def _update_parallel_header(self) -> None:
-        """Update the parallel header line in-place."""
-        if self._parallel_group is None:
-            return
-
-        header_text = self._render_parallel_header()
-
-        from rich.console import Console
-
-        console = Console(width=1000, force_terminal=True, no_color=False)
-        segments = list(header_text.render(console))
-        strip = Strip(segments)
-
-        if self._parallel_group.header_line < len(self.log.lines):
-            self.log.lines[self._parallel_group.header_line] = strip
-            self.log.refresh_line(self._parallel_group.header_line)
-
-    def _update_agent_row(self, agent: AgentInfo) -> None:
-        """Update an agent's row line to show tool count (with gradient bullet if running).
-
-        Args:
-            agent: AgentInfo for the agent to update
-        """
-        if agent.line_number >= len(self.log.lines):
-            return
-
-        # Build agent row: "   ⏺ Description · N tools" (gradient bullet if running, checkmark if complete)
-        unique_count = agent.tool_count
-        use_spinner = agent.status == "running"
-
-        if use_spinner:
-            # Use gradient color for ⏺ bullet (animate through green gradient)
-            idx = self._agent_spinner_states.get(agent.tool_call_id, 0)
-            color_idx = idx % len(GREEN_GRADIENT)
-            color = GREEN_GRADIENT[color_idx]
-            row = Text()
-            row.append("   ⏺ ", style=color)  # Gradient flashing bullet
-            row.append(agent.description)
-            row.append(f" · {unique_count} tool" + ("s" if unique_count != 1 else ""), style=GREY)
-        else:
-            # Use checkmark/X for completed agents
-            status_char = "✓" if agent.status == "completed" else "✗"
-            status_style = SUCCESS if agent.status == "completed" else ERROR
-            row = Text()
-            row.append(f"   {status_char} ", style=status_style)
-            row.append(agent.description)
-            row.append(f" · {unique_count} tool" + ("s" if unique_count != 1 else ""), style=GREY)
-
-        strip = self._text_to_strip(row)
-        self.log.lines[agent.line_number] = strip
-        self.log.refresh_line(agent.line_number)
-
-    def _update_status_line(self, agent: AgentInfo) -> None:
-        """Update an agent's status line with current tool.
-
-        Args:
-            agent: AgentInfo for the agent to update
-        """
-        if agent.status_line >= len(self.log.lines):
-            return
-
-        # Build status row: "      ⎿  Current tool name" (no tree connector)
-        status = Text()
-        status.append("      ⎿  ", style=GREY)
-        status.append(agent.current_tool, style=SUBTLE)
-
-        strip = self._text_to_strip(status)
-        self.log.lines[agent.status_line] = strip
-        self.log.refresh_line(agent.status_line)
-
-    def _update_agent_row_gradient(self, agent: AgentInfo, color_idx: int) -> None:
-        """Update agent row with animated gradient bullet.
-
-        Args:
-            agent: AgentInfo for the agent to update
-            color_idx: Current color index for gradient animation
-        """
-        if agent.line_number >= len(self.log.lines):
-            return
-
-        # Build agent row: "   ⏺ Description · N tools" with gradient color
-        unique_count = agent.tool_count
-        color = GREEN_GRADIENT[color_idx % len(GREEN_GRADIENT)]
-        row = Text()
-        row.append("   ⏺ ", style=color)  # Gradient flashing bullet
-        row.append(agent.description)
-        row.append(f" · {unique_count} tool" + ("s" if unique_count != 1 else ""), style=GREY)
-
-        strip = self._text_to_strip(row)
-        self.log.lines[agent.line_number] = strip
-        self.log.refresh_line(agent.line_number)
-
-    def _text_to_strip(self, text: Text) -> Strip:
-        """Convert Text to Strip for line replacement.
-
-        Args:
-            text: Rich Text object to convert
-
-        Returns:
-            Strip object for use in log.lines
-        """
-        from rich.console import Console
-
-        console = Console(width=1000, force_terminal=True, no_color=False)
-        segments = list(text.render(console))
-        return Strip(segments)
-
     def on_parallel_agent_complete(self, tool_call_id: str, success: bool) -> None:
-        """Called when a parallel agent completes.
-
-        Args:
-            tool_call_id: Unique tool call ID of the agent that completed
-            success: Whether the agent succeeded
-        """
-        if self._parallel_group is None:
-            return
-
-        agent = self._parallel_group.agents.get(tool_call_id)
-        if agent is not None:
-            # Update status
-            agent.status = "completed" if success else "failed"
-
-            # Update agent row with final status
-            self._update_agent_row_completed(agent, success)
-
-            # Update status line to show completion
-            self._update_status_line_completed(agent, success)
-
-            # Update header
-            self._update_parallel_header()
-
-    def _update_agent_row_completed(self, agent: AgentInfo, success: bool) -> None:
-        """Update an agent's row line to show completion status.
-
-        Args:
-            agent: AgentInfo for the agent to update
-            success: Whether the agent succeeded
-        """
-        if agent.line_number >= len(self.log.lines):
-            return
-
-        # Build completed agent row: "   ✓ Description · N tools" (green checkmark)
-        status_char = "✓" if success else "✗"
-        status_style = SUCCESS if success else ERROR
-        unique_count = agent.tool_count
-
-        row = Text()
-        row.append(f"   {status_char} ", style=status_style)
-        row.append(agent.description)
-        row.append(f" · {unique_count} tool" + ("s" if unique_count != 1 else ""), style=GREY)
-
-        strip = self._text_to_strip(row)
-        self.log.lines[agent.line_number] = strip
-        self.log.refresh_line(agent.line_number)
-
-    def _update_status_line_completed(self, agent: AgentInfo, success: bool) -> None:
-        """Update an agent's status line to show completion.
-
-        Args:
-            agent: AgentInfo for the agent to update
-            success: Whether the agent succeeded
-        """
-        if agent.status_line >= len(self.log.lines):
-            return
-
-        # Build completed status row: "      ⎿  Done" or "      ⎿  Failed" (no tree connector)
-        status_text = "Done" if success else "Failed"
-
-        status = Text()
-        status.append("      ⎿  ", style=GREY)
-        status.append(status_text, style=SUBTLE if success else ERROR)
-
-        strip = self._text_to_strip(status)
-        self.log.lines[agent.status_line] = strip
-        self.log.refresh_line(agent.status_line)
+        """Called when a parallel agent completes."""
+        self.parallel_renderer.on_complete(tool_call_id, success)
 
     def on_parallel_agents_done(self) -> None:
         """Called when all parallel agents have completed."""
-        if self._parallel_group is None:
-            return
-
-        # Mark all agents as completed (in case some weren't explicitly marked)
-        for agent in self._parallel_group.agents.values():
-            if agent.status == "running":
-                agent.status = "completed"
-                self._update_agent_row_completed(agent, success=True)
-                self._update_status_line_completed(agent, success=True)
-
-        self._parallel_group.completed = True
-        self._update_parallel_header()
-
-        # Add blank line for spacing before next content
-        self._spacing.after_parallel_agents()
-
-        # Clear parallel group
-        self._parallel_group = None
+        self.parallel_renderer.on_all_done()
 
     def _write_parallel_agent_summaries(self) -> None:
         """Write summary lines for each agent in the parallel group."""
-        if self._parallel_group is None:
-            return
-
-        agents = list(self._parallel_group.agents.items())
-        for i, (name, stats) in enumerate(agents):
-            is_last = i == len(agents) - 1
-            connector = TREE_LAST if is_last else TREE_BRANCH
-
-            text = Text()
-            text.append(f"   {connector} ", style=GREY)
-            text.append(f"{name}", style=PRIMARY)
-            text.append(f" · {stats.tool_count} tool uses", style=GREY)
-
-            if stats.current_tool:
-                text.append("\n")
-                continuation = "      " if is_last else f"   {TREE_VERTICAL}  "
-                text.append(f"{continuation}{TREE_CONTINUATION}  ", style=GREY)
-                text.append(stats.current_tool, style=SUBTLE)
-
-            # Parallel agent summaries have tree structure, don't re-wrap
-            self.log.write(text, scroll_end=True, animate=False, wrappable=False)
+        self.parallel_renderer.write_summaries()
 
     def toggle_parallel_expansion(self) -> bool:
         """Toggle the expand/collapse state of parallel agent display.
@@ -1139,174 +456,18 @@ class DefaultToolRenderer:
             New expansion state (True = expanded)
         """
         self._parallel_expanded = not self._parallel_expanded
+        if self.parallel_renderer.group:
+            self.parallel_renderer.group.expanded = self._parallel_expanded
         return self._parallel_expanded
 
     def on_single_agent_start(self, agent_type: str, description: str, tool_call_id: str) -> None:
-        """Called when a single agent starts (non-parallel execution).
-
-        This creates the same display structure as parallel agents but for a single agent.
-
-        Args:
-            agent_type: Type of agent (e.g., "Explore", "Code-Explorer")
-            description: Task description
-            tool_call_id: Unique ID for tracking
-        """
-        self._spacing.before_single_agent()
-
-        # Header line: "⠋ Explore(description)" - Rotating spinner
-        # Updated in-place with animation, don't re-wrap
-        header = Text()
-        header.append("⠋ ", style=CYAN)
-        header.append(f"{agent_type}(", style=CYAN)
-        header.append(description, style=PRIMARY)
-        header.append(")", style=CYAN)
-        self.log.write(header, scroll_end=True, animate=False, wrappable=False)
-        header_line = len(self.log.lines) - 1
-
-        # Status line: "   ⏺ 0 tools" - Gradient flashing bullet
-        # Updated in-place with animation, don't re-wrap
-        status_row = Text()
-        status_row.append("   ⏺ ", style=GREEN_BRIGHT)  # Will be animated with gradient
-        status_row.append("0 tools", style=GREY)
-        self.log.write(status_row, scroll_end=True, animate=False, wrappable=False)
-        status_line_num = len(self.log.lines) - 1
-
-        # Current tool line: "      ⎿  Initializing..."
-        # Updated in-place, don't re-wrap
-        tool_row = Text()
-        tool_row.append("      ⎿  ", style=GREY)
-        tool_row.append("Initializing...", style=SUBTLE)
-        self.log.write(tool_row, scroll_end=True, animate=False, wrappable=False)
-        tool_line_num = len(self.log.lines) - 1
-
-        self._single_agent = SingleAgentInfo(
-            agent_type=agent_type,
-            description=description,
-            tool_call_id=tool_call_id,
-            header_line=header_line,
-            status_line=status_line_num,
-            tool_line=tool_line_num,
-        )
-
-        # Reset animation indices
-        self._header_spinner_index = 0
-        self._bullet_gradient_index = 0
-
-        # Start animation timer for spinner and gradient effects
+        """Called when a single agent starts (non-parallel execution)."""
+        self.single_agent_renderer.on_start(agent_type, description, tool_call_id)
         self._start_nested_tool_timer()
 
-    def _update_header_spinner(self) -> None:
-        """Update header line with rotating spinner (⠋⠙⠹...)."""
-        if self._single_agent is None:
-            return
-
-        agent = self._single_agent
-        if agent.header_line >= len(self.log.lines):
-            return
-
-        # Get next spinner frame
-        idx = self._header_spinner_index % len(self._spinner_chars)
-        self._header_spinner_index += 1
-        spinner_char = self._spinner_chars[idx]
-
-        row = Text()
-        row.append(f"{spinner_char} ", style=CYAN)
-        row.append(f"{agent.agent_type}(", style=CYAN)
-        row.append(agent.description, style=PRIMARY)
-        row.append(")", style=CYAN)
-
-        strip = self._text_to_strip(row)
-        self.log.lines[agent.header_line] = strip
-        self.log.refresh_line(agent.header_line)
-
-    def _update_single_agent_status_line(self) -> None:
-        """Update single agent's status line with tool count and gradient bullet."""
-        if self._single_agent is None or self._single_agent.status_line >= len(self.log.lines):
-            return
-
-        agent = self._single_agent
-        row = Text()
-        # Use gradient color for ⏺ bullet (animate through green gradient)
-        color_idx = self._bullet_gradient_index % len(GREEN_GRADIENT)
-        color = GREEN_GRADIENT[color_idx]
-        row.append("   ⏺ ", style=color)  # Gradient flashing bullet
-        row.append(f"{agent.tool_count} tool" + ("s" if agent.tool_count != 1 else ""), style=GREY)
-
-        strip = self._text_to_strip(row)
-        self.log.lines[agent.status_line] = strip
-        self.log.refresh_line(agent.status_line)
-
-    def _update_single_agent_tool_line(self) -> None:
-        """Update single agent's current tool line."""
-        if self._single_agent is None or self._single_agent.tool_line >= len(self.log.lines):
-            return
-
-        agent = self._single_agent
-        row = Text()
-        row.append("      ⎿  ", style=GREY)
-        row.append(agent.current_tool, style=SUBTLE)
-
-        strip = self._text_to_strip(row)
-        self.log.lines[agent.tool_line] = strip
-        self.log.refresh_line(agent.tool_line)
-
     def on_single_agent_complete(self, tool_call_id: str, success: bool = True) -> None:
-        """Called when a single agent completes.
-
-        Note: Keeps the same display style (⠋ header, ⏺ bullet). Just stops animation.
-
-        Args:
-            tool_call_id: Unique ID of the agent that completed
-            success: Whether the agent succeeded
-        """
-        if self._single_agent is None:
-            return
-
-        # Verify tool_call_id matches (if provided)
-        if tool_call_id and self._single_agent.tool_call_id != tool_call_id:
-            return
-
-        agent = self._single_agent
-        agent.status = "completed" if success else "failed"
-
-        # Update header from spinner to green bullet on completion
-        header_row = Text()
-        header_row.append("⏺ ", style=GREEN_BRIGHT if success else ERROR)
-        header_row.append(f"{agent.agent_type}(", style=CYAN)
-        header_row.append(agent.description, style=PRIMARY)
-        header_row.append(")", style=CYAN)
-
-        strip = self._text_to_strip(header_row)
-        if agent.header_line < len(self.log.lines):
-            self.log.lines[agent.header_line] = strip
-            self.log.refresh_line(agent.header_line)
-
-        # Update status line with ⏺ bullet
-        status_row = Text()
-        status_row.append("   ⏺ ", style=GREEN_BRIGHT)  # Keep bullet style
-        status_row.append(
-            f"{agent.tool_count} tool" + ("s" if agent.tool_count != 1 else ""), style=GREY
-        )
-
-        strip = self._text_to_strip(status_row)
-        if agent.status_line < len(self.log.lines):
-            self.log.lines[agent.status_line] = strip
-            self.log.refresh_line(agent.status_line)
-
-        # Update tool line to show "Done"
-        tool_row = Text()
-        tool_row.append("      ⎿  ", style=GREY)
-        tool_row.append("Done" if success else "Failed", style=SUBTLE if success else ERROR)
-
-        strip = self._text_to_strip(tool_row)
-        if agent.tool_line < len(self.log.lines):
-            self.log.lines[agent.tool_line] = strip
-            self.log.refresh_line(agent.tool_line)
-
-        # Add blank line for spacing before next content
-        self._spacing.after_single_agent()
-
-        self._single_agent = None
+        """Called when a single agent completes."""
+        self.single_agent_renderer.on_complete(tool_call_id, success)
 
     def has_active_parallel_group(self) -> bool:
         """Check if there's an active parallel agent group.
@@ -1314,7 +475,7 @@ class DefaultToolRenderer:
         Returns:
             True if a parallel group is currently active
         """
-        return self._parallel_group is not None and not self._parallel_group.completed
+        return self.parallel_renderer.is_active
 
     def _rebuild_streaming_box_with_truncation(
         self,
