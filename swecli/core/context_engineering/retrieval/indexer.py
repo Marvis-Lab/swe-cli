@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import fnmatch
 import json
-import subprocess
+import os
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -12,6 +13,8 @@ from .token_monitor import ContextTokenMonitor
 
 class CodebaseIndexer:
     """Generate concise codebase summaries for context."""
+
+    IGNORED_DIRS = {"node_modules", "__pycache__", ".git", "venv", ".venv", "build", "dist", ".idea", ".vscode"}
 
     def __init__(self, working_dir: Optional[Path] = None) -> None:
         self.working_dir = Path(working_dir or Path.cwd())
@@ -37,19 +40,13 @@ class CodebaseIndexer:
 
     def _generate_overview(self) -> str:
         lines = ["## Overview\n"]
-        try:
-            result = subprocess.run(
-                ["find", ".", "-type", "f"],
-                capture_output=True,
-                text=True,
-                cwd=self.working_dir,
-                timeout=5,
-            )
-            if result.returncode == 0:
-                file_count = len(result.stdout.strip().split("\n"))
-                lines.append(f"**Total Files:** {file_count}")
-        except Exception:
-            pass
+
+        file_count = 0
+        for _, dirs, files in os.walk(self.working_dir):
+            dirs[:] = [d for d in dirs if d not in self.IGNORED_DIRS]
+            file_count += len(files)
+
+        lines.append(f"**Total Files:** {file_count}")
 
         readme_path = self._find_readme()
         if readme_path:
@@ -67,28 +64,8 @@ class CodebaseIndexer:
     def _generate_structure(self) -> str:
         lines = ["## Structure\n", "```"]
         try:
-            result = subprocess.run(
-                [
-                    "tree",
-                    "-L",
-                    "2",
-                    "-I",
-                    "node_modules|__pycache__|.git|venv|build|dist",
-                ],
-                capture_output=True,
-                text=True,
-                cwd=self.working_dir,
-                timeout=5,
-            )
-            if result.returncode == 0:
-                tree_output = result.stdout.strip()
-                if len(tree_output) > 1500:
-                    tree_output = "\n".join(tree_output.split("\n")[:30]) + "\n... (truncated)"
-                lines.append(tree_output)
-            else:
-                lines.append(self._basic_structure())
-        except FileNotFoundError:
-            lines.append(self._basic_structure())
+            tree_output = self._basic_structure()
+            lines.append(tree_output)
         except Exception:
             lines.append("(Unable to generate structure)")
 
@@ -180,27 +157,51 @@ class CodebaseIndexer:
 
     def _find_files(self, patterns: List[str]) -> List[Path]:
         matches: List[Path] = []
-        for pattern in patterns:
-            matches.extend(self.working_dir.glob(f"**/{pattern}"))
+        for root, dirs, files in os.walk(self.working_dir):
+            dirs[:] = [d for d in dirs if d not in self.IGNORED_DIRS]
+            for file in files:
+                for pattern in patterns:
+                    if fnmatch.fnmatch(file, pattern):
+                        matches.append(Path(root) / file)
+                        break
         return matches
 
     def _basic_structure(self) -> str:
-        try:
-            result = subprocess.run(
-                ["ls", "-R"],
-                capture_output=True,
-                text=True,
-                cwd=self.working_dir,
-                timeout=5,
-            )
-            if result.returncode == 0:
-                output = result.stdout.strip()
-                if len(output) > 1200:
-                    output = "\n".join(output.split("\n")[:40]) + "\n... (truncated)"
-                return output
-        except Exception:
-            pass
-        return "(Unable to generate structure)"
+        lines = ["."]
+        max_files = 40
+        self._file_count = 0
+
+        def add_to_tree(dir_path: Path, level: int):
+            if level > 2:
+                return
+
+            if self._file_count >= max_files:
+                return
+
+            try:
+                items = sorted([p for p in dir_path.iterdir()])
+            except (PermissionError, OSError):
+                return
+
+            # Prune
+            items = [p for p in items if p.name not in self.IGNORED_DIRS]
+
+            for item in items:
+                if self._file_count >= max_files:
+                    if lines[-1] != "... (truncated)":
+                        lines.append("... (truncated)")
+                    return
+
+                indent = "│   " * level
+                if item.is_dir():
+                    lines.append(f"{indent}├── {item.name}/")
+                    add_to_tree(item, level + 1)
+                else:
+                    lines.append(f"{indent}├── {item.name}")
+                    self._file_count += 1
+
+        add_to_tree(self.working_dir, 0)
+        return "\n".join(lines)
 
     def _compress_content(self, content: str, max_tokens: int) -> str:
         paragraphs = content.split("\n\n")
