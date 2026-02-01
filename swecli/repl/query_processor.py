@@ -1,11 +1,11 @@
 """Query processing for REPL."""
 
-import json
-from typing import TYPE_CHECKING, Iterable
+from typing import TYPE_CHECKING, Iterable, Optional, Any
 
 from swecli.core.context_engineering.memory import (
     Reflector,
     Curator,
+    AgentResponse,
 )
 from swecli.repl.react_executor import ReactExecutor
 
@@ -18,7 +18,6 @@ if TYPE_CHECKING:
     from swecli.core.context_engineering.history import UndoManager
     from swecli.core.context_engineering.tools.implementations import FileOperations
     from swecli.ui_textual.formatters_internal.output_formatter import OutputFormatter
-    from swecli.ui_textual.components import StatusLine
     from swecli.models.config import Config
     from swecli.core.runtime import ConfigManager
     from swecli.models.message import ToolCall
@@ -53,7 +52,6 @@ class QueryProcessor:
         mode_manager: "ModeManager",
         file_ops: "FileOperations",
         output_formatter: "OutputFormatter",
-        status_line: "StatusLine",
         message_printer_callback,
     ):
         """Initialize query processor.
@@ -66,7 +64,6 @@ class QueryProcessor:
             mode_manager: Mode manager for current mode
             file_ops: File operations for query enhancement
             output_formatter: Output formatter for tool results
-            status_line: Status line renderer
             message_printer_callback: Callback to print markdown messages
         """
         self.console = console
@@ -76,7 +73,6 @@ class QueryProcessor:
         self.mode_manager = mode_manager
         self.file_ops = file_ops
         self.output_formatter = output_formatter
-        self.status_line = status_line
         self._print_markdown_message = message_printer_callback
 
         # UI state trackers
@@ -340,25 +336,6 @@ class QueryProcessor:
         """
         return self._tool_executor._format_tool_feedback(tool_calls, outcome)
 
-
-    def _render_status_line(self):
-        """Render the status line with current context."""
-        total_tokens = self.session_manager.current_session.total_tokens() if self.session_manager.current_session else 0
-        self.status_line.render(
-            model=self.config.model,
-            working_dir=self.config_manager.working_dir,
-            tokens_used=total_tokens,
-            tokens_limit=self.config.max_context_tokens,
-            mode=self.mode_manager.current_mode.value.upper(),
-            latency_ms=self._last_latency_ms,
-            key_hints=[
-                ("Esc S", "Status detail"),
-                ("Esc C", "Context"),
-                ("Esc N", "Notifications"),
-                ("/help", "Commands"),
-            ],
-            notifications=[note.summary() for note in self._notification_center.latest(2)] if self._notification_center and self._notification_center.has_items() else None,
-        )
 
     def process_query(
         self,
