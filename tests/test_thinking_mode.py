@@ -266,45 +266,6 @@ class TestThinkingUICallback:
 
         mock_conversation.add_thinking_block.assert_not_called()
 
-    def test_toggle_thinking_visibility(self):
-        """Test toggle_thinking_visibility method (fallback when no app)."""
-        from swecli.ui_textual.ui_callback import TextualUICallback
-
-        mock_conversation = MagicMock()
-        callback = TextualUICallback(mock_conversation)
-
-        assert callback._thinking_visible is True
-
-        new_state = callback.toggle_thinking_visibility()
-        assert new_state is False
-        assert callback._thinking_visible is False
-
-        new_state = callback.toggle_thinking_visibility()
-        assert new_state is True
-        assert callback._thinking_visible is True
-
-    def test_toggle_thinking_visibility_syncs_with_app(self):
-        """Test toggle_thinking_visibility syncs with chat_app._thinking_visible."""
-        from swecli.ui_textual.ui_callback import TextualUICallback
-
-        mock_conversation = MagicMock()
-        mock_app = MagicMock()
-        mock_app._thinking_visible = True
-
-        callback = TextualUICallback(mock_conversation, chat_app=mock_app)
-
-        # Toggle should change both app and local state
-        new_state = callback.toggle_thinking_visibility()
-        assert new_state is False
-        assert mock_app._thinking_visible is False
-        assert callback._thinking_visible is False
-
-        # Toggle again
-        new_state = callback.toggle_thinking_visibility()
-        assert new_state is True
-        assert mock_app._thinking_visible is True
-        assert callback._thinking_visible is True
-
     def test_on_thinking_called_directly(self):
         """Test that on_thinking works when called directly (from thinking phase)."""
         from swecli.ui_textual.ui_callback import TextualUICallback

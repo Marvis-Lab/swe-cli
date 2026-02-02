@@ -98,24 +98,6 @@ class TextualUICallback:
         if self.chat_app and hasattr(self.chat_app, "_start_local_spinner"):
             self._run_on_ui(self.chat_app._start_local_spinner)
 
-    def toggle_thinking_visibility(self) -> bool:
-        """Toggle thinking content visibility.
-
-        Syncs with chat_app state if available.
-
-        Returns:
-            New visibility state (True = visible)
-        """
-        # Toggle app state (single source of truth) if available
-        if self.chat_app and hasattr(self.chat_app, "_thinking_visible"):
-            self.chat_app._thinking_visible = not self.chat_app._thinking_visible
-            self._thinking_visible = self.chat_app._thinking_visible
-            return self.chat_app._thinking_visible
-        else:
-            # Fallback to local state
-            self._thinking_visible = not self._thinking_visible
-            return self._thinking_visible
-
     def get_and_clear_nested_calls(self) -> list[ToolCall]:
         """Return collected nested calls and clear the buffer.
 
@@ -918,19 +900,6 @@ class TextualUICallback:
         Delegates to ToolDisplayService for unified logic.
         """
         return self._display_service.normalize_arguments(tool_args)
-
-    def _resolve_paths_in_args(self, tool_args: Dict[str, Any]) -> Dict[str, Any]:
-        """Resolve relative paths to absolute paths for display.
-
-        Delegates to ToolDisplayService for unified logic.
-
-        Args:
-            tool_args: Tool arguments dict
-
-        Returns:
-            Copy of tool_args with paths resolved to absolute paths
-        """
-        return self._display_service.resolve_paths(tool_args)
 
     def _run_on_ui(self, func, *args, **kwargs) -> None:
         """Execute a function on the Textual UI thread and WAIT for completion.

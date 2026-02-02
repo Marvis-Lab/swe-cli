@@ -94,28 +94,6 @@ class TestProtectedLineTracking:
         assert len(conversation_log.lines) == 3
         assert 2 in conversation_log._protected_lines  # Moved from index 3 to 2
 
-    def test_replace_tool_call_line_updates_indices(self, conversation_log):
-        """Test that _replace_tool_call_line() updates protected line indices."""
-        # Add 5 lines
-        for i in range(5):
-            conversation_log.lines.append(Text(f"Line {i}"))
-
-        # Mark lines 3 and 4 as protected
-        conversation_log._protected_lines.add(3)
-        conversation_log._protected_lines.add(4)
-
-        # Set tool call at line 1
-        conversation_log._tool_call_start = 1
-        conversation_log._tool_display = Text("Tool call")
-
-        # Replace tool call line
-        conversation_log._replace_tool_call_line("⏺")
-
-        # Lines 3 and 4 should be shifted down to 2 and 3 (because line 1 was deleted)
-        # But then a new line is added, so they shift back up
-        # Let's verify the protected lines are still being tracked
-        assert len(conversation_log._protected_lines) >= 2
-
     def test_prune_old_protected_lines(self, conversation_log):
         """Test that old protected lines are pruned when exceeding max."""
         conversation_log.MAX_PROTECTED_LINES = 5  # Lower limit for testing
@@ -134,20 +112,6 @@ class TestProtectedLineTracking:
         # The kept indices should be 5-9
         expected = {5, 6, 7, 8, 9}
         assert conversation_log._protected_lines == expected
-
-    def test_cleanup_protected_lines_removes_out_of_bounds(self, conversation_log):
-        """Test that cleanup removes out-of-bounds indices."""
-        # Add 5 lines
-        for i in range(5):
-            conversation_log.lines.append(Text(f"Line {i}"))
-
-        # Mark lines 1, 2, 3 as protected, plus add some out-of-bounds indices
-        conversation_log._protected_lines = {1, 2, 3, 10, 100, 500}
-
-        # Cleanup should remove out-of-bounds indices
-        conversation_log._cleanup_protected_lines()
-
-        assert conversation_log._protected_lines == {1, 2, 3}
 
     def test_protected_lines_bubble_up_complex(self, conversation_log):
         """Test complex scenario with multiple truncations."""
