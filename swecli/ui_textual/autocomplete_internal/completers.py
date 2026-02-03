@@ -31,7 +31,7 @@ class SwecliCompleter(Completer):
         self.file_strategy = FileMentionStrategy(working_dir, self.file_finder)
 
     def get_completions(
-        self, document: Document, complete_event
+        self, document: Document, _
     ) -> Iterable[Completion]:
         """Get completions based on current input.
 
@@ -75,7 +75,7 @@ class FileMentionCompleter(Completer):
         self.file_strategy = FileMentionStrategy(working_dir, self.file_finder)
 
     def get_completions(
-        self, document: Document, complete_event
+        self, document: Document, _
     ) -> Iterable[Completion]:
         """Get file mention completions.
 
@@ -123,7 +123,7 @@ class SlashCommandCompleter(Completer):
         self.slash_strategy = SlashCommandStrategy(self.command_registry)
 
     def get_completions(
-        self, document: Document, complete_event
+        self, document: Document, _
     ) -> Iterable[Completion]:
         """Get slash command completions.
 

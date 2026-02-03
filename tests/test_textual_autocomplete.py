@@ -1,6 +1,7 @@
 """Autocomplete behavior for the Textual chat input."""
 
 from pathlib import Path
+from unittest.mock import Mock
 
 from swecli.ui_textual.autocomplete import SwecliCompleter
 from swecli.ui_textual.chat_app import ChatTextArea
@@ -10,7 +11,15 @@ def _build_area(tmp_path: Path) -> ChatTextArea:
     """Create a ChatTextArea wired to a swecli completer rooted at tmp_path."""
 
     completer = SwecliCompleter(tmp_path)
-    return ChatTextArea(completer=completer)
+    area = ChatTextArea(completer=completer)
+
+    # Mock set_timer to run callback immediately for synchronous testing
+    def mock_set_timer(delay, callback, name=None):
+        callback()
+        return Mock(stop=Mock())
+
+    area.set_timer = mock_set_timer
+    return area
 
 
 def test_slash_command_suggestion(tmp_path) -> None:

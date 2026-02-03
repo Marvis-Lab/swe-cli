@@ -10,6 +10,8 @@ def mock_app():
     app.conversation = Mock()
     # Mock loop for _run_on_ui
     app._loop = Mock()
+    # Mock spinner service
+    app.spinner_service = Mock()
     return app
 
 @pytest.fixture
@@ -29,21 +31,42 @@ def test_handle_connect_success(controller, mock_app, mock_repl):
     mock_repl.mcp_manager.connect_sync.return_value = True
     mock_repl.mcp_manager.get_server_tools.return_value = ["tool1", "tool2"]
 
-    # Mock TextualUICallback to verify calls
-    # Note: handle_connect does a local import, so we must patch where it's defined
-    with patch("swecli.ui_textual.ui_callback.TextualUICallback") as MockCallback:
-        mock_ui_callback = MockCallback.return_value
+    # Setup spinner mock
+    mock_app.spinner_service.start.return_value = "spinner-id"
+
+    controller.handle_connect("/mcp connect github")
+
+    # Verify spinner started
+    mock_app.spinner_service.start.assert_called_with("MCP (github)")
+
+    # Verify connection attempted (might be in thread)
+    # Since it's threaded, we might not see the call immediately unless we join or wait
+    # Or if the thread runs instantly/is mocked.
+    # The current implementation uses threading.Thread.
+    # We can mock threading.Thread to run synchronously for tests.
+
+    # Wait for thread to finish (it's daemon so join is tricky without reference)
+    # But threading.Thread is standard library.
+    # Let's assume the previous test worked because TextualUICallback was used differently?
+    # No, the previous test code was mocking TextualUICallback which was NOT used in handle_connect for spinner anymore.
+    # It uses spinner_service now.
+
+    # We need to ensure the thread runs.
+    # Patch threading.Thread to run target immediately
+    with patch("threading.Thread") as MockThread:
+        def side_effect(target=None, daemon=None):
+            target() # Run immediately
+            return MagicMock()
+        MockThread.side_effect = side_effect
 
         controller.handle_connect("/mcp connect github")
 
-        # Verify spinner started
-        mock_ui_callback.on_progress_start.assert_called_with("MCP (github)")
-
-        # Verify connection attempted
         mock_repl.mcp_manager.connect_sync.assert_called_with("github")
 
         # Verify success message
-        mock_ui_callback.on_progress_complete.assert_called_with("Connected (2 tools)")
+        mock_app.spinner_service.stop.assert_called_with(
+            "spinner-id", success=True, result_message="Connected (2 tools)"
+        )
 
         # Verify runtime tooling refresh
         mock_repl._refresh_runtime_tooling.assert_called_once()
@@ -53,14 +76,20 @@ def test_handle_connect_failure(controller, mock_app, mock_repl):
     # Setup failure
     mock_repl.mcp_manager.is_connected.return_value = False
     mock_repl.mcp_manager.connect_sync.return_value = False
+    mock_app.spinner_service.start.return_value = "spinner-id"
 
-    with patch("swecli.ui_textual.ui_callback.TextualUICallback") as MockCallback:
-        mock_ui_callback = MockCallback.return_value
+    with patch("threading.Thread") as MockThread:
+        def side_effect(target=None, daemon=None):
+            target()
+            return MagicMock()
+        MockThread.side_effect = side_effect
 
         controller.handle_connect("/mcp connect github")
 
         # Verify error message
-        mock_ui_callback.on_progress_complete.assert_called_with("Connection failed", success=False)
+        mock_app.spinner_service.stop.assert_called_with(
+            "spinner-id", success=False, result_message="Connection failed"
+        )
 
         # Verify runtime tooling NOT refreshed
         mock_repl._refresh_runtime_tooling.assert_not_called()
@@ -69,17 +98,17 @@ def test_handle_connect_already_connected(controller, mock_app, mock_repl):
     """Test connecting to already connected server."""
     mock_repl.mcp_manager.is_connected.return_value = True
     mock_repl.mcp_manager.get_server_tools.return_value = ["tool1"]
+    mock_app.spinner_service.start.return_value = "spinner-id"
 
-    with patch("swecli.ui_textual.ui_callback.TextualUICallback") as MockCallback:
-        mock_ui_callback = MockCallback.return_value
+    controller.handle_connect("/mcp connect github")
 
-        controller.handle_connect("/mcp connect github")
+    # Should not attempt connection
+    mock_repl.mcp_manager.connect_sync.assert_not_called()
 
-        # Should not attempt connection
-        mock_repl.mcp_manager.connect_sync.assert_not_called()
-
-        # Should show already connected message
-        mock_ui_callback.on_progress_complete.assert_called_with("Already connected (1 tools)")
+    # Should show already connected message
+    mock_app.spinner_service.stop.assert_called_with(
+        "spinner-id", success=True, result_message="Already connected (1 tools)"
+    )
 
 def test_handle_connect_invalid_command(controller, mock_app):
     """Test invalid command format."""

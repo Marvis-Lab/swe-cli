@@ -16,7 +16,7 @@ class ToolPermission(BaseModel):
     deny_patterns: list[str] = Field(default_factory=list)
     compiled_patterns: list[re.Pattern[str]] = Field(default_factory=list, exclude=True)
 
-    def model_post_init(self, __context: Any) -> None:
+    def model_post_init(self, _: Any) -> None:
         """Compile regex patterns after initialization."""
         self.compiled_patterns = [re.compile(pattern) for pattern in self.deny_patterns]
 
