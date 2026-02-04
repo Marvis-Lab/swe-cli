@@ -391,18 +391,6 @@ class ConversationLog(RichLog):
             for idx in sorted_lines[:to_remove]:
                 self._protected_lines.discard(idx)
 
-    def _cleanup_protected_lines(self) -> None:
-        """Remove protected lines that are out of bounds."""
-        if not self._protected_lines:
-            return
-
-        # Filter out indices larger than current line count
-        max_idx = len(self.lines) - 1
-        valid_lines = {idx for idx in self._protected_lines if idx <= max_idx}
-
-        if len(valid_lines) != len(self._protected_lines):
-            self._protected_lines = valid_lines
-
     async def on_key(self, event) -> None:
         """Forward key events to scroll controller."""
         self._scroll_controller.on_key(event)

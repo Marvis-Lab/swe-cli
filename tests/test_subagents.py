@@ -132,14 +132,6 @@ class TestSubAgentManager:
         assert "search" in tools
         assert "run_command" in tools
 
-    def test_get_available_types_empty_initially(self, manager):
-        """Test that no agents are available before registration."""
-        assert manager.get_available_types() == []
-
-    def test_get_descriptions_empty_initially(self, manager):
-        """Test that no descriptions before registration."""
-        assert manager.get_descriptions() == {}
-
     @patch("swecli.core.agents.SwecliAgent")
     def test_register_subagent(self, mock_agent_class, manager):
         """Test registering a custom subagent."""
@@ -154,8 +146,9 @@ class TestSubAgentManager:
         )
         manager.register_subagent(spec)
 
-        assert "custom-agent" in manager.get_available_types()
-        assert manager.get_descriptions()["custom-agent"] == "A custom test agent"
+        # Verify registration via internal dict (since get_available_types removed)
+        assert "custom-agent" in manager._agents
+        assert manager._agents["custom-agent"]["description"] == "A custom test agent"
 
     @patch("swecli.core.agents.SwecliAgent")
     def test_register_defaults(self, mock_agent_class, manager):
@@ -165,12 +158,13 @@ class TestSubAgentManager:
 
         manager.register_defaults()
 
-        available = manager.get_available_types()
-        assert "ask-user" in available
-        assert "Code-Explorer" in available
-        assert "Web-clone" in available
-        assert "Web-Generator" in available
-        assert "Planner" in available
+        # Verify registration via internal dict
+        agents = manager._agents
+        assert "ask-user" in agents
+        assert "Code-Explorer" in agents
+        assert "Web-clone" in agents
+        assert "Web-Generator" in agents
+        assert "Planner" in agents
 
     @patch("swecli.core.agents.SwecliAgent")
     def test_get_subagent(self, mock_agent_class, manager):
@@ -326,47 +320,6 @@ class TestSubAgentManagerAsync:
 
         assert result["success"] is True
 
-    @patch("swecli.core.agents.SwecliAgent")
-    @pytest.mark.asyncio
-    async def test_execute_parallel(self, mock_agent_class, manager):
-        """Test parallel subagent execution."""
-        call_count = 0
-
-        def mock_run_sync(*args, **kwargs):
-            nonlocal call_count
-            call_count += 1
-            return {"success": True, "content": f"Task {call_count} done"}
-
-        mock_agent = MagicMock()
-        mock_agent.run_sync.side_effect = mock_run_sync
-        mock_agent_class.return_value = mock_agent
-
-        # Register multiple agents
-        for name in ["agent-1", "agent-2", "agent-3"]:
-            spec = SubAgentSpec(
-                name=name,
-                description=f"Agent {name}",
-                system_prompt="Test prompt",
-            )
-            manager.register_subagent(spec)
-
-        deps = SubAgentDeps(
-            mode_manager=MagicMock(),
-            approval_manager=MagicMock(),
-            undo_manager=MagicMock(),
-        )
-
-        tasks = [
-            ("agent-1", "Task 1"),
-            ("agent-2", "Task 2"),
-            ("agent-3", "Task 3"),
-        ]
-
-        results = await manager.execute_parallel(tasks, deps)
-
-        assert len(results) == 3
-        assert all(r["success"] for r in results)
-
 
 class TestSpawnSubagentToolSchema:
     """Tests for spawn_subagent tool schema generation."""
@@ -375,11 +328,12 @@ class TestSpawnSubagentToolSchema:
     def mock_manager(self):
         """Create a mock SubAgentManager."""
         manager = MagicMock()
-        manager.get_available_types.return_value = ["Code-Explorer", "Web-clone"]
-        manager.get_descriptions.return_value = {
-            "Code-Explorer": "Codebase exploration agent",
-            "Web-clone": "Website cloning agent",
-        }
+        # Mock get_agent_configs instead of removed methods
+        from swecli.core.agents.subagents.manager import AgentConfig
+        manager.get_agent_configs.return_value = [
+            AgentConfig(name="Code-Explorer", description="Codebase exploration agent"),
+            AgentConfig(name="Web-clone", description="Website cloning agent"),
+        ]
         return manager
 
     def test_spawn_subagent_tool_name(self):

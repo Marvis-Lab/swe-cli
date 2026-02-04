@@ -52,22 +52,6 @@ class UndoManager:
         if len(self.history) > self.max_history:
             self.history = self.history[-self.max_history :]
 
-    def undo_last(self) -> UndoResult:
-        """Undo the last operation.
-
-        Returns:
-            UndoResult with details
-        """
-        if not self.history:
-            return UndoResult(
-                success=False,
-                operation_id="",
-                error="No operations to undo",
-            )
-
-        operation = self.history.pop()
-        return self.undo_operation(operation)
-
     def undo_operation(self, operation: Operation) -> UndoResult:
         """Undo a specific operation.
 
@@ -194,21 +178,3 @@ class UndoManager:
             operation_id=operation.id,
         )
 
-    def list_history(self, limit: int = 10) -> list[Operation]:
-        """List recent operations that can be undone.
-
-        Args:
-            limit: Maximum number to return
-
-        Returns:
-            List of operations (most recent first)
-        """
-        return list(reversed(self.history[-limit:]))
-
-    def clear_history(self) -> None:
-        """Clear all operation history."""
-        self.history.clear()
-
-    def get_history_size(self) -> int:
-        """Get number of operations in history."""
-        return len(self.history)

@@ -96,18 +96,6 @@ class ParallelAgentGroup:
     completed: bool = False
 
 
-@dataclass
-class AgentStats:
-    """Stats tracking for a single agent type in a parallel group (legacy)."""
-
-    tool_count: int = 0
-    token_count: int = 0
-    current_tool: str = ""
-    status: str = "running"  # running, completed, failed
-    agent_count: int = 1  # Number of agents of this type (for "Running 2 Explore agents")
-    completed_count: int = 0  # Number of agents that have completed
-
-
 class DefaultToolRenderer:
     """Handles rendering of tool calls, results, and nested execution animations."""
 
@@ -1108,30 +1096,6 @@ class DefaultToolRenderer:
         # Clear parallel group
         self._parallel_group = None
 
-    def _write_parallel_agent_summaries(self) -> None:
-        """Write summary lines for each agent in the parallel group."""
-        if self._parallel_group is None:
-            return
-
-        agents = list(self._parallel_group.agents.items())
-        for i, (name, stats) in enumerate(agents):
-            is_last = i == len(agents) - 1
-            connector = TREE_LAST if is_last else TREE_BRANCH
-
-            text = Text()
-            text.append(f"   {connector} ", style=GREY)
-            text.append(f"{name}", style=PRIMARY)
-            text.append(f" · {stats.tool_count} tool uses", style=GREY)
-
-            if stats.current_tool:
-                text.append("\n")
-                continuation = "      " if is_last else f"   {TREE_VERTICAL}  "
-                text.append(f"{continuation}{TREE_CONTINUATION}  ", style=GREY)
-                text.append(stats.current_tool, style=SUBTLE)
-
-            # Parallel agent summaries have tree structure, don't re-wrap
-            self.log.write(text, scroll_end=True, animate=False, wrappable=False)
-
     def toggle_parallel_expansion(self) -> bool:
         """Toggle the expand/collapse state of parallel agent display.
 
@@ -1315,41 +1279,6 @@ class DefaultToolRenderer:
             True if a parallel group is currently active
         """
         return self._parallel_group is not None and not self._parallel_group.completed
-
-    def _rebuild_streaming_box_with_truncation(
-        self,
-        is_error: bool,
-        content_lines: list[str],
-    ) -> None:
-        """Rebuild the streaming output with head+tail truncation."""
-        if self._streaming_box_top_line is None:
-            return
-
-        # Remove all lines from top of output to current position
-        self._truncate_from(self._streaming_box_top_line)
-
-        # Apply truncation
-        head_count = self._box_renderer.MAIN_AGENT_HEAD_LINES
-        tail_count = self._box_renderer.MAIN_AGENT_TAIL_LINES
-        head_lines, tail_lines, hidden_count = self._box_renderer.truncate_lines_head_tail(
-            content_lines, head_count, tail_count
-        )
-
-        # Output lines with ⎿ prefix for first line, spaces for rest
-        is_first = True
-        for line in head_lines:
-            self._write_bash_output_line(line, "", is_error, is_first)
-            is_first = False
-
-        if hidden_count > 0:
-            hidden_text = Text(
-                f"       ... {hidden_count} lines hidden ...", style=f"{SUBTLE} italic"
-            )
-            self.log.write(hidden_text, wrappable=False)
-
-        for line in tail_lines:
-            self._write_bash_output_line(line, "", is_error, is_first)
-            is_first = False
 
     def _truncate_from(self, index: int) -> None:
         if index >= len(self.log.lines):
@@ -1752,21 +1681,6 @@ class DefaultToolRenderer:
 
         return self._toggle_collapsible(collapsible)
 
-    def toggle_output_at_line(self, line_index: int) -> bool:
-        """Toggle collapsible output containing the given line.
-
-        Args:
-            line_index: Line index in the conversation log.
-
-        Returns:
-            True if a region was toggled, False if none found.
-        """
-        # Find collapsible region containing this line
-        for start, collapsible in self._collapsible_outputs.items():
-            if collapsible.contains_line(line_index):
-                return self._toggle_collapsible(collapsible)
-        return False
-
     def _toggle_collapsible(self, collapsible: CollapsibleOutput) -> bool:
         """Toggle a specific collapsible output region.
 
@@ -1846,20 +1760,6 @@ class DefaultToolRenderer:
             True if at least one collapsible region exists.
         """
         return len(self._collapsible_outputs) > 0
-
-    def get_collapsible_at_line(self, line_index: int) -> Optional[CollapsibleOutput]:
-        """Get collapsible output at a specific line.
-
-        Args:
-            line_index: Line index to check.
-
-        Returns:
-            CollapsibleOutput if found, None otherwise.
-        """
-        for collapsible in self._collapsible_outputs.values():
-            if collapsible.contains_line(line_index):
-                return collapsible
-        return None
 
     def add_nested_bash_output_box(
         self,
