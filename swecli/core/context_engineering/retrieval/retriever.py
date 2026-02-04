@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import os
 import re
-
+import subprocess
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+from .indexer import IGNORED_DIRS
 
 
 class EntityExtractor:
@@ -146,9 +149,10 @@ class ContextRetriever:
         # Use native python traversal instead of subprocess find
         target_name = Path(file_path).name
         try:
-            for item in self.working_dir.rglob(target_name):
-                if item.is_file():
-                    return item
+            for root, dirs, files in os.walk(self.working_dir):
+                dirs[:] = [d for d in dirs if d not in IGNORED_DIRS]
+                if target_name in files:
+                    return Path(root) / target_name
         except Exception:
             pass
 
@@ -156,13 +160,20 @@ class ContextRetriever:
 
     def _grep_pattern(self, pattern: str, limit: int = 5) -> List[str]:
         try:
-            result = subprocess.run(
-                ["rg", "-l", pattern, str(self.working_dir)],
-                capture_output=True,
-                text=True,
-                timeout=5,
-            )
-            if result.returncode != 0:
+            # Try ripgrep first
+            result = None
+            try:
+                result = subprocess.run(
+                    ["rg", "-l", pattern, str(self.working_dir)],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+            except FileNotFoundError:
+                pass
+
+            if result is None or result.returncode != 0:
+                # Fallback to grep
                 result = subprocess.run(
                     ["grep", "-r", "-l", pattern, str(self.working_dir)],
                     capture_output=True,
