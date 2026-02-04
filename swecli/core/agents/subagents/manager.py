@@ -207,24 +207,6 @@ class SubAgentManager:
 
         return configs
 
-    def build_task_tool_description(self) -> str:
-        """Build spawn_subagent tool description from registered agents.
-
-        Returns:
-            Formatted description string for the spawn_subagent tool
-        """
-        lines = [
-            "Spawn a specialized subagent to handle a specific task.",
-            "",
-            "Available agent types:",
-        ]
-        for config in self.get_agent_configs():
-            lines.append(f"- **{config.name}**: {config.description}")
-        lines.append("")
-        lines.append("Use this tool when you need specialized capabilities or ")
-        lines.append("want to delegate complex tasks to a focused agent.")
-        return "\n".join(lines)
-
     def get_subagent(self, name: str) -> CompiledSubAgent | None:
         """Get a registered subagent by name.
 
@@ -235,22 +217,6 @@ class SubAgentManager:
             The compiled subagent or None if not found
         """
         return self._agents.get(name)
-
-    def get_available_types(self) -> list[str]:
-        """Get list of available subagent type names.
-
-        Returns:
-            List of registered subagent names
-        """
-        return list(self._agents.keys())
-
-    def get_descriptions(self) -> dict[str, str]:
-        """Get descriptions for all registered subagents.
-
-        Returns:
-            Dict mapping subagent name to description
-        """
-        return {name: agent["description"] for name, agent in self._agents.items()}
 
     def register_custom_agents(self, custom_agents: list[dict]) -> None:
         """Register custom agents from config files.
@@ -428,27 +394,6 @@ Be thorough and provide a clear summary when done."""
                     break
 
         return files
-
-    def _extract_github_info(self, task: str) -> tuple[str, str, str] | None:
-        """Extract GitHub repo URL and issue number from task.
-
-        Looks for GitHub issue URLs in the format:
-        https://github.com/owner/repo/issues/123
-
-        Args:
-            task: The task description string
-
-        Returns:
-            Tuple of (repo_url, owner_repo, issue_number) or None if not found
-        """
-        import re
-        match = re.search(r'https://github\.com/([^/]+/[^/]+)/issues/(\d+)', task)
-        if match:
-            owner_repo = match.group(1)
-            issue_number = match.group(2)
-            repo_url = f"https://github.com/{owner_repo}.git"
-            return (repo_url, owner_repo, issue_number)
-        return None
 
     def _copy_files_to_docker(
         self,
@@ -1542,44 +1487,3 @@ ALWAYS use relative paths (just the filename or relative path like src/file.py).
             self.execute_subagent, name, task, deps, ui_callback
         )
 
-    async def execute_parallel(
-        self,
-        tasks: list[tuple[str, str]],
-        deps: SubAgentDeps,
-        ui_callback: Any = None,
-    ) -> list[dict[str, Any]]:
-        """Execute multiple subagents in parallel.
-
-        Args:
-            tasks: List of (subagent_name, task_description) tuples
-            deps: Dependencies for tool execution
-            ui_callback: Optional UI callback for displaying tool calls
-
-        Returns:
-            List of results from each subagent
-        """
-        # 1. Notify start of parallel execution
-        agent_names = [name for name, _ in tasks]
-        if ui_callback and hasattr(ui_callback, 'on_parallel_agents_start'):
-            ui_callback.on_parallel_agents_start(agent_names)
-
-        # 2. Execute in parallel with completion tracking
-        async def execute_with_tracking(name: str, task: str) -> dict[str, Any]:
-            """Execute a single subagent and report completion."""
-            result = await self.execute_subagent_async(name, task, deps, ui_callback)
-            success = result.get("success", True) if isinstance(result, dict) else True
-            if ui_callback and hasattr(ui_callback, 'on_parallel_agent_complete'):
-                ui_callback.on_parallel_agent_complete(name, success)
-            return result
-
-        coroutines = [
-            execute_with_tracking(name, task)
-            for name, task in tasks
-        ]
-        results = await asyncio.gather(*coroutines)
-
-        # 3. Notify completion of all parallel agents
-        if ui_callback and hasattr(ui_callback, 'on_parallel_agents_done'):
-            ui_callback.on_parallel_agents_done()
-
-        return results
