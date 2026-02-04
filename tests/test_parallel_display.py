@@ -6,8 +6,8 @@ import time
 sys.path.insert(0, "/Users/nghibui/codes/swe-cli")
 
 from rich.text import Text
-from swecli.ui_textual.widgets.conversation.tool_renderer import (
-    DefaultToolRenderer,
+from swecli.ui_textual.widgets.conversation.tool_renderer import DefaultToolRenderer
+from swecli.ui_textual.widgets.conversation.renderers.models import (
     ParallelAgentGroup,
     AgentInfo,
 )
@@ -60,6 +60,7 @@ def test_collapsed_mode_skips_line_writes():
             status_line=2,
         )},
         header_line=0,
+            expanded=False,
     )
 
     initial_writes = len(log.writes)
@@ -93,6 +94,7 @@ def test_expanded_mode_writes_lines():
             status_line=2,
         )},
         header_line=0,
+            expanded=True,
     )
 
     initial_writes = len(log.writes)
