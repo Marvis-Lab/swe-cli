@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import fnmatch
 import json
-import subprocess
+import os
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Set
 
 from .token_monitor import ContextTokenMonitor
 
@@ -13,12 +14,33 @@ from .token_monitor import ContextTokenMonitor
 class CodebaseIndexer:
     """Generate concise codebase summaries for context."""
 
+    IGNORED_DIRS = {
+        "node_modules",
+        "__pycache__",
+        ".git",
+        "venv",
+        "build",
+        "dist",
+        ".idea",
+        ".vscode",
+    }
+
     def __init__(self, working_dir: Optional[Path] = None) -> None:
         self.working_dir = Path(working_dir or Path.cwd())
         self.token_monitor = ContextTokenMonitor()
         self.target_tokens = 3000
+        self.file_count = 0
+        self.structure_lines: List[str] = []
+        self.key_files_found: Dict[str, List[Path]] = {
+            "Main": [],
+            "Config": [],
+            "Tests": [],
+            "Docs": [],
+        }
 
     def generate_index(self, max_tokens: int = 3000) -> str:
+        self._walk_and_collect()
+
         sections = []
         sections.append(f"# {self.working_dir.name}\n")
         sections.append(self._generate_overview())
@@ -35,21 +57,76 @@ class CodebaseIndexer:
             content = self._compress_content(content, max_tokens)
         return content
 
+    def _walk_and_collect(self) -> None:
+        """Walk the directory tree to collect stats, structure, and key files."""
+        self.file_count = 0
+        self.structure_lines = ["## Structure\n", "```"]
+        # Reset key files
+        for k in self.key_files_found:
+            self.key_files_found[k] = []
+
+        key_patterns = {
+            "Main": ["main.py", "index.js", "app.py", "server.py", "__init__.py"],
+            "Config": ["setup.py", "package.json", "pyproject.toml", "requirements.txt", "Dockerfile"],
+            "Tests": ["test_*.py", "*_test.py", "tests", "spec"],  # removed trailing slash for fnmatch
+            "Docs": ["README.md", "CHANGELOG.md", "docs"],  # removed trailing slash for fnmatch
+        }
+
+        try:
+            for root, dirs, files in os.walk(self.working_dir):
+                # Prune ignored directories
+                dirs[:] = [d for d in dirs if d not in self.IGNORED_DIRS]
+
+                # Calculate depth
+                rel_path = Path(root).relative_to(self.working_dir)
+                if str(rel_path) == ".":
+                    depth = 0
+                else:
+                    depth = len(rel_path.parts)
+
+                # Structure Generation (limit depth to 2)
+                if depth <= 2:
+                    indent = "  " * depth
+                    if depth > 0:
+                        self.structure_lines.append(f"{indent}{Path(root).name}/")
+
+                    # Add files to structure if depth < 2 (so files are at depth 1 or 2)
+                    # Actually tree -L 2 shows files at level 2.
+                    if depth < 2:
+                        file_indent = "  " * (depth + 1)
+                        for f in files:
+                            self.structure_lines.append(f"{file_indent}{f}")
+
+                # File counting
+                self.file_count += len(files)
+
+                # Key Files Detection
+                # Check files
+                for f in files:
+                    for category, patterns in key_patterns.items():
+                        for pattern in patterns:
+                            if fnmatch.fnmatch(f, pattern):
+                                f_path = Path(root) / f
+                                if f_path not in self.key_files_found[category]:
+                                    self.key_files_found[category].append(f_path)
+
+                # Check directories (for patterns like 'tests', 'docs')
+                for d in dirs:
+                    for category, patterns in key_patterns.items():
+                        for pattern in patterns:
+                            if fnmatch.fnmatch(d, pattern):
+                                d_path = Path(root) / d
+                                if d_path not in self.key_files_found[category]:
+                                    self.key_files_found[category].append(d_path)
+
+        except Exception:
+            self.structure_lines.append("(Unable to generate structure)")
+
+        self.structure_lines.append("```")
+
     def _generate_overview(self) -> str:
         lines = ["## Overview\n"]
-        try:
-            result = subprocess.run(
-                ["find", ".", "-type", "f"],
-                capture_output=True,
-                text=True,
-                cwd=self.working_dir,
-                timeout=5,
-            )
-            if result.returncode == 0:
-                file_count = len(result.stdout.strip().split("\n"))
-                lines.append(f"**Total Files:** {file_count}")
-        except Exception:
-            pass
+        lines.append(f"**Total Files:** {self.file_count}")
 
         readme_path = self._find_readme()
         if readme_path:
@@ -65,52 +142,25 @@ class CodebaseIndexer:
         return "\n".join(lines)
 
     def _generate_structure(self) -> str:
-        lines = ["## Structure\n", "```"]
-        try:
-            result = subprocess.run(
-                [
-                    "tree",
-                    "-L",
-                    "2",
-                    "-I",
-                    "node_modules|__pycache__|.git|venv|build|dist",
-                ],
-                capture_output=True,
-                text=True,
-                cwd=self.working_dir,
-                timeout=5,
-            )
-            if result.returncode == 0:
-                tree_output = result.stdout.strip()
-                if len(tree_output) > 1500:
-                    tree_output = "\n".join(tree_output.split("\n")[:30]) + "\n... (truncated)"
-                lines.append(tree_output)
-            else:
-                lines.append(self._basic_structure())
-        except FileNotFoundError:
-            lines.append(self._basic_structure())
-        except Exception:
-            lines.append("(Unable to generate structure)")
-
-        lines.append("```")
-        return "\n".join(lines)
+        output = "\n".join(self.structure_lines)
+        if len(output) > 1500:
+            output = "\n".join(output.split("\n")[:30]) + "\n... (truncated)\n```"
+        return output
 
     def _generate_key_files(self) -> str:
         lines = ["## Key Files\n"]
-        key_patterns = {
-            "Main": ["main.py", "index.js", "app.py", "server.py", "__init__.py"],
-            "Config": ["setup.py", "package.json", "pyproject.toml", "requirements.txt", "Dockerfile"],
-            "Tests": ["test_*.py", "*_test.py", "tests/", "spec/"],
-            "Docs": ["README.md", "CHANGELOG.md", "docs/"],
-        }
 
-        for category, patterns in key_patterns.items():
-            found = self._find_files(patterns)
+        for category, found in self.key_files_found.items():
             if found:
                 lines.append(f"\n### {category}")
-                for f in found[:5]:
-                    rel_path = f.relative_to(self.working_dir)
-                    lines.append(f"- `{rel_path}`")
+                # Sort by path length to prefer top-level files
+                sorted_files = sorted(found, key=lambda p: len(p.parts))
+                for f in sorted_files[:5]:
+                    try:
+                        rel_path = f.relative_to(self.working_dir)
+                        lines.append(f"- `{rel_path}`")
+                    except ValueError:
+                        continue # Should not happen if logic is correct
 
         return "\n".join(lines)
 
@@ -177,30 +227,6 @@ class CodebaseIndexer:
             if any((self.working_dir / f).exists() for f in files):
                 return project_type
         return None
-
-    def _find_files(self, patterns: List[str]) -> List[Path]:
-        matches: List[Path] = []
-        for pattern in patterns:
-            matches.extend(self.working_dir.glob(f"**/{pattern}"))
-        return matches
-
-    def _basic_structure(self) -> str:
-        try:
-            result = subprocess.run(
-                ["ls", "-R"],
-                capture_output=True,
-                text=True,
-                cwd=self.working_dir,
-                timeout=5,
-            )
-            if result.returncode == 0:
-                output = result.stdout.strip()
-                if len(output) > 1200:
-                    output = "\n".join(output.split("\n")[:40]) + "\n... (truncated)"
-                return output
-        except Exception:
-            pass
-        return "(Unable to generate structure)"
 
     def _compress_content(self, content: str, max_tokens: int) -> str:
         paragraphs = content.split("\n\n")
