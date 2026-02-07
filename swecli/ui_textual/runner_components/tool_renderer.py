@@ -75,10 +75,17 @@ class ToolRenderer:
                 result = {"success": True, "output": result}
 
             # Gap 6: Display interrupted operations with indicator instead of skipping
-            if isinstance(result, dict) and result.get("interrupted"):
+            # Note: Don't add "Interrupted by user" message here - it's already shown
+            # by ui_callback.on_interrupt() which displays the interrupt message
+            # Check for interrupted flag in both dict and dataclass objects (e.g., HttpResult)
+            interrupted = (
+                result.get("interrupted") if isinstance(result, dict)
+                else getattr(result, "interrupted", False)
+            )
+            if interrupted:
                 if hasattr(conversation, "stop_tool_execution"):
                     conversation.stop_tool_execution(success=False)
-                conversation.add_tool_result("⚠ Interrupted by user")
+                # Skip adding result - interrupt message is already shown
                 continue
 
             # Gap 7: Special handling for ask_user to display question context
@@ -203,9 +210,14 @@ class ToolRenderer:
                 conversation.add_nested_tool_call(display, depth, "subagent")
 
             # Gap 9: Display interrupted nested operations with indicator
-            if isinstance(result, dict) and result.get("interrupted"):
-                if hasattr(conversation, "add_nested_tool_sub_results"):
-                    conversation.add_nested_tool_sub_results(["⚠ Interrupted by user"], depth)
+            # Note: Don't add "Interrupted by user" message here - it's already shown
+            # by ui_callback.on_interrupt() which displays the interrupt message
+            # Check for interrupted flag in both dict and dataclass objects (e.g., HttpResult)
+            interrupted = (
+                result.get("interrupted") if isinstance(result, dict)
+                else getattr(result, "interrupted", False)
+            )
+            if interrupted:
                 if hasattr(conversation, "complete_nested_tool_call"):
                     conversation.complete_nested_tool_call(tool_name, depth, "subagent", False)
                 continue

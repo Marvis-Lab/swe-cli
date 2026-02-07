@@ -199,7 +199,8 @@ class TestFormatToolResult:
         assert isinstance(result, ToolResultData)
         assert result.is_interrupted
         assert not result.success
-        assert "Interrupted by user" in result.lines
+        # Interrupted results now have empty lines - message is shown by ui_callback.on_interrupt()
+        assert result.lines == []
 
     def test_rejected_result(self, service: ToolDisplayService) -> None:
         """Test rejected result is formatted correctly."""

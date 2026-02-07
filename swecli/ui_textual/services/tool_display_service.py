@@ -94,14 +94,27 @@ class ToolDisplayService:
             result = {"success": True, "output": result}
 
         # Check for special states
-        success = result.get("success", True)
-        is_interrupted = result.get("interrupted", False)
-        is_rejected = result.get("_approved") is False
+        # Support both dict and dataclass objects (e.g., HttpResult)
+        success = (
+            result.get("success", True) if isinstance(result, dict)
+            else getattr(result, "success", True)
+        )
+        is_interrupted = (
+            result.get("interrupted") if isinstance(result, dict)
+            else getattr(result, "interrupted", False)
+        )
+        is_rejected = (
+            result.get("_approved") is False if isinstance(result, dict)
+            else getattr(result, "_approved", True) is False
+        )
 
         if is_interrupted:
+            # Don't return any lines for interrupted operations
+            # The interrupt message is already shown by ui_callback.on_interrupt()
+            # Returning lines here would cause them to be displayed as tool results
             return ToolResultData(
                 success=False,
-                lines=["Interrupted by user"],
+                lines=[],  # Empty lines - no redundant message needed
                 is_interrupted=True,
             )
 

@@ -256,13 +256,13 @@ class TextualUICallback:
         """Stop all active spinners during interrupt."""
         # Stop any active spinners via SpinnerService
         if self._app is not None and hasattr(self._app, "spinner_service"):
-            # Stop all tracked tool spinners
+            # Stop all tracked tool spinners (explicitly pass empty result message)
             for spinner_id in list(self._tool_spinner_ids.values()):
-                self._app.spinner_service.stop(spinner_id, success=False)
+                self._app.spinner_service.stop(spinner_id, success=False, result_message="")
             self._tool_spinner_ids.clear()
 
             if self._progress_spinner_id:
-                self._app.spinner_service.stop(self._progress_spinner_id, success=False)
+                self._app.spinner_service.stop(self._progress_spinner_id, success=False, result_message="")
                 self._progress_spinner_id = ""
 
         # Stop spinner first - this removes spinner lines but leaves the blank line after user prompt
@@ -430,6 +430,27 @@ class TextualUICallback:
         if isinstance(result, str):
             result = {"success": True, "output": result}
 
+        # EARLY interrupt check - BEFORE any spinner operations
+        # This prevents redundant "Interrupted by user" messages from appearing
+        # when on_interrupt() has already shown the proper interrupt message
+        # Check for interrupted flag in both dict and dataclass objects (e.g., HttpResult)
+        interrupted = (
+            result.get("interrupted") if isinstance(result, dict)
+            else getattr(result, "interrupted", False)
+        )
+        if interrupted:
+            # Clean up spinner if it exists (may have been removed by _cleanup_spinners)
+            key = tool_call_id or f"_default_{id(tool_args)}"
+            spinner_id = self._tool_spinner_ids.pop(key, None)
+            if spinner_id and self._app is not None and hasattr(self._app, "spinner_service"):
+                # Pass empty message to prevent any result display
+                self._app.spinner_service.stop(spinner_id, False, "")
+            # For dataclass results (HttpResult), clear the error field to prevent
+            # accidental formatting elsewhere in the code path
+            if hasattr(result, "error"):
+                result.error = None
+            return  # Don't show any result message - interrupt already shown by on_interrupt()
+
         # Special handling for think tool - display via on_thinking callback
         # Check BEFORE spinner handling since we didn't start a spinner for think
         if tool_name == "think" and isinstance(result, dict):
@@ -467,14 +488,6 @@ class TextualUICallback:
                 result_line = Text("  ⎿  ", style=GREY)
                 result_line.append(output, style=GREY)
                 self._run_on_ui(self.conversation.write, result_line)
-            return
-
-        # Skip displaying interrupted operations
-        # These are already shown by the approval controller interrupt message
-        if isinstance(result, dict) and result.get("interrupted"):
-            # Still stop the spinner
-            if spinner_id and self._app is not None and hasattr(self._app, "spinner_service"):
-                self._app.spinner_service.stop(spinner_id, False, "Interrupted")
             return
 
         # Skip displaying spawn_subagent results - the command handler shows its own result
@@ -677,6 +690,32 @@ class TextualUICallback:
         if isinstance(result, str):
             result = {"success": True, "output": result}
 
+        # EARLY interrupt check - BEFORE any collection/display logic
+        # This prevents redundant "Interrupted by user" messages and prevents
+        # collecting interrupted tools for session storage
+        # Check for interrupted flag in both dict and dataclass objects (e.g., HttpResult)
+        interrupted = (
+            result.get("interrupted") if isinstance(result, dict)
+            else getattr(result, "interrupted", False)
+        )
+        if interrupted:
+            # Still update the tool call status to show it was interrupted
+            # Use BLOCKING call_from_thread to ensure display updates before next tool
+            if hasattr(self.conversation, "complete_nested_tool_call") and self._app is not None:
+                self._app.call_from_thread(
+                    self.conversation.complete_nested_tool_call,
+                    tool_name,
+                    depth,
+                    parent,
+                    False,  # success=False for interrupted
+                    tool_id,
+                )
+            # For dataclass results (HttpResult), clear the error field to prevent
+            # accidental formatting elsewhere in the code path
+            if hasattr(result, "error"):
+                result.error = None
+            return  # Don't collect or display - interrupt already shown by on_interrupt()
+
         # Collect for session storage (always, even in collapsed mode)
         self._pending_nested_calls.append(
             ToolCall(
@@ -690,22 +729,6 @@ class TextualUICallback:
         # Skip ALL display when in collapsed parallel mode
         # The header shows aggregated stats, individual tool results are hidden
         if self._in_parallel_agent_group:
-            return
-
-        # Skip displaying interrupted operations
-        # These are already shown by the approval controller interrupt message
-        if isinstance(result, dict) and result.get("interrupted"):
-            # Still update the tool call status to show it was interrupted
-            # Use BLOCKING call_from_thread to ensure display updates before next tool
-            if hasattr(self.conversation, "complete_nested_tool_call") and self._app is not None:
-                self._app.call_from_thread(
-                    self.conversation.complete_nested_tool_call,
-                    tool_name,
-                    depth,
-                    parent,
-                    False,  # success=False for interrupted
-                    tool_id,
-                )
             return
 
         # Update the nested tool call status to complete (for ALL tools including bash)
@@ -788,7 +811,12 @@ class TextualUICallback:
             depth: Nesting depth for indentation
         """
         # Skip displaying interrupted operations (safety net - should be caught earlier)
-        if isinstance(result, dict) and result.get("interrupted"):
+        # Check for interrupted flag in both dict and dataclass objects (e.g., HttpResult)
+        interrupted = (
+            result.get("interrupted") if isinstance(result, dict)
+            else getattr(result, "interrupted", False)
+        )
+        if interrupted:
             return
 
         # Special handling for edit_file - use dedicated diff display with colors
@@ -1072,7 +1100,7 @@ class TextualUICallback:
         self._in_parallel_agent_group = True
 
         if hasattr(self.conversation, "on_parallel_agents_start") and self._app is not None:
-            print(f"[DEBUG] Calling conversation.on_parallel_agents_start", file=sys.stderr)
+            print("[DEBUG] Calling conversation.on_parallel_agents_start", file=sys.stderr)
             self._app.call_from_thread(
                 self.conversation.on_parallel_agents_start,
                 agent_infos,

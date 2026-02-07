@@ -143,25 +143,23 @@ class ApprovalPromptController:
             if call_display is not None:
                 conversation.start_tool_execution()
         else:
+            # Always show interrupt message for consistent UX
             if call_start is not None:
-                # DON'T truncate - preserve subagent history
-                # Just update the tool line in-place with red bullet and show interrupt message
+                # Update the tool line in-place with red bullet
                 timer = getattr(conversation, "_tool_spinner_timer", None)
                 if timer is not None:
                     timer.stop()
                     conversation._tool_spinner_timer = None
                 conversation._spinner_active = False
-
-                # Update the tool line in-place with red bullet (preserves subagent history)
                 conversation._replace_tool_call_line("⏺", success=False)
 
-                # Add interrupt message after current content
-                from swecli.ui_textual.utils.interrupt_utils import create_interrupt_text, APPROVAL_INTERRUPT_MESSAGE
-                result_line = create_interrupt_text(APPROVAL_INTERRUPT_MESSAGE)
-                conversation.write(result_line, scroll_end=True, animate=False)
-                conversation.write(Text(""))
-            # Note: We don't show "Command cancelled." for the else case (when call_start is None)
-            # because the approval modal itself already shows the cancellation. This reduces noise.
+            # Always show interrupt message, regardless of tool call state
+            from swecli.ui_textual.utils.interrupt_utils import create_interrupt_text, APPROVAL_INTERRUPT_MESSAGE
+            result_line = create_interrupt_text(APPROVAL_INTERRUPT_MESSAGE)
+            conversation.write(result_line, scroll_end=True, animate=False)
+            conversation.write(Text(""))
+
+            # Clear tool state
             conversation._tool_display = None
             conversation._tool_call_start = None
 

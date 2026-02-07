@@ -21,6 +21,16 @@ class StyleFormatter:
     def format_tool_result(
         self, tool_name: str, tool_args: Dict[str, Any], result: Dict[str, Any]
     ) -> str:
+        # Early return for interrupted results - don't format any error message
+        # Check for interrupted flag in both dict and dataclass objects (e.g., HttpResult)
+        interrupted = (
+            result.get("interrupted") if isinstance(result, dict)
+            else getattr(result, "interrupted", False)
+        )
+        if interrupted:
+            # Return empty string - interrupt message is already shown by on_interrupt()
+            return ""
+
         tool_display = self._format_tool_call(tool_name, tool_args)
 
         if tool_name == "read_file":

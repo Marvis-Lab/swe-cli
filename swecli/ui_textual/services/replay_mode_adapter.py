@@ -66,9 +66,9 @@ class ReplayModeAdapter:
             tool_name: Name of the tool (for special handling).
         """
         # Handle special states first
+        # Note: Don't add "Interrupted by user" message here - it's already shown
+        # by the interrupt handler (ui_callback.on_interrupt())
         if result.is_interrupted:
-            if hasattr(self._conversation, "add_tool_result"):
-                self._conversation.add_tool_result("\u26a0 Interrupted by user")
             return
 
         if result.is_rejected:
@@ -131,11 +131,9 @@ class ReplayModeAdapter:
         success = result.success
 
         # Handle special states
+        # Note: Don't add "Interrupted by user" message here - it's already shown
+        # by the interrupt handler (ui_callback.on_interrupt())
         if result.is_interrupted:
-            if hasattr(self._conversation, "add_nested_tool_sub_results"):
-                self._conversation.add_nested_tool_sub_results(
-                    ["\u26a0 Interrupted by user"], depth
-                )
             if hasattr(self._conversation, "complete_nested_tool_call"):
                 self._conversation.complete_nested_tool_call(
                     tool_name, depth, parent, False, tool_call_id
