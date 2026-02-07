@@ -44,6 +44,7 @@ def main() -> None:
         epilog="""
 Examples:
   swecli                          # Start interactive CLI session
+  swecli "do something"           # Same as swecli -p "do something"
   swecli run ui                   # Start web UI (backend + frontend) and open browser
   swecli -p "create hello.py"     # Non-interactive mode
   swecli mcp list                 # List MCP servers
@@ -182,11 +183,6 @@ Examples:
     )
     mcp_disable.add_argument("name", help="Name of the server to disable")
 
-    # Ralph subcommand
-    from swecli.ralph.cli import create_ralph_parser
-
-    create_ralph_parser(subparsers)
-
     # Run subcommand
     run_parser = subparsers.add_parser(
         "run", help="Run development tools", description="Run development servers and tools"
@@ -211,7 +207,51 @@ Examples:
         help="Host for backend API server (default: 127.0.0.1)",
     )
 
-    args = parser.parse_args()
+    # Support bare positional prompt: swecli "hello" → swecli -p "hello"
+    known_subcommands = {"config", "mcp", "run"}
+    argv = sys.argv[1:]
+
+    # Check if -p/--prompt is already specified
+    has_prompt_flag = any(
+        a in ("-p", "--prompt") or a.startswith("--prompt=") for a in argv
+    )
+
+    # Find first positional (non-flag) argument
+    first_positional = None
+    i = 0
+    while i < len(argv):
+        arg = argv[i]
+        if arg in ("-p", "--prompt", "-d", "--working-dir", "-r", "--resume"):
+            i += 2
+        elif arg.startswith("-"):
+            i += 1
+        else:
+            first_positional = arg
+            break
+
+    if (
+        first_positional is not None
+        and first_positional not in known_subcommands
+        and not has_prompt_flag
+    ):
+        # Separate flags from positional args, treat positionals as prompt
+        flags: list[str] = []
+        prompt_parts: list[str] = []
+        i = 0
+        while i < len(argv):
+            arg = argv[i]
+            if arg in ("-p", "--prompt", "-d", "--working-dir", "-r", "--resume"):
+                flags.extend([arg, argv[i + 1]])
+                i += 2
+            elif arg.startswith("-"):
+                flags.append(arg)
+                i += 1
+            else:
+                prompt_parts.append(arg)
+                i += 1
+        argv = flags + ["-p", " ".join(prompt_parts)]
+
+    args = parser.parse_args(argv)
 
     # Handle config commands
     if args.command == "config":
@@ -226,13 +266,6 @@ Examples:
     # Handle run commands
     if args.command == "run":
         _handle_run_command(args)
-        return
-
-    # Handle ralph commands
-    if args.command == "ralph":
-        from swecli.ralph.cli import handle_ralph_command
-
-        handle_ralph_command(args)
         return
 
     console = Console()

@@ -99,20 +99,6 @@ class PlaybookConfig(BaseModel):
     cache_file: Optional[str] = None  # Path to embedding cache file (None = session-based default)
 
 
-class RalphConfig(BaseModel):
-    """Ralph autonomous agent configuration."""
-
-    max_iterations: int = Field(default=10, ge=1, description="Max iterations before stopping")
-    approval_mode: str = Field(
-        default="auto",
-        description="Approval mode: auto, per_story, per_iteration",
-    )
-    skip_tests: bool = Field(default=False, description="Skip tests in quality gates")
-    auto_commit: bool = Field(default=True, description="Auto-commit after successful stories")
-    prd_path: str = Field(default="prd.json", description="Path to PRD file")
-    progress_path: str = Field(default="progress.txt", description="Path to progress log")
-
-
 class AppConfig(BaseModel):
     """Application configuration."""
 
@@ -158,9 +144,6 @@ class AppConfig(BaseModel):
 
     # ACE Playbook settings
     playbook: PlaybookConfig = Field(default_factory=PlaybookConfig)
-
-    # Ralph autonomous agent settings
-    ralph: RalphConfig = Field(default_factory=RalphConfig)
 
     # Paths - using APP_DIR_NAME constant for consistency
     swecli_dir: str = f"~/{APP_DIR_NAME}"
