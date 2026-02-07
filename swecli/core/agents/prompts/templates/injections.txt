@@ -1,0 +1,43 @@
+--- thinking_analysis_prompt ---
+Analyze the context and provide your reasoning for the next step.
+
+--- thinking_trace_injection ---
+<thinking_trace>
+{thinking_trace}
+</thinking_trace>
+
+Based on this analysis, proceed with the appropriate action.
+
+--- subagent_complete_signal ---
+<subagent_complete>
+The subagent has completed successfully. DO NOT make any additional tool calls. Simply summarize the subagent's findings for the user and complete your response.
+</subagent_complete>
+
+--- failed_tool_nudge ---
+The previous operation failed. Please fix the issue and try again, or call task_complete with status='failed' if you cannot proceed.
+
+--- consecutive_reads_nudge ---
+Based on what you've seen, please summarize your findings and explain what needs to be done next.
+
+--- safety_limit_summary ---
+Please provide a summary of what you've found and what needs to be done.
+
+--- episodic_memory_header ---
+CONVERSATION SUMMARY (episodic memory):
+{summary}
+
+--- short_term_memory_header ---
+RECENT EXCHANGES (short-term memory):
+{short_term}
+
+--- thinking_on_instruction ---
+**CRITICAL REQUIREMENT - THINKING MODE IS ON:** You MUST call the `think` tool FIRST before calling ANY other tool. This is mandatory - do NOT skip this step. Do NOT call write_file, read_file, bash, or any other tool before calling `think`. In your thinking, explain step-by-step: what you understand about the task, your approach, and your planned actions. Aim for 100-300 words. Only after calling `think` may you proceed with other tools.
+
+--- thinking_off_instruction ---
+For complex tasks, briefly explain your reasoning in 1-2 sentences. For simple tasks, act directly.
+
+--- incomplete_todos_nudge ---
+You have {count} incomplete todo(s):
+{todo_list}
+
+Please complete these tasks or mark them done before finishing.

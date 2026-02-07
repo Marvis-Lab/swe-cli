@@ -7,6 +7,8 @@ import re
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from swecli.core.agents.prompts import get_injection
+
 if TYPE_CHECKING:
     from swecli.repl.file_content_injector import InjectionResult
 
@@ -56,9 +58,9 @@ class QueryEnhancer:
 
         # Strip @ from query (both quoted and unquoted patterns)
         # Pattern 1: Quoted paths @"path with spaces"
-        enhanced = re.sub(r'@"([^"]+)"', r'\1', query)
+        enhanced = re.sub(r'@"([^"]+)"', r"\1", query)
         # Pattern 2: Unquoted paths (but not emails like user@example.com)
-        enhanced = re.sub(r'(?:^|(?<=\s))@([a-zA-Z0-9_./\-]+)', r'\1', enhanced)
+        enhanced = re.sub(r"(?:^|(?<=\s))@([a-zA-Z0-9_./\-]+)", r"\1", enhanced)
 
         # Append injected content if any
         if result.text_content:
@@ -104,18 +106,9 @@ class QueryEnhancer:
         # Replace {thinking_instruction} placeholder based on thinking mode visibility
         if "{thinking_instruction}" in system_content:
             if thinking_visible:
-                thinking_text = (
-                    "**CRITICAL REQUIREMENT - THINKING MODE IS ON:** "
-                    "You MUST call the `think` tool FIRST before calling ANY other tool. "
-                    "This is mandatory - do NOT skip this step. Do NOT call write_file, read_file, bash, or any other tool before calling `think`. "
-                    "In your thinking, explain step-by-step: what you understand about the task, your approach, and your planned actions. "
-                    "Aim for 100-300 words. Only after calling `think` may you proceed with other tools."
-                )
+                thinking_text = get_injection("thinking_on_instruction")
             else:
-                thinking_text = (
-                    "For complex tasks, briefly explain your reasoning in 1-2 sentences. "
-                    "For simple tasks, act directly."
-                )
+                thinking_text = get_injection("thinking_off_instruction")
             system_content = system_content.replace("{thinking_instruction}", thinking_text)
 
         if session:
@@ -123,7 +116,7 @@ class QueryEnhancer:
                 playbook = session.get_playbook()
                 # Use ACE's as_context() method for intelligent bullet selection
                 # Configuration from config.playbook section
-                playbook_config = getattr(self.config, 'playbook', None)
+                playbook_config = getattr(self.config, "playbook", None)
                 if playbook_config:
                     max_strategies = playbook_config.max_strategies
                     use_selection = playbook_config.use_selection
@@ -133,8 +126,11 @@ class QueryEnhancer:
                     # If cache_file not specified but cache enabled, use session-based default
                     if cache_file is None and playbook_config.cache_embeddings and session:
                         from swecli.core.paths import get_paths
+
                         paths = get_paths()
-                        cache_file = str(paths.global_sessions_dir / f"{session.session_id}_embeddings.json")
+                        cache_file = str(
+                            paths.global_sessions_dir / f"{session.session_id}_embeddings.json"
+                        )
                 else:
                     # Fallback to defaults if config not available
                     max_strategies = 30
@@ -152,7 +148,9 @@ class QueryEnhancer:
                     cache_file=cache_file,
                 )
                 if playbook_context:
-                    system_content = f"{system_content.rstrip()}\n\n## Learned Strategies\n{playbook_context}"
+                    system_content = (
+                        f"{system_content.rstrip()}\n\n## Learned Strategies\n{playbook_context}"
+                    )
             except Exception:  # pragma: no cover
                 pass
 
@@ -170,9 +168,7 @@ class QueryEnhancer:
                     current_content = msg.get("content", "")
                     if isinstance(current_content, str):
                         # Convert to multimodal format: list of content blocks
-                        multimodal_content: list[dict] = [
-                            {"type": "text", "text": current_content}
-                        ]
+                        multimodal_content: list[dict] = [{"type": "text", "text": current_content}]
                         multimodal_content.extend(image_blocks)
                         msg["content"] = multimodal_content
                     break

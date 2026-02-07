@@ -1,5 +1,7 @@
 """ReAct loop control flow and safety mechanisms."""
 
+from swecli.core.agents.prompts import get_injection
+
 
 class ReActController:
     """Controls ReAct loop flow with safety limits and nudging."""
@@ -20,10 +22,12 @@ class ReActController:
             messages: Message history
         """
         self.console.print(f"\n[yellow]⚠ Safety limit reached. Requesting summary...[/yellow]")
-        messages.append({
-            "role": "user",
-            "content": "Please provide a summary of what you've found and what needs to be done."
-        })
+        messages.append(
+            {
+                "role": "user",
+                "content": get_injection("safety_limit_summary"),
+            }
+        )
         response = agent.call_llm(messages)
         if response.get("content"):
             self.console.print()
@@ -41,10 +45,12 @@ class ReActController:
         """
         if consecutive_reads >= 5:
             # Silently nudge the agent without displaying a message
-            messages.append({
-                "role": "user",
-                "content": "Based on what you've seen, please summarize your findings and explain what needs to be done next."
-            })
+            messages.append(
+                {
+                    "role": "user",
+                    "content": get_injection("consecutive_reads_nudge"),
+                }
+            )
             return True
         return False
 
@@ -55,4 +61,5 @@ class ReActController:
             content: Message content to print
         """
         from rich.markdown import Markdown
+
         self.console.print(Markdown(content))

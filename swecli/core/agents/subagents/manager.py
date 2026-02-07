@@ -11,6 +11,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
+from swecli.core.agents.prompts import get_injection
 from swecli.models.config import AppConfig
 
 from .specs import CompiledSubAgent, SubAgentSpec
@@ -20,6 +21,7 @@ logger = logging.getLogger(__name__)
 
 class AgentSource(str, Enum):
     """Source of an agent definition."""
+
     BUILTIN = "builtin"
     USER_GLOBAL = "user-global"
     PROJECT = "project"
@@ -31,6 +33,7 @@ class AgentConfig:
 
     Used for building Task tool descriptions and on-demand prompt assembly.
     """
+
     name: str
     description: str
     tools: list[str] | str | dict[str, list[str]] = field(default_factory=list)
@@ -61,6 +64,7 @@ class AgentConfig:
 @dataclass
 class SubAgentDeps:
     """Dependencies for subagent execution."""
+
     mode_manager: Any
     approval_manager: Any
     undo_manager: Any
@@ -287,7 +291,11 @@ class SubAgentManager:
                 description=agent_def.get("description", f"Custom agent: {name}"),
                 tools=agent_def.get("tools", "*"),
                 skill_path=agent_def.get("skillPath"),
-                source=AgentSource.USER_GLOBAL if agent_def.get("_source") == "user-global" else AgentSource.PROJECT,
+                source=(
+                    AgentSource.USER_GLOBAL
+                    if agent_def.get("_source") == "user-global"
+                    else AgentSource.PROJECT
+                ),
                 model=agent_def.get("model"),
             )
 
@@ -325,6 +333,7 @@ class SubAgentManager:
         if config.skill_path:
             # Load skill content from file
             from pathlib import Path
+
             skill_path = Path(config.skill_path).expanduser()
             if skill_path.exists():
                 try:
@@ -332,18 +341,16 @@ class SubAgentManager:
                     # Strip YAML frontmatter if present
                     if content.startswith("---"):
                         import re
+
                         content = re.sub(r"^---\n.*?\n---\n*", "", content, flags=re.DOTALL)
                     return content
                 except Exception as e:
                     logger.warning(f"Failed to load skill file {skill_path}: {e}")
 
         # Default prompt for custom agents
-        return f"""You are a custom agent named "{config.name}".
-
-{config.description}
-
-Complete the task given to you, using available tools as needed.
-Be thorough and provide a clear summary when done."""
+        return get_injection(
+            "custom_agent_default", name=config.name, description=config.description
+        )
 
     def _is_docker_available(self) -> bool:
         """Check if Docker is available on the system."""
@@ -352,6 +359,7 @@ Be thorough and provide a clear summary when done."""
     def _get_spec_for_subagent(self, name: str) -> SubAgentSpec | None:
         """Get the SubAgentSpec for a registered subagent."""
         from .agents import ALL_SUBAGENTS
+
         return next((s for s in ALL_SUBAGENTS if s["name"] == name), None)
 
     def _extract_input_files(self, task: str, local_working_dir: Path) -> list[Path]:
@@ -373,14 +381,15 @@ Be thorough and provide a clear summary when done."""
             List of existing document file paths to copy into Docker
         """
         import re
+
         files: list[Path] = []
         seen: set[str] = set()  # Track by resolved filename to avoid duplicates
 
         # Only document formats (PDF, DOC, DOCX)
-        doc_pattern = r'pdf|docx?'
+        doc_pattern = r"pdf|docx?"
 
         # Pattern 1: @filename (e.g., @paper.pdf)
-        at_mentions = re.findall(rf'@([\w\-\.]+\.(?:{doc_pattern}))\b', task, re.I)
+        at_mentions = re.findall(rf"@([\w\-\.]+\.(?:{doc_pattern}))\b", task, re.I)
         for filename in at_mentions:
             path = local_working_dir / filename
             if path.exists() and path.is_file() and path.name not in seen:
@@ -388,11 +397,7 @@ Be thorough and provide a clear summary when done."""
                 seen.add(path.name)
 
         # Pattern 2: Quoted file paths (e.g., "paper.pdf", 'paper.pdf', `paper.pdf`)
-        quoted_paths = re.findall(
-            rf'["\'\`]([^"\'\`]+\.(?:{doc_pattern}))["\'\`]',
-            task,
-            re.I
-        )
+        quoted_paths = re.findall(rf'["\'\`]([^"\'\`]+\.(?:{doc_pattern}))["\'\`]', task, re.I)
         for p in quoted_paths:
             path = Path(p) if Path(p).is_absolute() else local_working_dir / p
             if path.exists() and path.is_file() and path.name not in seen:
@@ -400,11 +405,7 @@ Be thorough and provide a clear summary when done."""
                 seen.add(path.name)
 
         # Pattern 3: Unquoted document filenames (e.g., "PDF paper.pdf")
-        unquoted_docs = re.findall(
-            rf'(?:^|[\s(,])([^\s"\'()<>]+\.(?:{doc_pattern}))\b',
-            task,
-            re.I
-        )
+        unquoted_docs = re.findall(rf'(?:^|[\s(,])([^\s"\'()<>]+\.(?:{doc_pattern}))\b', task, re.I)
         for filename in unquoted_docs:
             path = Path(filename) if Path(filename).is_absolute() else local_working_dir / filename
             if path.exists() and path.is_file() and path.name not in seen:
@@ -414,11 +415,11 @@ Be thorough and provide a clear summary when done."""
         # Pattern 4: Stems without extension (e.g., "paper 2303.11366v4" without .pdf)
         # Match alphanumeric+dots patterns that could be paper IDs (e.g., arXiv IDs)
         # Then check if a corresponding .pdf/.doc/.docx exists
-        stem_pattern = r'(?:^|[\s(,])(\d[\w\.\-]+v\d+|\d{4}\.\d+(?:v\d+)?)\b'
+        stem_pattern = r"(?:^|[\s(,])(\d[\w\.\-]+v\d+|\d{4}\.\d+(?:v\d+)?)\b"
         stems = re.findall(stem_pattern, task, re.I)
         for stem in stems:
             # Try adding document extensions
-            for ext in ['pdf', 'PDF', 'docx', 'DOCX', 'doc', 'DOC']:
+            for ext in ["pdf", "PDF", "docx", "DOCX", "doc", "DOC"]:
                 candidate = local_working_dir / f"{stem}.{ext}"
                 if candidate.exists() and candidate.is_file():
                     # Check if this file was already found (use resolved name)
@@ -442,7 +443,8 @@ Be thorough and provide a clear summary when done."""
             Tuple of (repo_url, owner_repo, issue_number) or None if not found
         """
         import re
-        match = re.search(r'https://github\.com/([^/]+/[^/]+)/issues/(\d+)', task)
+
+        match = re.search(r"https://github\.com/([^/]+/[^/]+)/issues/(\d+)", task)
         if match:
             owner_repo = match.group(1)
             issue_number = match.group(2)
@@ -475,15 +477,15 @@ Be thorough and provide a clear summary when done."""
         for local_file in files:
             # Show copy progress - use on_nested_tool_call for proper display
             if ui_callback:
-                if hasattr(ui_callback, 'on_nested_tool_call'):
+                if hasattr(ui_callback, "on_nested_tool_call"):
                     # Direct nested callback - use proper method
                     ui_callback.on_nested_tool_call(
                         "docker_copy",
                         {"file": local_file.name},
-                        depth=getattr(ui_callback, '_depth', 1),
-                        parent=getattr(ui_callback, '_context', 'Docker'),
+                        depth=getattr(ui_callback, "_depth", 1),
+                        parent=getattr(ui_callback, "_context", "Docker"),
                     )
-                elif hasattr(ui_callback, 'on_tool_call'):
+                elif hasattr(ui_callback, "on_tool_call"):
                     ui_callback.on_tool_call("docker_copy", {"file": local_file.name})
 
             try:
@@ -507,30 +509,34 @@ Be thorough and provide a clear summary when done."""
                 # Show completion - use on_nested_tool_result for proper display
                 if ui_callback:
                     result_data = {"success": True, "output": f"Copied to {docker_target}"}
-                    if hasattr(ui_callback, 'on_nested_tool_result'):
+                    if hasattr(ui_callback, "on_nested_tool_result"):
                         ui_callback.on_nested_tool_result(
                             "docker_copy",
                             {"file": local_file.name},
                             result_data,
-                            depth=getattr(ui_callback, '_depth', 1),
-                            parent=getattr(ui_callback, '_context', 'Docker'),
+                            depth=getattr(ui_callback, "_depth", 1),
+                            parent=getattr(ui_callback, "_context", "Docker"),
                         )
-                    elif hasattr(ui_callback, 'on_tool_result'):
-                        ui_callback.on_tool_result("docker_copy", {"file": local_file.name}, result_data)
+                    elif hasattr(ui_callback, "on_tool_result"):
+                        ui_callback.on_tool_result(
+                            "docker_copy", {"file": local_file.name}, result_data
+                        )
 
             except Exception as e:
                 if ui_callback:
                     result_data = {"success": False, "error": str(e)}
-                    if hasattr(ui_callback, 'on_nested_tool_result'):
+                    if hasattr(ui_callback, "on_nested_tool_result"):
                         ui_callback.on_nested_tool_result(
                             "docker_copy",
                             {"file": local_file.name},
                             result_data,
-                            depth=getattr(ui_callback, '_depth', 1),
-                            parent=getattr(ui_callback, '_context', 'Docker'),
+                            depth=getattr(ui_callback, "_depth", 1),
+                            parent=getattr(ui_callback, "_context", "Docker"),
                         )
-                    elif hasattr(ui_callback, 'on_tool_result'):
-                        ui_callback.on_tool_result("docker_copy", {"file": local_file.name}, result_data)
+                    elif hasattr(ui_callback, "on_tool_result"):
+                        ui_callback.on_tool_result(
+                            "docker_copy", {"file": local_file.name}, result_data
+                        )
 
         return path_mapping
 
@@ -553,9 +559,9 @@ Be thorough and provide a clear summary when done."""
         new_task = task
 
         # Remove phrases that hint at local filesystem
-        new_task = re.sub(r'\blocal\s+', '', new_task, flags=re.IGNORECASE)
-        new_task = re.sub(r'\bin this repo\b', f'in {workspace_dir}', new_task, flags=re.IGNORECASE)
-        new_task = re.sub(r'\bthis repo\b', workspace_dir, new_task, flags=re.IGNORECASE)
+        new_task = re.sub(r"\blocal\s+", "", new_task, flags=re.IGNORECASE)
+        new_task = re.sub(r"\bin this repo\b", f"in {workspace_dir}", new_task, flags=re.IGNORECASE)
+        new_task = re.sub(r"\bthis repo\b", workspace_dir, new_task, flags=re.IGNORECASE)
 
         # Replace any reference to the local working directory with workspace
         local_working_dir = self._working_dir
@@ -574,34 +580,11 @@ Be thorough and provide a clear summary when done."""
             new_task = new_task.replace(str(local_file), docker_path)
             # Replace plain filename references (be careful to avoid partial matches)
             # Use word boundary matching by checking surrounding chars
-            new_task = re.sub(
-                rf'\b{re.escape(local_file.name)}\b',
-                docker_path,
-                new_task
-            )
+            new_task = re.sub(rf"\b{re.escape(local_file.name)}\b", docker_path, new_task)
 
         # Prepend Docker context with strong emphasis
-        docker_context = f"""## CRITICAL: Docker Environment
-
-YOU ARE RUNNING INSIDE A DOCKER CONTAINER.
-
-Working directory: {workspace_dir}
-All file paths MUST be relative (e.g., `file.py`, `src/file.py`) or start with {workspace_dir}/.
-
-NEVER use paths like:
-- /Users/...
-- /home/...
-- Any absolute path outside {workspace_dir}
-
-ALWAYS use paths like:
-- pyproject.toml
-- src/model.py
-- config.yaml
-
-Use ONLY the filename or relative path for all file operations.
-
-"""
-        return docker_context + new_task
+        docker_context = get_injection("docker_context", workspace_dir=workspace_dir)
+        return docker_context + "\n\n" + new_task
 
     def _create_docker_path_sanitizer(
         self,
@@ -632,7 +615,7 @@ Use ONLY the filename or relative path for all file operations.
         def sanitize(path: str) -> str:
             # If path starts with local_dir, replace with workspace_dir
             if path.startswith(local_dir):
-                relative = path[len(local_dir):].lstrip("/")
+                relative = path[len(local_dir) :].lstrip("/")
                 docker_path = f"{workspace_dir}/{relative}" if relative else workspace_dir
                 return f"{prefix}{docker_path}"
 
@@ -642,7 +625,7 @@ Use ONLY the filename or relative path for all file operations.
                 return f"{prefix}{path}"
 
             # Fallback: extract filename from other absolute paths
-            match = re.match(r'^(/Users/|/home/|/var/|/tmp/).+/([^/]+)$', path)
+            match = re.match(r"^(/Users/|/home/|/var/|/tmp/).+/([^/]+)$", path)
             if match:
                 return f"{prefix}{workspace_dir}/{match.group(2)}"
 
@@ -657,6 +640,7 @@ Use ONLY the filename or relative path for all file operations.
                 return f"{prefix}{workspace_dir}/{clean_path}"
 
             return path
+
         return sanitize
 
     def create_docker_nested_callback(
@@ -789,19 +773,29 @@ Use ONLY the filename or relative path for all file operations.
             # Show Spawn result
             if ui_callback and hasattr(ui_callback, "on_tool_result"):
                 success = isinstance(result, str) or result.get("success", True)
-                ui_callback.on_tool_result("spawn_subagent", spawn_args, {
-                    "success": success,
-                    "output": result.get("content", "") if isinstance(result, dict) else str(result),
-                })
+                ui_callback.on_tool_result(
+                    "spawn_subagent",
+                    spawn_args,
+                    {
+                        "success": success,
+                        "output": (
+                            result.get("content", "") if isinstance(result, dict) else str(result)
+                        ),
+                    },
+                )
 
             return result
 
         except Exception as e:
             if ui_callback and hasattr(ui_callback, "on_tool_result"):
-                ui_callback.on_tool_result("spawn_subagent", spawn_args, {
-                    "success": False,
-                    "error": str(e),
-                })
+                ui_callback.on_tool_result(
+                    "spawn_subagent",
+                    spawn_args,
+                    {
+                        "success": False,
+                        "error": str(e),
+                    },
+                )
             return {"success": False, "error": str(e)}
 
     def _extract_task_description(self, task: str) -> str:
@@ -815,12 +809,12 @@ Use ONLY the filename or relative path for all file operations.
         """
         # Look for PDF filename in task
         if ".pdf" in task.lower():
-            match = re.search(r'([^\s/]+\.pdf)', task, re.IGNORECASE)
+            match = re.search(r"([^\s/]+\.pdf)", task, re.IGNORECASE)
             if match:
                 return f"Implement {match.group(1)}"
         # Default: first line, truncated
-        first_line = task.split('\n')[0][:50]
-        if len(task.split('\n')[0]) > 50:
+        first_line = task.split("\n")[0][:50]
+        if len(task.split("\n")[0]) > 50:
             return first_line + "..."
         return first_line
 
@@ -886,7 +880,9 @@ Use ONLY the filename or relative path for all file operations.
 
         # Workspace inside Docker container
         workspace_dir = "/workspace"
-        local_working_dir = local_output_dir or (Path(self._working_dir) if self._working_dir else Path.cwd())
+        local_working_dir = local_output_dir or (
+            Path(self._working_dir) if self._working_dir else Path.cwd()
+        )
 
         deployment = None
         loop = None
@@ -925,7 +921,7 @@ Use ONLY the filename or relative path for all file operations.
             )
 
             # Show Docker start as a tool call with spinner (using nested callback)
-            if nested_callback and hasattr(nested_callback, 'on_tool_call'):
+            if nested_callback and hasattr(nested_callback, "on_tool_call"):
                 nested_callback.on_tool_call("docker_start", {"image": docker_config.image})
 
             # Run async start in sync context - use a single event loop for the whole operation
@@ -934,21 +930,23 @@ Use ONLY the filename or relative path for all file operations.
             loop.run_until_complete(deployment.start())
 
             # Show Docker start completion (using nested callback)
-            if nested_callback and hasattr(nested_callback, 'on_tool_result'):
-                nested_callback.on_tool_result("docker_start", {"image": docker_config.image}, {
-                    "success": True,
-                    "output": docker_config.image,
-                })
+            if nested_callback and hasattr(nested_callback, "on_tool_result"):
+                nested_callback.on_tool_result(
+                    "docker_start",
+                    {"image": docker_config.image},
+                    {
+                        "success": True,
+                        "output": docker_config.image,
+                    },
+                )
 
             # Create workspace directory in Docker container
             # (some images like uv don't have /workspace by default)
-            loop.run_until_complete(
-                deployment.runtime.run(f"mkdir -p {workspace_dir}")
-            )
+            loop.run_until_complete(deployment.runtime.run(f"mkdir -p {workspace_dir}"))
 
             # Create Docker tool handler with local registry fallback for tools like read_pdf
             runtime = deployment.runtime
-            shell_init = docker_config.shell_init if hasattr(docker_config, 'shell_init') else ""
+            shell_init = docker_config.shell_init if hasattr(docker_config, "shell_init") else ""
             docker_handler = DockerToolHandler(
                 runtime,
                 workspace_dir=workspace_dir,
@@ -998,26 +996,39 @@ Use ONLY the filename or relative path for all file operations.
 
             # Show Spawn completion only if we showed the header
             if spawn_args and ui_callback and hasattr(ui_callback, "on_tool_result"):
-                ui_callback.on_tool_result("spawn_subagent", spawn_args, {
-                    "success": result.get("success", True),
-                })
+                ui_callback.on_tool_result(
+                    "spawn_subagent",
+                    spawn_args,
+                    {
+                        "success": result.get("success", True),
+                    },
+                )
 
             return result
 
         except Exception as e:
             import traceback
+
             # Stop the docker_start spinner by reporting failure
-            if nested_callback and hasattr(nested_callback, 'on_tool_result'):
-                nested_callback.on_tool_result("docker_start", {"image": docker_config.image}, {
-                    "success": False,
-                    "error": str(e),
-                })
+            if nested_callback and hasattr(nested_callback, "on_tool_result"):
+                nested_callback.on_tool_result(
+                    "docker_start",
+                    {"image": docker_config.image},
+                    {
+                        "success": False,
+                        "error": str(e),
+                    },
+                )
             # Show Spawn failure only if we showed the header
             if spawn_args and ui_callback and hasattr(ui_callback, "on_tool_result"):
-                ui_callback.on_tool_result("spawn_subagent", spawn_args, {
-                    "success": False,
-                    "error": str(e),
-                })
+                ui_callback.on_tool_result(
+                    "spawn_subagent",
+                    spawn_args,
+                    {
+                        "success": False,
+                        "error": str(e),
+                    },
+                )
             return {
                 "success": False,
                 "error": f"Docker execution failed: {str(e)}\n{traceback.format_exc()}",
@@ -1025,8 +1036,14 @@ Use ONLY the filename or relative path for all file operations.
             }
         finally:
             # Show Docker stop as a tool call (matching docker_start pattern)
-            if deployment is not None and nested_callback and hasattr(nested_callback, 'on_tool_call'):
-                nested_callback.on_tool_call("docker_stop", {"container": deployment._container_name[:12]})
+            if (
+                deployment is not None
+                and nested_callback
+                and hasattr(nested_callback, "on_tool_call")
+            ):
+                nested_callback.on_tool_call(
+                    "docker_stop", {"container": deployment._container_name[:12]}
+                )
 
             # Always stop the container
             if deployment is not None and loop is not None:
@@ -1036,9 +1053,13 @@ Use ONLY the filename or relative path for all file operations.
                     pass  # Ignore cleanup errors
 
                 # Show Docker stop completion with container ID
-                if nested_callback and hasattr(nested_callback, 'on_tool_result'):
+                if nested_callback and hasattr(nested_callback, "on_tool_result"):
                     container_id = deployment._container_name
-                    nested_callback.on_tool_result("docker_stop", {"container": container_id}, {"success": True, "output": container_id})
+                    nested_callback.on_tool_result(
+                        "docker_stop",
+                        {"container": container_id},
+                        {"success": True, "output": container_id},
+                    )
 
             # Close the loop after all async operations
             if loop is not None:
@@ -1076,11 +1097,14 @@ Use ONLY the filename or relative path for all file operations.
 
         try:
             # Show copy operation in UI
-            if ui_callback and hasattr(ui_callback, 'on_tool_call'):
-                ui_callback.on_tool_call("docker_copy_back", {
-                    "from": f"{container_name}:{workspace_dir}",
-                    "to": str(local_dir),
-                })
+            if ui_callback and hasattr(ui_callback, "on_tool_call"):
+                ui_callback.on_tool_call(
+                    "docker_copy_back",
+                    {
+                        "from": f"{container_name}:{workspace_dir}",
+                        "to": str(local_dir),
+                    },
+                )
 
             # Use docker cp to copy entire workspace recursively
             # The "/." at the end copies contents without creating workspace folder
@@ -1093,18 +1117,26 @@ Use ONLY the filename or relative path for all file operations.
 
             if result.returncode == 0:
                 logger.info(f"Copied workspace from Docker to {local_dir}")
-                if ui_callback and hasattr(ui_callback, 'on_tool_result'):
-                    ui_callback.on_tool_result("docker_copy_back", {}, {
-                        "success": True,
-                        "output": f"Copied to {local_dir}",
-                    })
+                if ui_callback and hasattr(ui_callback, "on_tool_result"):
+                    ui_callback.on_tool_result(
+                        "docker_copy_back",
+                        {},
+                        {
+                            "success": True,
+                            "output": f"Copied to {local_dir}",
+                        },
+                    )
             else:
                 logger.warning(f"docker cp failed: {result.stderr}")
-                if ui_callback and hasattr(ui_callback, 'on_tool_result'):
-                    ui_callback.on_tool_result("docker_copy_back", {}, {
-                        "success": False,
-                        "error": result.stderr,
-                    })
+                if ui_callback and hasattr(ui_callback, "on_tool_result"):
+                    ui_callback.on_tool_result(
+                        "docker_copy_back",
+                        {},
+                        {
+                            "success": False,
+                            "error": result.stderr,
+                        },
+                    )
 
         except subprocess.TimeoutExpired:
             logger.error("docker cp timed out after 120 seconds")
@@ -1157,11 +1189,12 @@ Use ONLY the filename or relative path for all file operations.
             spec = self._get_spec_for_subagent(name)
             if spec is not None and spec.get("docker_config") is not None:
                 from swecli.core.runtime.mode_manager import OperationMode
+
                 if deps.mode_manager and deps.mode_manager.current_mode == OperationMode.PLAN:
                     return {
                         "success": False,
                         "error": f"Cannot spawn '{name}' in PLAN mode. Docker subagents require write access. "
-                                 "Switch to NORMAL mode with '/mode normal' or Shift+Tab to use this agent.",
+                        "Switch to NORMAL mode with '/mode normal' or Shift+Tab to use this agent.",
                         "content": "",
                     }
 
@@ -1203,6 +1236,7 @@ Use ONLY the filename or relative path for all file operations.
             # Pass local registry for fallback on tools not supported in Docker (e.g., read_pdf)
             # Pass path_mapping to remap Docker paths to local paths for local-only tools
             from swecli.core.docker.tool_handler import DockerToolRegistry
+
             tool_registry = DockerToolRegistry(
                 docker_handler,
                 local_registry=self._tool_registry,
@@ -1213,6 +1247,7 @@ Use ONLY the filename or relative path for all file operations.
 
         # Determine if we're in PLAN mode (affects agent selection)
         from swecli.core.runtime.mode_manager import OperationMode
+
         is_plan_mode = deps.mode_manager and deps.mode_manager.current_mode == OperationMode.PLAN
 
         # If working_dir, docker_handler, or PLAN mode requires a new agent instance
@@ -1242,9 +1277,12 @@ Use ONLY the filename or relative path for all file operations.
 
             # Create agent - PlanningAgent in PLAN mode, SwecliAgent otherwise
             import logging
+
             _logger = logging.getLogger(__name__)
             agent_type = "PlanningAgent" if is_plan_mode else "SwecliAgent"
-            _logger.info(f"Creating {agent_type} with tool_registry type: {type(tool_registry).__name__}")
+            _logger.info(
+                f"Creating {agent_type} with tool_registry type: {type(tool_registry).__name__}"
+            )
             _logger.info(f"  docker_handler is None: {docker_handler is None}")
             _logger.info(f"  working_dir: {working_dir}")
             _logger.info(f"  is_plan_mode: {is_plan_mode}")
@@ -1272,22 +1310,8 @@ Use ONLY the filename or relative path for all file operations.
                 base_prompt = spec["system_prompt"]
                 # When running in Docker, inject Docker context into system prompt
                 if docker_handler is not None:
-                    docker_preamble = f"""## CRITICAL: Docker Environment
-
-YOU ARE RUNNING INSIDE A DOCKER CONTAINER.
-
-Working directory: {working_dir}
-All file operations execute inside the container.
-
-FILE PATHS - VERY IMPORTANT:
-- CORRECT: `pyproject.toml`, `src/model.py`, `config.yaml`
-- WRONG: `/Users/.../file.py`, `/home/.../file.py`
-
-NEVER use absolute paths like /Users/, /home/, /var/.
-ALWAYS use relative paths (just the filename or relative path like src/file.py).
-
-"""
-                    agent.system_prompt = docker_preamble + base_prompt
+                    docker_preamble = get_injection("docker_preamble", working_dir=working_dir)
+                    agent.system_prompt = docker_preamble + "\n\n" + base_prompt
                 else:
                     agent.system_prompt = base_prompt
         else:
@@ -1299,6 +1323,7 @@ ALWAYS use relative paths (just the filename or relative path like src/file.py).
         nested_callback = None
         if ui_callback is not None:
             from swecli.ui_textual.nested_callback import NestedUICallback
+
             if isinstance(ui_callback, NestedUICallback):
                 # Already nested (e.g., from create_docker_nested_callback), use directly
                 nested_callback = ui_callback
@@ -1309,7 +1334,11 @@ ALWAYS use relative paths (just the filename or relative path like src/file.py).
                 # No path_sanitizer for local subagents - Docker subagents should
                 # use create_docker_nested_callback() before calling execute_subagent()
                 import sys
-                print(f"[DEBUG MANAGER] Creating NestedUICallback: tool_call_id={tool_call_id!r}, name={name!r}, parent_context={tool_call_id or name!r}", file=sys.stderr)
+
+                print(
+                    f"[DEBUG MANAGER] Creating NestedUICallback: tool_call_id={tool_call_id!r}, name={name!r}, parent_context={tool_call_id or name!r}",
+                    file=sys.stderr,
+                )
                 nested_callback = NestedUICallback(
                     parent_callback=ui_callback,
                     parent_context=tool_call_id or name,
@@ -1402,9 +1431,7 @@ ALWAYS use relative paths (just the filename or relative path like src/file.py).
         def invoke_panel() -> None:
             async def run_panel() -> None:
                 try:
-                    result_holder["answers"] = await app._ask_user_controller.start(
-                        questions
-                    )
+                    result_holder["answers"] = await app._ask_user_controller.start(questions)
                 except Exception as exc:
                     result_holder["error"] = exc
                 finally:
@@ -1538,9 +1565,7 @@ ALWAYS use relative paths (just the filename or relative path like src/file.py).
         Returns:
             Result dict with content, success, and messages
         """
-        return await asyncio.to_thread(
-            self.execute_subagent, name, task, deps, ui_callback
-        )
+        return await asyncio.to_thread(self.execute_subagent, name, task, deps, ui_callback)
 
     async def execute_parallel(
         self,
@@ -1560,7 +1585,7 @@ ALWAYS use relative paths (just the filename or relative path like src/file.py).
         """
         # 1. Notify start of parallel execution
         agent_names = [name for name, _ in tasks]
-        if ui_callback and hasattr(ui_callback, 'on_parallel_agents_start'):
+        if ui_callback and hasattr(ui_callback, "on_parallel_agents_start"):
             ui_callback.on_parallel_agents_start(agent_names)
 
         # 2. Execute in parallel with completion tracking
@@ -1568,18 +1593,15 @@ ALWAYS use relative paths (just the filename or relative path like src/file.py).
             """Execute a single subagent and report completion."""
             result = await self.execute_subagent_async(name, task, deps, ui_callback)
             success = result.get("success", True) if isinstance(result, dict) else True
-            if ui_callback and hasattr(ui_callback, 'on_parallel_agent_complete'):
+            if ui_callback and hasattr(ui_callback, "on_parallel_agent_complete"):
                 ui_callback.on_parallel_agent_complete(name, success)
             return result
 
-        coroutines = [
-            execute_with_tracking(name, task)
-            for name, task in tasks
-        ]
+        coroutines = [execute_with_tracking(name, task) for name, task in tasks]
         results = await asyncio.gather(*coroutines)
 
         # 3. Notify completion of all parallel agents
-        if ui_callback and hasattr(ui_callback, 'on_parallel_agents_done'):
+        if ui_callback and hasattr(ui_callback, "on_parallel_agents_done"):
             ui_callback.on_parallel_agents_done()
 
         return results

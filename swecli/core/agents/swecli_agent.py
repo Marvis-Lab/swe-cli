@@ -16,6 +16,7 @@ from swecli.core.agents.components import (
     create_http_client,
     create_http_client_for_provider,
 )
+from swecli.core.agents.prompts import get_injection
 from swecli.models.config import AppConfig
 
 
@@ -61,11 +62,13 @@ class SwecliAgent(BaseAgent):
 
         # Build nudge message with incomplete todo titles
         titles = [t.title for t in incomplete[:3]]
-        msg = (
-            f"⚠️ You have {len(incomplete)} incomplete todo(s):\n"
-            + "\n".join(f"  • {title}" for title in titles)
-            + ("\n  ..." if len(incomplete) > 3 else "")
-            + "\n\nPlease complete these tasks or mark them done before finishing."
+        todo_list = "\n".join(f"  \u2022 {title}" for title in titles)
+        if len(incomplete) > 3:
+            todo_list += "\n  ..."
+        msg = get_injection(
+            "incomplete_todos_nudge",
+            count=str(len(incomplete)),
+            todo_list=todo_list,
         )
         return False, msg
 
@@ -410,7 +413,7 @@ class SwecliAgent(BaseAgent):
                     messages.append(
                         {
                             "role": "user",
-                            "content": "The previous operation failed. Please fix the issue and try again, or call task_complete with status='failed' if you cannot proceed.",
+                            "content": get_injection("failed_tool_nudge"),
                         }
                     )
                     continue

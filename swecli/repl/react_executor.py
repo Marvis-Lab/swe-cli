@@ -20,6 +20,7 @@ from swecli.core.runtime.monitoring import TaskMonitor
 from swecli.ui_textual.utils.tool_display import format_tool_call
 from swecli.ui_textual.components.task_progress import TaskProgressDisplay
 from swecli.core.utils.tool_result_summarizer import summarize_tool_result
+from swecli.core.agents.prompts import get_injection
 
 
 def _debug_log(message: str) -> None:
@@ -213,12 +214,14 @@ class ReactExecutor:
                     summary = self._conversation_summarizer.get_cached_summary()
 
                 if summary:
-                    context_parts.append(f"CONVERSATION SUMMARY (episodic memory):\n{summary}\n")
+                    context_parts.append(get_injection("episodic_memory_header", summary=summary))
 
             # 2. SHORT-TERM MEMORY: Extract last N message pairs
             short_term = self._extract_short_term_memory(messages, SHORT_TERM_PAIRS)
             if short_term:
-                context_parts.append(f"RECENT EXCHANGES (short-term memory):\n{short_term}")
+                context_parts.append(
+                    get_injection("short_term_memory_header", short_term=short_term)
+                )
 
             formatted_context = "\n".join(context_parts)
 
@@ -232,7 +235,7 @@ class ReactExecutor:
                 {"role": "system", "content": thinking_system_prompt},
                 {
                     "role": "user",
-                    "content": "Analyze the context and provide your reasoning for the next step.",
+                    "content": get_injection("thinking_analysis_prompt"),
                 },
             ]
 
@@ -398,7 +401,9 @@ class ReactExecutor:
                 ctx.messages.append(
                     {
                         "role": "user",
-                        "content": f"<thinking_trace>\n{thinking_trace}\n</thinking_trace>\n\nBased on this analysis, proceed with the appropriate action.",
+                        "content": get_injection(
+                            "thinking_trace_injection", thinking_trace=thinking_trace
+                        ),
                     }
                 )
 
@@ -408,13 +413,7 @@ class ReactExecutor:
             ctx.messages.append(
                 {
                     "role": "user",
-                    "content": (
-                        "<subagent_complete>\n"
-                        "The subagent has completed successfully. "
-                        "DO NOT make any additional tool calls. "
-                        "Simply summarize the subagent's findings for the user and complete your response.\n"
-                        "</subagent_complete>"
-                    ),
+                    "content": get_injection("subagent_complete_signal"),
                 }
             )
 
@@ -597,7 +596,7 @@ class ReactExecutor:
         ctx.messages.append(
             {
                 "role": "user",
-                "content": "The previous operation failed. Please fix the issue and try again, or call task_complete with status='failed' if you cannot proceed.",
+                "content": get_injection("failed_tool_nudge"),
             }
         )
         return LoopAction.CONTINUE
@@ -985,7 +984,7 @@ class ReactExecutor:
             messages.append(
                 {
                     "role": "user",
-                    "content": "Based on what you've seen, please summarize your findings and explain what needs to be done next.",
+                    "content": get_injection("consecutive_reads_nudge"),
                 }
             )
             return True
