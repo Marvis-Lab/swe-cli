@@ -83,7 +83,7 @@ class AgentHttpClient:
                 debug_log("HttpClient", f"INTERRUPT DETECTED at poll #{poll_count}, closing session")
                 session.close()
                 return HttpResult(success=False, error="Interrupted by user", interrupted=True)
-            request_thread.join(timeout=0.1)
+            request_thread.join(timeout=0.01)  # 10ms - 10x more responsive for ESC interrupt
 
         if response_container["error"]:
             return HttpResult(success=False, error=str(response_container["error"]))

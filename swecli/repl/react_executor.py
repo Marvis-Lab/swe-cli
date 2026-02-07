@@ -88,6 +88,7 @@ class ReactExecutor:
         self._last_operation_summary = None
         self._last_error = None
         self._last_latency_ms = 0
+        self._last_thinking_error: Optional[dict[str, Any]] = None
 
         # Tracking variables for current iteration (for session persistence)
         self._current_thinking_trace: Optional[str] = None
@@ -113,6 +114,7 @@ class ReactExecutor:
             True if interrupt was requested, False if no task is running
         """
         from swecli.ui_textual.debug_logger import debug_log
+
         debug_log("ReactExecutor", "request_interrupt called")
         debug_log("ReactExecutor", f"_current_task_monitor={self._current_task_monitor}")
 
@@ -239,6 +241,7 @@ class ReactExecutor:
             # Track task monitor for interrupt support
             self._current_task_monitor = task_monitor
             from swecli.ui_textual.debug_logger import debug_log
+
             debug_log("ReactExecutor", f"Thinking phase: SET _current_task_monitor={task_monitor}")
             try:
                 response = agent.call_thinking_llm(thinking_messages, task_monitor)
@@ -256,6 +259,8 @@ class ReactExecutor:
                     error = response.get("error", "Unknown error")
                     if ui_callback and hasattr(ui_callback, "on_debug"):
                         ui_callback.on_debug(f"Thinking phase error: {error}", "THINK")
+                    # Store full response for interrupt checking (reused by _handle_llm_error)
+                    self._last_thinking_error = response
             finally:
                 # Clear task monitor after thinking phase
                 self._current_task_monitor = None
@@ -377,6 +382,16 @@ class ReactExecutor:
         # Skip thinking phase after subagent completion - main agent decides directly
         if thinking_visible and not subagent_just_completed:
             thinking_trace = self._get_thinking_trace(ctx.messages, ctx.agent, ctx.ui_callback)
+
+            # Check for interrupt from thinking phase (reuse existing _handle_llm_error)
+            if self._last_thinking_error is not None:
+                error_response = self._last_thinking_error
+                self._last_thinking_error = None  # Clear the stored error
+                error_text = error_response.get("error", "")
+                if "interrupted" in error_text.lower():
+                    # Use existing error handler - it calls on_interrupt() and returns BREAK
+                    return self._handle_llm_error(error_response, ctx)
+
             self._current_thinking_trace = thinking_trace  # Track for persistence
             if thinking_trace:
                 # Inject trace as user message for the action phase
@@ -406,11 +421,17 @@ class ReactExecutor:
         # ACTION PHASE: Call LLM with tools (no force_think)
         task_monitor = TaskMonitor()
         from swecli.ui_textual.debug_logger import debug_log
-        debug_log("ReactExecutor", f"Calling call_llm_with_progress, _llm_caller={id(self._llm_caller)}, task_monitor={task_monitor}")
+
+        debug_log(
+            "ReactExecutor",
+            f"Calling call_llm_with_progress, _llm_caller={id(self._llm_caller)}, task_monitor={task_monitor}",
+        )
         response, latency_ms = self._llm_caller.call_llm_with_progress(
             ctx.agent, ctx.messages, task_monitor, thinking_visible=thinking_visible
         )
-        debug_log("ReactExecutor", f"call_llm_with_progress returned, success={response.get('success')}")
+        debug_log(
+            "ReactExecutor", f"call_llm_with_progress returned, success={response.get('success')}"
+        )
         self._last_latency_ms = latency_ms
 
         # Debug logging
@@ -465,17 +486,9 @@ class ReactExecutor:
 
         if "interrupted" in error_text.lower():
             self._last_error = error_text
-            # Persist interrupt with metadata for session resume
-            fallback = ChatMessage(
-                role=Role.ASSISTANT,
-                content=f"⚠ {error_text}",
-                thinking_trace=self._current_thinking_trace,
-                reasoning_content=self._current_reasoning_content,
-                token_usage=self._current_token_usage,
-                metadata={"is_error": True, "interrupted": True},
-            )
-            self.session_manager.add_message(fallback, self.config.auto_save_interval)
-            # Clear tracked values after persistence
+            # Clear tracked values without persisting interrupt message
+            # The interrupt message is already shown by ui_callback.on_interrupt()
+            # We don't need to add a redundant message to the session
             self._current_thinking_trace = None
             self._current_reasoning_content = None
             self._current_token_usage = None

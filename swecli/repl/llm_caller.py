@@ -202,8 +202,7 @@ class LLMCaller:
         progress = TaskProgressDisplay(self.console, task_monitor)
         progress.start()
 
-        # Give display a moment to render before HTTP call
-        time.sleep(0.05)
+        # Removed 50ms delay - UI renders fast enough without it for instant ESC interrupt response
 
         try:
             # DEBUG: Log before LLM call
