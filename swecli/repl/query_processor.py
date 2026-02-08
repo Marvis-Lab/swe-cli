@@ -26,17 +26,17 @@ if TYPE_CHECKING:
 
 class QueryProcessor:
     """Processes user queries using ReAct pattern.
-    
+
     This class orchestrates query processing by coordinating:
     - Query enhancement (@ file references)
     - Message preparation with playbook context
     - LLM calls with progress display
     - Tool execution with approval/undo
     - ACE learning from tool execution results
-    
+
     Note:
         THINKING_VERBS constant has been consolidated into LLMCaller.
-        This class is being incrementally refactored to compose 
+        This class is being incrementally refactored to compose
         specialized components (LLMCaller, QueryEnhancer, ToolExecutor).
     """
 
@@ -94,45 +94,46 @@ class QueryProcessor:
         self._last_agent_response: Optional[AgentResponse] = None
         self._execution_count = 0
 
+        # Topic detection - lazy initialized
+        self._topic_detector: Optional[Any] = None
+
         # Composed components (SOLID refactoring)
         from swecli.repl.query_enhancer import QueryEnhancer
+
         self._query_enhancer = QueryEnhancer(
             file_ops=file_ops,
             session_manager=session_manager,
             config=config,
             console=console,
         )
-        
+
         # Context Picker - unified context engineering
         from swecli.core.context_engineering.context_picker import ContextPicker
+
         self._context_picker = ContextPicker(
             session_manager=session_manager,
             config=config,
             file_ops=file_ops,
             console=console,
         )
-        
+
         from swecli.repl.llm_caller import LLMCaller
+
         self._llm_caller = LLMCaller(console=console)
-        
+
         from swecli.repl.tool_executor import ToolExecutor
+
         self._tool_executor = ToolExecutor(
             console,
             output_formatter,
             mode_manager,
             session_manager,
             self._ace_reflector,
-            self._ace_curator
+            self._ace_curator,
         )
         self._react_executor = ReactExecutor(
-            console,
-            session_manager,
-            config,
-            self._llm_caller,
-            self._tool_executor
+            console, session_manager, config, self._llm_caller, self._tool_executor
         )
-
-
 
     def set_notification_center(self, notification_center):
         """Set notification center for status line rendering.
@@ -149,8 +150,12 @@ class QueryProcessor:
             True if interrupt was requested, False if no task is running
         """
         from swecli.ui_textual.debug_logger import debug_log
+
         debug_log("QueryProcessor", "request_interrupt called")
-        debug_log("QueryProcessor", f"self._llm_caller id={id(self._llm_caller) if hasattr(self, '_llm_caller') else 'N/A'}")
+        debug_log(
+            "QueryProcessor",
+            f"self._llm_caller id={id(self._llm_caller) if hasattr(self, '_llm_caller') else 'N/A'}",
+        )
 
         interrupted = False
 
@@ -166,7 +171,10 @@ class QueryProcessor:
         debug_log("QueryProcessor", f"has _llm_caller={has_llm_caller}")
         if has_llm_caller:
             llm_monitor = getattr(self._llm_caller, "_current_task_monitor", None)
-            debug_log("QueryProcessor", f"_llm_caller id={id(self._llm_caller)}, _current_task_monitor={llm_monitor}")
+            debug_log(
+                "QueryProcessor",
+                f"_llm_caller id={id(self._llm_caller)}, _current_task_monitor={llm_monitor}",
+            )
             if self._llm_caller.request_interrupt():
                 interrupted = True
                 debug_log("QueryProcessor", "Interrupted via _llm_caller")
@@ -196,7 +204,7 @@ class QueryProcessor:
 
     def _init_ace_components(self, agent):
         """Initialize ACE components lazily on first use.
-        
+
         Safe to call multiple times - idempotent and handles errors gracefully.
 
         Args:
@@ -212,7 +220,6 @@ class QueryProcessor:
                 # ACE initialization failed - leave components as None
                 # record_tool_learnings will safely handle None components
                 pass
-
 
     def enhance_query(self, query: str) -> tuple[str, list[dict]]:
         """Enhance query with file contents if referenced.
@@ -249,7 +256,6 @@ class QueryProcessor:
         """
         return self._context_picker.pick_context(query, agent, trace=trace)
 
-
     def _prepare_messages(
         self,
         query: str,
@@ -276,7 +282,7 @@ class QueryProcessor:
 
     def _call_llm_with_progress(self, agent, messages, task_monitor) -> tuple:
         """Call LLM with progress display.
-        
+
         Delegates to LLMCaller for improved error handling and logging.
 
         Args:
@@ -302,7 +308,7 @@ class QueryProcessor:
         agent,
     ) -> None:
         """Use ACE Reflector and Curator to evolve playbook from tool execution.
-        
+
         Delegates to ToolExecutor. ToolExecutor.record_tool_learnings has
         proper error handling, so we don't need additional try-except here.
 
@@ -314,21 +320,20 @@ class QueryProcessor:
         """
         # Initialize ACE components (safe - handles errors internally)
         self._init_ace_components(agent)
-        
+
         # Set ACE components on ToolExecutor (may be None if init failed)
         self._tool_executor.set_ace_components(self._ace_reflector, self._ace_curator)
-        
+
         # Set last agent response
         if self._last_agent_response:
             self._tool_executor.set_last_agent_response(str(self._last_agent_response))
-        
+
         # Delegate to ToolExecutor (has internal error handling)
         self._tool_executor.record_tool_learnings(query, tool_call_objects, outcome, agent)
 
-
     def _format_tool_feedback(self, tool_calls: list, outcome: str) -> str:
         """Format tool execution results as feedback string for ACE Reflector.
-        
+
         Delegates to ToolExecutor.
 
         Args:
@@ -340,10 +345,13 @@ class QueryProcessor:
         """
         return self._tool_executor._format_tool_feedback(tool_calls, outcome)
 
-
     def _render_status_line(self):
         """Render the status line with current context."""
-        total_tokens = self.session_manager.current_session.total_tokens() if self.session_manager.current_session else 0
+        total_tokens = (
+            self.session_manager.current_session.total_tokens()
+            if self.session_manager.current_session
+            else 0
+        )
         self.status_line.render(
             model=self.config.model,
             working_dir=self.config_manager.working_dir,
@@ -357,8 +365,36 @@ class QueryProcessor:
                 ("Esc N", "Notifications"),
                 ("/help", "Commands"),
             ],
-            notifications=[note.summary() for note in self._notification_center.latest(2)] if self._notification_center and self._notification_center.has_items() else None,
+            notifications=(
+                [note.summary() for note in self._notification_center.latest(2)]
+                if self._notification_center and self._notification_center.has_items()
+                else None
+            ),
         )
+
+    def _trigger_topic_detection(self, query: str) -> None:
+        """Fire-and-forget LLM topic detection for dynamic session titling."""
+        from swecli.models.message import Role
+
+        session = self.session_manager.get_current_session()
+        if not session:
+            return
+
+        if self._topic_detector is None:
+            try:
+                from swecli.core.context_engineering.history import TopicDetector
+
+                self._topic_detector = TopicDetector(self.config)
+            except Exception:
+                return
+
+        # Extract plain user/assistant text messages only
+        plain_messages = [
+            {"role": m.role.value, "content": m.content}
+            for m in session.messages
+            if m.role in (Role.USER, Role.ASSISTANT) and m.content.strip()
+        ]
+        self._topic_detector.detect(self.session_manager, session.id, plain_messages)
 
     def process_query(
         self,
@@ -385,6 +421,7 @@ class QueryProcessor:
         # Add user message to session
         user_msg = ChatMessage(role=Role.USER, content=query)
         self.session_manager.add_message(user_msg, self.config.auto_save_interval)
+        self._trigger_topic_detection(query)
 
         # Enhance query with file contents (returns enhanced text + image blocks)
         enhanced_query, image_blocks = self.enhance_query(query)
@@ -394,12 +431,7 @@ class QueryProcessor:
 
         # Delegate to ReactExecutor
         return self._react_executor.execute(
-            query,
-            messages,
-            agent,
-            tool_registry,
-            approval_manager,
-            undo_manager
+            query, messages, agent, tool_registry, approval_manager, undo_manager
         )
 
     def process_query_with_callback(
@@ -429,6 +461,7 @@ class QueryProcessor:
         # Add user message to session
         user_msg = ChatMessage(role=Role.USER, content=query)
         self.session_manager.add_message(user_msg, self.config.auto_save_interval)
+        self._trigger_topic_detection(query)
 
         # Enhance query with file contents (returns enhanced text + image blocks)
         enhanced_query, image_blocks = self.enhance_query(query)
@@ -444,5 +477,5 @@ class QueryProcessor:
             tool_registry,
             approval_manager,
             undo_manager,
-            ui_callback=ui_callback
+            ui_callback=ui_callback,
         )

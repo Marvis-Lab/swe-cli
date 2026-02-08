@@ -142,6 +142,9 @@ class AppConfig(BaseModel):
     operation: OperationConfig = Field(default_factory=OperationConfig)
     max_undo_history: int = 50  # Maximum operations to track for undo
 
+    # Session intelligence
+    topic_detection: bool = True
+
     # ACE Playbook settings
     playbook: PlaybookConfig = Field(default_factory=PlaybookConfig)
 
