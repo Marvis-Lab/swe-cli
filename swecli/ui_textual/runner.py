@@ -340,6 +340,9 @@ class TextualRunner:
             if hasattr(self.app, "_skill_creator"):
                 self.app._skill_creator.set_config_manager(self.config_manager)
             self._history_hydrator.start_async_hydration(self.app)
+            # Sync status bar to Auto if --dangerously-skip-permissions (after mount)
+            if self._dangerously_skip_permissions and hasattr(self.app, "status_bar"):
+                self.app.status_bar.set_autonomy("Auto")
             if downstream_on_ready:
                 downstream_on_ready()
             # Post initial message as a Submitted event so it flows through
@@ -371,9 +374,10 @@ class TextualRunner:
         # Store approval manager reference on the app for action_cycle_autonomy
         self.app._approval_manager = self.repl.approval_manager
 
-        # Sync status bar if --dangerously-skip-permissions was used
-        if self._dangerously_skip_permissions and hasattr(self.app, "status_bar"):
-            self.app.status_bar.set_autonomy("Auto")
+        # Lock autonomy if --dangerously-skip-permissions was used
+        # (status bar sync happens in _on_ready_with_hydration, after mount)
+        if self._dangerously_skip_permissions:
+            self.app._autonomy_locked = True
 
         # Store thinking handler reference for action_toggle_thinking to sync with query_processor
         self.app._thinking_handler = getattr(self.repl.tool_registry, "thinking_handler", None)

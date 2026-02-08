@@ -116,9 +116,9 @@ class SWECLIChatApp(App):
         self._ui_thread: threading.Thread | None = None
         self._tips_manager = TipsManager()
         self._interrupt_manager = InterruptManager(self)
-        self._model_picker: ModelPickerController = ModelPickerController(self)
-        self._agent_creator: AgentCreatorController = AgentCreatorController(self)
-        self._skill_creator: SkillCreatorController = SkillCreatorController(self)
+        self._model_picker: ModelPickerController = ModelPickerController(self, self._interrupt_manager)
+        self._agent_creator: AgentCreatorController = AgentCreatorController(self, self._interrupt_manager)
+        self._skill_creator: SkillCreatorController = SkillCreatorController(self, self._interrupt_manager)
         self._approval_controller = ApprovalPromptController(self, self._interrupt_manager)
         self._ask_user_controller = AskUserPromptController(self, self._interrupt_manager)
         self._spinner = SpinnerController(self, self._tips_manager, todo_handler=self.todo_handler)
@@ -572,29 +572,15 @@ class SWECLIChatApp(App):
 
         Delegates to InterruptManager for state-aware handling.
         """
-        from swecli.ui_textual.debug_logger import debug_log
-        debug_log("ChatApp", "action_interrupt called")
-        debug_log("ChatApp", f"_is_processing={self._is_processing}")
-        debug_log("ChatApp", f"on_interrupt callback={self.on_interrupt}")
-
         # First, let InterruptManager handle modal states (autocomplete, prompts, wizards)
         if self._interrupt_manager.handle_interrupt():
-            debug_log("ChatApp", "InterruptManager handled it")
             return  # Handled by modal/autocomplete
 
         # Fall through to processing interrupt
-        if self._is_processing:
-            debug_log("ChatApp", "Processing is active, calling on_interrupt")
-            # Call interrupt callback if provided
-            if self.on_interrupt:
-                result = self.on_interrupt()
-                debug_log("ChatApp", f"on_interrupt() returned: {result}")
-            else:
-                debug_log("ChatApp", "No on_interrupt callback!")
+        if self._is_processing and self.on_interrupt:
+            self.on_interrupt()
             # Don't display system message here - let the tool result formatter handle it
             # This prevents duplicate "Processing interrupted" messages
-        else:
-            debug_log("ChatApp", "NOT processing, nothing to interrupt")
 
     def action_clear_or_quit(self) -> None:
         """Clear input text or quit (Ctrl+C).
@@ -762,6 +748,8 @@ class SWECLIChatApp(App):
 
     def action_cycle_autonomy(self) -> None:
         """Cycle through autonomy levels: Manual -> Semi-Auto -> Auto (Shift+A)."""
+        if getattr(self, "_autonomy_locked", False):
+            return
         levels = ["Manual", "Semi-Auto", "Auto"]
         current = self.status_bar.autonomy
         try:
