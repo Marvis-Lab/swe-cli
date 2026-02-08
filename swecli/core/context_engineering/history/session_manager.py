@@ -1,11 +1,15 @@
 """Session persistence and management."""
 
 import json
+import tempfile
+from datetime import datetime
 from pathlib import Path
 from typing import Optional, Union
 
 from swecli.models.message import ChatMessage
 from swecli.models.session import Session, SessionMetadata
+
+_INDEX_VERSION = 1
 
 
 class SessionManager:
@@ -13,6 +17,11 @@ class SessionManager:
 
     Sessions are stored in project-scoped directories under
     ``~/.swecli/projects/{encoded-path}/``.
+
+    A lightweight ``sessions-index.json`` file caches session metadata so that
+    ``list_sessions()`` is O(1) reads instead of O(N) full-file parses. The
+    index is self-healing: if it is missing or corrupted, it is transparently
+    rebuilt from the individual session ``.json`` files.
     """
 
     def __init__(
@@ -47,6 +56,162 @@ class SessionManager:
         self.session_dir.mkdir(parents=True, exist_ok=True)
         self.current_session: Optional[Session] = None
         self.turn_count = 0
+
+    # ========================================================================
+    # Index helpers
+    # ========================================================================
+
+    @property
+    def _index_path(self) -> Path:
+        """Path to the sessions index file."""
+        from swecli.core.paths import SESSIONS_INDEX_FILE_NAME
+
+        return self.session_dir / SESSIONS_INDEX_FILE_NAME
+
+    def _read_index(self) -> Optional[dict]:
+        """Read the sessions index file.
+
+        Returns:
+            Parsed index dict if valid, ``None`` if missing/corrupted/wrong version.
+        """
+        try:
+            if not self._index_path.exists():
+                return None
+            with open(self._index_path) as f:
+                data = json.load(f)
+            if not isinstance(data, dict) or data.get("version") != _INDEX_VERSION:
+                return None
+            if not isinstance(data.get("entries"), list):
+                return None
+            return data
+        except (json.JSONDecodeError, OSError):
+            return None
+
+    def _write_index(self, entries: list[dict]) -> None:
+        """Atomically write the sessions index file.
+
+        Writes to a temporary file first, then renames to prevent torn reads.
+        """
+        data = {"version": _INDEX_VERSION, "entries": entries}
+        # Write to temp file in the same directory, then rename (atomic on POSIX)
+        fd, tmp_path = tempfile.mkstemp(
+            dir=self.session_dir, suffix=".tmp", prefix=".sessions-index-"
+        )
+        try:
+            with open(fd, "w") as f:
+                json.dump(data, f, indent=2, default=str)
+            Path(tmp_path).replace(self._index_path)
+        except Exception:
+            # Clean up temp file on failure
+            try:
+                Path(tmp_path).unlink(missing_ok=True)
+            except Exception:
+                pass
+            raise
+
+    @staticmethod
+    def _session_to_index_entry(session: Session) -> dict:
+        """Convert a Session to a camelCase index entry dict."""
+        return {
+            "sessionId": session.id,
+            "created": session.created_at.isoformat(),
+            "modified": session.updated_at.isoformat(),
+            "messageCount": len(session.messages),
+            "totalTokens": session.total_tokens(),
+            "title": session.metadata.get("title"),
+            "summary": session.metadata.get("summary"),
+            "tags": session.metadata.get("tags", []),
+            "workingDirectory": session.working_directory,
+        }
+
+    @staticmethod
+    def _metadata_from_index_entry(entry: dict) -> SessionMetadata:
+        """Convert a camelCase index entry dict to a SessionMetadata."""
+        return SessionMetadata(
+            id=entry["sessionId"],
+            created_at=datetime.fromisoformat(entry["created"]),
+            updated_at=datetime.fromisoformat(entry["modified"]),
+            message_count=entry.get("messageCount", 0),
+            total_tokens=entry.get("totalTokens", 0),
+            title=entry.get("title"),
+            summary=entry.get("summary"),
+            tags=entry.get("tags", []),
+            working_directory=entry.get("workingDirectory"),
+        )
+
+    def _update_index_entry(self, session: Session) -> None:
+        """Upsert a single session entry in the index."""
+        index = self._read_index()
+        if index is None:
+            # Index missing/corrupted — rebuild it entirely
+            self.rebuild_index()
+            return
+
+        new_entry = self._session_to_index_entry(session)
+        entries = index["entries"]
+
+        # Replace existing entry or append
+        for i, entry in enumerate(entries):
+            if entry.get("sessionId") == session.id:
+                entries[i] = new_entry
+                self._write_index(entries)
+                return
+
+        entries.append(new_entry)
+        self._write_index(entries)
+
+    def _remove_index_entry(self, session_id: str) -> None:
+        """Remove a single session entry from the index."""
+        index = self._read_index()
+        if index is None:
+            return  # Nothing to remove from
+
+        entries = [e for e in index["entries"] if e.get("sessionId") != session_id]
+        self._write_index(entries)
+
+    def rebuild_index(self) -> list[SessionMetadata]:
+        """Rebuild the index from individual session ``.json`` files.
+
+        This is the self-healing path: called when the index is missing or
+        corrupted. It globs all ``.json`` files (excluding the index itself),
+        loads each session, and recreates the index.
+
+        Returns:
+            List of ``SessionMetadata`` for all valid, non-empty sessions.
+        """
+        from swecli.core.paths import SESSIONS_INDEX_FILE_NAME
+
+        entries: list[dict] = []
+        metadata_list: list[SessionMetadata] = []
+
+        for session_file in self.session_dir.glob("*.json"):
+            # Skip the index file itself
+            if session_file.name == SESSIONS_INDEX_FILE_NAME:
+                continue
+
+            try:
+                session = self._load_from_file(session_file)
+
+                # Skip empty sessions
+                if len(session.messages) == 0:
+                    try:
+                        session_file.unlink()
+                    except Exception:
+                        pass
+                    continue
+
+                entry = self._session_to_index_entry(session)
+                entries.append(entry)
+                metadata_list.append(self._metadata_from_index_entry(entry))
+            except Exception:
+                continue  # Skip corrupted files
+
+        self._write_index(entries)
+        return sorted(metadata_list, key=lambda s: s.updated_at, reverse=True)
+
+    # ========================================================================
+    # Core session operations
+    # ========================================================================
 
     def create_session(self, working_directory: Optional[str] = None) -> Session:
         """Create a new session.
@@ -130,6 +295,9 @@ class SessionManager:
         Only saves sessions that have at least one message to avoid
         cluttering the session list with empty test sessions.
 
+        After writing the session file, auto-generates a title (if not already
+        set) and updates the sessions index.
+
         Args:
             session: Session to save (defaults to current session)
         """
@@ -145,6 +313,21 @@ class SessionManager:
 
         with open(session_file, "w") as f:
             json.dump(session.model_dump(), f, indent=2, default=str)
+
+        # Auto-generate title if not set
+        if not session.metadata.get("title"):
+            msg_dicts = [
+                {"role": m.role.value, "content": m.content} for m in session.messages
+            ]
+            title = self.generate_title(msg_dicts)
+            if title != "Untitled":
+                session.metadata["title"] = title
+                # Re-write with the title included
+                with open(session_file, "w") as f:
+                    json.dump(session.model_dump(), f, indent=2, default=str)
+
+        # Update the sessions index
+        self._update_index_entry(session)
 
     def add_message(self, message: ChatMessage, auto_save_interval: int = 5) -> None:
         """Add a message to the current session and auto-save if needed.
@@ -166,29 +349,19 @@ class SessionManager:
     def list_sessions(self) -> list[SessionMetadata]:
         """List all saved sessions in this project directory.
 
+        Reads from the sessions index for O(1) performance. Falls back to
+        a full rebuild if the index is missing or corrupted.
+
         Returns:
             List of session metadata, sorted by update time (newest first)
-            Filters out empty sessions (sessions with no messages)
         """
-        sessions = []
-        for session_file in self.session_dir.glob("*.json"):
-            try:
-                session = self._load_from_file(session_file)
+        index = self._read_index()
+        if index is not None:
+            sessions = [self._metadata_from_index_entry(e) for e in index["entries"]]
+            return sorted(sessions, key=lambda s: s.updated_at, reverse=True)
 
-                # Skip empty sessions (no messages)
-                if len(session.messages) == 0:
-                    # Optionally clean up empty session files
-                    try:
-                        session_file.unlink()
-                    except Exception:
-                        pass
-                    continue
-
-                sessions.append(session.get_metadata())
-            except Exception:
-                continue  # Skip corrupted files
-
-        return sorted(sessions, key=lambda s: s.updated_at, reverse=True)
+        # Index missing or corrupted — rebuild (returns sorted)
+        return self.rebuild_index()
 
     def find_latest_session(
         self, working_directory: Union[Path, str, None] = None
@@ -214,6 +387,8 @@ class SessionManager:
     def delete_session(self, session_id: str) -> None:
         """Delete a session and its associated debug log.
 
+        Also removes the session from the sessions index.
+
         Args:
             session_id: Session ID to delete
         """
@@ -225,6 +400,9 @@ class SessionManager:
         debug_file = self.session_dir / f"{session_id}.debug"
         if debug_file.exists():
             debug_file.unlink()
+
+        # Remove from sessions index
+        self._remove_index_entry(session_id)
 
     def get_current_session(self) -> Optional[Session]:
         """Get the current active session."""
@@ -273,7 +451,7 @@ class SessionManager:
             self.save_session()
             return
 
-        # Otherwise load, update, save
+        # Otherwise load, update, save on disk
         session_file = self.session_dir / f"{session_id}.json"
         if not session_file.exists():
             return
@@ -287,3 +465,10 @@ class SessionManager:
 
         with open(session_file, "w") as f:
             json.dump(data, f, indent=2, default=str)
+
+        # Update the index for the on-disk-only path
+        try:
+            session = self._load_from_file(session_file)
+            self._update_index_entry(session)
+        except Exception:
+            pass

@@ -192,19 +192,20 @@ async def delete_session(session_id: str) -> Dict[str, str]:
     try:
         state = get_state()
 
-        # Delete the session file from disk
+        # Check if the session file exists before deleting
         session_file = state.session_manager.session_dir / f"{session_id}.json"
-        if session_file.exists():
-            session_file.unlink()
-
-            # If this was the current session, clear it
-            current_session = state.session_manager.get_current_session()
-            if current_session and current_session.id == session_id:
-                state.session_manager.current_session = None
-
-            return {"status": "success", "message": f"Session {session_id} deleted"}
-        else:
+        if not session_file.exists():
             raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
+
+        # Delegate to SessionManager so the index stays in sync
+        state.session_manager.delete_session(session_id)
+
+        # If this was the current session, clear it
+        current_session = state.session_manager.get_current_session()
+        if current_session and current_session.id == session_id:
+            state.session_manager.current_session = None
+
+        return {"status": "success", "message": f"Session {session_id} deleted"}
 
     except HTTPException:
         raise
