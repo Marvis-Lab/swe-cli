@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { Message, ApprovalRequest } from '../types';
+import type { Message, ApprovalRequest, StatusInfo, AskUserRequest } from '../types';
 import { apiClient } from '../api/client';
 import { wsClient } from '../api/websocket';
 
@@ -11,6 +11,9 @@ interface ChatState {
   pendingApproval: ApprovalRequest | null;
   currentSessionId: string | null;
   hasWorkspace: boolean;
+  status: StatusInfo | null;
+  showThinking: boolean;
+  pendingAskUser: AskUserRequest | null;
 
   // Actions
   loadMessages: () => Promise<void>;
@@ -22,9 +25,17 @@ interface ChatState {
   setPendingApproval: (approval: ApprovalRequest | null) => void;
   respondToApproval: (approvalId: string, approved: boolean, autoApprove?: boolean) => void;
   setHasWorkspace: (hasWorkspace: boolean) => void;
+  setStatus: (status: StatusInfo) => void;
+  toggleMode: () => void;
+  cycleAutonomy: () => void;
+  toggleThinking: () => void;
+  setPendingAskUser: (request: AskUserRequest | null) => void;
+  respondToAskUser: (requestId: string, answers: Record<string, any> | null) => void;
 }
 
-export const useChatStore = create<ChatState>((set) => ({
+const AUTONOMY_CYCLE: Array<'Manual' | 'Semi-Auto' | 'Auto'> = ['Manual', 'Semi-Auto', 'Auto'];
+
+export const useChatStore = create<ChatState>((set, get) => ({
   messages: [],
   isLoading: false,
   error: null,
@@ -32,6 +43,9 @@ export const useChatStore = create<ChatState>((set) => ({
   pendingApproval: null,
   currentSessionId: null,
   hasWorkspace: false,
+  status: null,
+  showThinking: true,
+  pendingAskUser: null,
 
   loadMessages: async () => {
     set({ isLoading: true, error: null });
@@ -112,6 +126,22 @@ export const useChatStore = create<ChatState>((set) => ({
         currentSessionId: sessionId,
         hasWorkspace: true,
       });
+
+      // Refresh status after session change
+      try {
+        const configData = await apiClient.getConfig();
+        set({
+          status: {
+            mode: configData.mode || 'normal',
+            autonomy_level: configData.autonomy_level || 'Manual',
+            model: configData.model,
+            model_provider: configData.model_provider,
+            working_dir: configData.working_dir || '',
+            git_branch: configData.git_branch,
+          },
+        });
+      } catch (_) { /* ignore */ }
+
       console.log(`[Frontend] Session ${sessionId} loaded successfully`);
     } catch (error) {
       console.error(`[Frontend] Failed to load session:`, error);
@@ -191,6 +221,47 @@ export const useChatStore = create<ChatState>((set) => ({
 
   setHasWorkspace: (hasWorkspace: boolean) => {
     set({ hasWorkspace });
+  },
+
+  setStatus: (status: StatusInfo) => {
+    set({ status });
+  },
+
+  toggleMode: () => {
+    const { status } = get();
+    if (!status) return;
+    const newMode = status.mode === 'normal' ? 'plan' : 'normal';
+    apiClient.setMode(newMode).catch(console.error);
+    set({ status: { ...status, mode: newMode } });
+  },
+
+  cycleAutonomy: () => {
+    const { status } = get();
+    if (!status) return;
+    const currentIdx = AUTONOMY_CYCLE.indexOf(status.autonomy_level);
+    const nextLevel = AUTONOMY_CYCLE[(currentIdx + 1) % AUTONOMY_CYCLE.length];
+    apiClient.setAutonomy(nextLevel).catch(console.error);
+    set({ status: { ...status, autonomy_level: nextLevel } });
+  },
+
+  toggleThinking: () => {
+    set(state => ({ showThinking: !state.showThinking }));
+  },
+
+  setPendingAskUser: (request: AskUserRequest | null) => {
+    set({ pendingAskUser: request });
+  },
+
+  respondToAskUser: (requestId: string, answers: Record<string, any> | null) => {
+    wsClient.send({
+      type: 'ask_user_response',
+      data: {
+        requestId,
+        answers,
+        cancelled: answers === null,
+      },
+    });
+    set({ pendingAskUser: null });
   },
 }));
 
@@ -302,3 +373,26 @@ wsClient.on('tool_result', (message) => {
   console.warn(`Received tool_result for ${message.data.tool_name} but no matching tool_call found`);
 });
 
+wsClient.on('thinking_block', (message) => {
+  useChatStore.getState().addMessage({
+    role: 'thinking',
+    content: message.data.content,
+  });
+});
+
+wsClient.on('status_update', (message) => {
+  const { status } = useChatStore.getState();
+  useChatStore.getState().setStatus({
+    ...status,
+    ...message.data,
+  } as StatusInfo);
+});
+
+wsClient.on('ask_user_required', (message) => {
+  console.log('[Frontend] Received ask_user_required:', message.data);
+  useChatStore.getState().setPendingAskUser(message.data as AskUserRequest);
+});
+
+wsClient.on('ask_user_resolved', () => {
+  useChatStore.getState().setPendingAskUser(null);
+});

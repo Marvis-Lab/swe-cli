@@ -143,6 +143,7 @@ class AgentExecutor:
         )
         from swecli.core.context_engineering.tools.implementations.ask_user_tool import AskUserTool
         from swecli.web.web_approval_manager import WebApprovalManager
+        from swecli.web.web_ask_user_manager import WebAskUserManager
         from swecli.web.ws_tool_broadcaster import WebSocketToolBroadcaster
 
         # Clear any previous interrupt flags
@@ -159,7 +160,9 @@ class AgentExecutor:
         web_fetch_tool = WebFetchTool(config, working_dir)
         web_search_tool = WebSearchTool(config, working_dir)
         notebook_edit_tool = NotebookEditTool(working_dir)
-        ask_user_tool = AskUserTool()  # Uses console fallback in web mode
+        # Create web-based ask-user manager
+        web_ask_user_manager = WebAskUserManager(ws_manager, loop)
+        ask_user_tool = AskUserTool(ui_prompt_callback=web_ask_user_manager.prompt_user)
         open_browser_tool = OpenBrowserTool(config, working_dir)
         web_screenshot_tool = WebScreenshotTool(config, working_dir)
 
@@ -226,6 +229,25 @@ class AgentExecutor:
             # (Streaming at character level will be added later)
             logger.info(f"Agent run_sync completed: success={result.get('success')}")
             if result.get("success"):
+                # Broadcast thinking block if present
+                thinking_content = result.get("thinking_trace") or result.get(
+                    "reasoning_content"
+                )
+                if thinking_content:
+                    try:
+                        future = asyncio.run_coroutine_threadsafe(
+                            ws_manager.broadcast(
+                                {
+                                    "type": "thinking_block",
+                                    "data": {"content": str(thinking_content)},
+                                }
+                            ),
+                            loop,
+                        )
+                        future.result(timeout=5)
+                    except Exception as e:
+                        logger.error(f"Failed to broadcast thinking_block: {e}")
+
                 content = result.get("content", "")
                 logger.info(f"Broadcasting message_chunk with content length: {len(str(content))}")
                 try:

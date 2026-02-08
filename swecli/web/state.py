@@ -57,6 +57,12 @@ class WebState:
         # Interrupt flag for stopping ongoing tasks
         self._interrupt_requested = False
 
+        # Autonomy level for approval management
+        self._autonomy_level: str = "Manual"
+
+        # Pending ask-user requests
+        self._pending_ask_users: Dict[str, Dict[str, Any]] = {}
+
     def add_ws_client(self, client: Any) -> None:
         """Add a WebSocket client."""
         with self._lock:
@@ -100,6 +106,7 @@ class WebState:
                 "updated_at": s.updated_at.isoformat(),
                 "message_count": s.message_count,
                 "total_tokens": s.total_tokens,
+                "title": s.title,
             }
             for s in self.session_manager.list_sessions()
         ]
@@ -165,6 +172,68 @@ class WebState:
         """Check if interrupt has been requested."""
         with self._lock:
             return self._interrupt_requested
+
+    # --- Autonomy level ---
+
+    def get_autonomy_level(self) -> str:
+        """Get current autonomy level."""
+        with self._lock:
+            return self._autonomy_level
+
+    def set_autonomy_level(self, level: str) -> None:
+        """Set autonomy level."""
+        with self._lock:
+            self._autonomy_level = level
+
+    # --- Ask-user state ---
+
+    def add_pending_ask_user(self, request_id: str, data: Dict[str, Any]) -> None:
+        """Add a pending ask-user request."""
+        with self._lock:
+            self._pending_ask_users[request_id] = {
+                "data": data,
+                "resolved": False,
+                "answers": None,
+                "cancelled": False,
+            }
+
+    def resolve_ask_user(
+        self, request_id: str, answers: Optional[Dict], cancelled: bool = False
+    ) -> bool:
+        """Resolve a pending ask-user request."""
+        with self._lock:
+            if request_id in self._pending_ask_users:
+                self._pending_ask_users[request_id]["resolved"] = True
+                self._pending_ask_users[request_id]["answers"] = answers
+                self._pending_ask_users[request_id]["cancelled"] = cancelled
+                return True
+            return False
+
+    def get_pending_ask_user(self, request_id: str) -> Optional[Dict[str, Any]]:
+        """Get a pending ask-user request."""
+        with self._lock:
+            return self._pending_ask_users.get(request_id)
+
+    def clear_ask_user(self, request_id: str) -> None:
+        """Clear a resolved ask-user request."""
+        with self._lock:
+            self._pending_ask_users.pop(request_id, None)
+
+    def get_git_branch(self) -> Optional[str]:
+        """Get current git branch for the working directory."""
+        import subprocess
+        try:
+            session = self.session_manager.get_current_session()
+            cwd = session.working_directory if session else None
+            result = subprocess.run(
+                ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+                capture_output=True, text=True, cwd=cwd, timeout=3,
+            )
+            if result.returncode == 0:
+                return result.stdout.strip()
+        except Exception:
+            pass
+        return None
 
 
 # Global state instance (will be initialized when web server starts)

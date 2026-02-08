@@ -5,8 +5,9 @@ from typing import Dict, Any, List
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from swecli.web.state import get_state
+from swecli.web.state import get_state, broadcast_to_all_clients
 from swecli.config import get_model_registry
+from swecli.core.runtime.mode_manager import OperationMode
 
 router = APIRouter(prefix="/api/config", tags=["config"])
 
@@ -47,6 +48,13 @@ async def get_config() -> Dict[str, Any]:
             else:
                 masked_key = "***"
 
+        # Get mode, autonomy, working dir, and git branch
+        mode = state.mode_manager.current_mode.value
+        autonomy_level = state.get_autonomy_level()
+        session = state.session_manager.get_current_session()
+        working_dir = session.working_directory if session else ""
+        git_branch = state.get_git_branch()
+
         return {
             "model_provider": config.model_provider,
             "model": config.model,
@@ -58,6 +66,10 @@ async def get_config() -> Dict[str, Any]:
             "temperature": config.temperature,
             "max_tokens": config.max_tokens,
             "enable_bash": config.enable_bash,
+            "mode": mode,
+            "autonomy_level": autonomy_level,
+            "working_dir": working_dir or "",
+            "git_branch": git_branch,
         }
 
     except Exception as e:
@@ -109,6 +121,90 @@ async def update_config(update: ConfigUpdate) -> Dict[str, str]:
 
         return {"status": "success", "message": "Configuration updated"}
 
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class ModeUpdate(BaseModel):
+    """Mode update model."""
+    mode: str
+
+
+class AutonomyUpdate(BaseModel):
+    """Autonomy update model."""
+    level: str
+
+
+@router.post("/mode")
+async def set_mode(update: ModeUpdate) -> Dict[str, str]:
+    """Set operation mode (normal/plan).
+
+    Args:
+        update: Mode update
+
+    Returns:
+        Status response
+    """
+    try:
+        state = get_state()
+        mode = OperationMode(update.mode)
+        state.mode_manager.set_mode(mode)
+
+        # Broadcast status update to all clients
+        session = state.session_manager.get_current_session()
+        await broadcast_to_all_clients({
+            "type": "status_update",
+            "data": {
+                "mode": mode.value,
+                "autonomy_level": state.get_autonomy_level(),
+                "working_dir": session.working_directory if session else "",
+                "git_branch": state.get_git_branch(),
+            },
+        })
+
+        return {"status": "success", "message": f"Mode set to {mode.value}"}
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"Invalid mode: {update.mode}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/autonomy")
+async def set_autonomy(update: AutonomyUpdate) -> Dict[str, str]:
+    """Set autonomy level (Manual/Semi-Auto/Auto).
+
+    Args:
+        update: Autonomy update
+
+    Returns:
+        Status response
+    """
+    try:
+        valid_levels = {"Manual", "Semi-Auto", "Auto"}
+        if update.level not in valid_levels:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid autonomy level: {update.level}. Must be one of {valid_levels}",
+            )
+
+        state = get_state()
+        state.set_autonomy_level(update.level)
+
+        # Broadcast status update to all clients
+        session = state.session_manager.get_current_session()
+        await broadcast_to_all_clients({
+            "type": "status_update",
+            "data": {
+                "mode": state.mode_manager.current_mode.value,
+                "autonomy_level": update.level,
+                "working_dir": session.working_directory if session else "",
+                "git_branch": state.get_git_branch(),
+            },
+        })
+
+        return {"status": "success", "message": f"Autonomy set to {update.level}"}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

@@ -20,6 +20,7 @@ class SessionInfo(BaseModel):
     updated_at: str
     message_count: int
     total_tokens: int
+    title: str | None = None
 
 
 class CreateSessionRequest(BaseModel):

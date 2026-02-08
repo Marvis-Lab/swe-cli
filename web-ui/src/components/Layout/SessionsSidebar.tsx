@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { ChevronDownIcon, Cog6ToothIcon, Bars3Icon, XMarkIcon, FolderIcon, PlusIcon } from '@heroicons/react/24/outline';
+import { ChevronDownIcon, Cog6ToothIcon, Bars3Icon, XMarkIcon, FolderIcon, PlusIcon, ChatBubbleLeftRightIcon } from '@heroicons/react/24/outline';
 import { useChatStore } from '../../stores/chat';
 import { SettingsModal } from '../Settings/SettingsModal';
 import { NewSessionModal } from './NewSessionModal';
@@ -16,6 +16,7 @@ interface Session {
   };
   created_at: string;
   updated_at: string;
+  title?: string;
   status?: 'active' | 'answered' | 'open';
 }
 
@@ -24,6 +25,11 @@ interface WorkspaceGroup {
   sessions: Session[];
   mostRecent: Session;
 }
+
+const getProjectName = (path: string): string => {
+  const parts = path.replace(/\/$/, '').split('/');
+  return parts[parts.length - 1] || path;
+};
 
 export function SessionsSidebar() {
   const [_sessions, setSessions] = useState<Session[]>([]);
@@ -103,12 +109,6 @@ export function SessionsSidebar() {
     );
   };
 
-  const formatWorkspacePath = (workingDir: string) => {
-    // Show full path, or just the last part if too long
-    if (!workingDir) return 'Unknown';
-    return workingDir;
-  };
-
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
     const now = new Date();
@@ -126,14 +126,11 @@ export function SessionsSidebar() {
 
   const toggleWorkspace = (workspacePath: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    console.log('[SessionsSidebar] Toggling workspace:', workspacePath);
     setExpandedWorkspaces(prev => {
       const next = new Set(prev);
       if (next.has(workspacePath)) {
-        console.log('[SessionsSidebar] Collapsing workspace');
         next.delete(workspacePath);
       } else {
-        console.log('[SessionsSidebar] Expanding workspace');
         next.add(workspacePath);
       }
       return next;
@@ -142,7 +139,6 @@ export function SessionsSidebar() {
 
   const handleSessionClick = async (session: Session, e: React.MouseEvent) => {
     e.stopPropagation();
-    console.log('[SessionsSidebar] Session clicked:', session.id);
     await loadSession(session.id);
   };
 
@@ -152,11 +148,9 @@ export function SessionsSidebar() {
 
   const handleNewSessionInWorkspace = async (workspacePath: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    console.log('[SessionsSidebar] Creating new session for workspace:', workspacePath);
 
     try {
       const result = await apiClient.createSession(workspacePath);
-      console.log('[SessionsSidebar] New session created:', result);
 
       // Refresh sessions list
       await fetchSessions();
@@ -178,7 +172,6 @@ export function SessionsSidebar() {
 
   const handleDeleteSession = (sessionId: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    console.log('[SessionsSidebar] Delete session clicked:', sessionId);
     setDeleteSessionId(sessionId);
   };
 
@@ -186,7 +179,6 @@ export function SessionsSidebar() {
     if (!deleteSessionId) return;
 
     try {
-      console.log('[SessionsSidebar] Deleting session:', deleteSessionId);
       await fetch(`/api/sessions/${deleteSessionId}`, { method: 'DELETE' });
 
       // Refresh the sessions list
@@ -225,6 +217,10 @@ export function SessionsSidebar() {
     }
   };
 
+  const getSessionLabel = (session: Session): string => {
+    return session.title || session.id.substring(0, 8);
+  };
+
   return (
     <aside className={`h-full bg-gradient-to-b from-gray-50 to-white border-r border-gray-200 flex flex-col shadow-sm transition-all duration-300 ease-in-out ${
       isCollapsed ? 'w-16' : 'w-80'
@@ -235,8 +231,8 @@ export function SessionsSidebar() {
         <button
           onClick={() => setIsCollapsed(!isCollapsed)}
           className={`p-2 rounded-lg transition-all ${
-            isCollapsed 
-              ? 'hover:bg-gray-200 bg-white shadow-sm' 
+            isCollapsed
+              ? 'hover:bg-gray-200 bg-white shadow-sm'
               : 'hover:bg-gray-100 self-end'
           }`}
           title={`${isCollapsed ? 'Expand' : 'Collapse'} sidebar (Ctrl/Cmd+B)`}
@@ -262,21 +258,19 @@ export function SessionsSidebar() {
           </div>
         </div>
 
-        {/* New Workspace Button */}
+        {/* Start Conversation Button */}
         <button
           onClick={handleNewWorkspace}
           className="w-full mt-3 px-4 py-2 bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white text-sm font-medium rounded-lg shadow-md hover:shadow-lg transition-all duration-200 flex items-center justify-center gap-2"
         >
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-          </svg>
-          <span>New Workspace</span>
+          <ChatBubbleLeftRightIcon className="w-4 h-4" />
+          <span>Start Conversation</span>
         </button>
           </>
         )}
       </div>
 
-  
+
       {/* Workspaces Header */}
       {!isCollapsed && (
       <>
@@ -309,6 +303,7 @@ export function SessionsSidebar() {
               const isExpanded = expandedWorkspaces.has(workspace.path);
               // Check if any session in this workspace is currently active
               const hasActiveSession = workspace.sessions.some(s => s.id === currentSessionId);
+              const projectName = getProjectName(workspace.path);
 
               return (
                 <div
@@ -340,19 +335,19 @@ export function SessionsSidebar() {
 
                       {/* Workspace Info */}
                       <div className="flex-1 min-w-0">
-                        <h3 className="text-xs font-medium mb-1.5 text-gray-900 break-all" title={workspace.path}>
-                          {formatWorkspacePath(workspace.path)}
+                        <h3 className="text-sm font-semibold text-gray-900 truncate" title={workspace.path}>
+                          {projectName}
                         </h3>
-                        <div className="flex items-center justify-between text-xs">
-                          <span className="text-gray-500">
+                        <div className="flex items-center justify-between text-xs mt-1">
+                          <span className="text-gray-400 truncate" title={workspace.path}>
                             {formatDate(workspace.mostRecent.updated_at)}
                           </span>
-                          <span className={`px-1.5 py-0.5 rounded-full text-xs ${
+                          <span className={`ml-2 px-1.5 py-0.5 rounded-full text-xs flex-shrink-0 ${
                             hasActiveSession
                               ? 'bg-blue-100 text-blue-700 font-medium'
                               : 'bg-gray-100 text-gray-600'
                           }`}>
-                            {workspace.sessions.length} session{workspace.sessions.length !== 1 ? 's' : ''}
+                            {workspace.sessions.length}
                           </span>
                         </div>
                       </div>
@@ -390,6 +385,7 @@ export function SessionsSidebar() {
                       {/* Sessions List */}
                       {workspace.sessions.map((session) => {
                         const isActiveSession = currentSessionId === session.id;
+                        const sessionLabel = getSessionLabel(session);
 
                         return (
                           <div key={session.id} className="relative group">
@@ -397,26 +393,26 @@ export function SessionsSidebar() {
                               onClick={(e) => handleSessionClick(session, e)}
                               className={`w-full px-3 py-2.5 pr-10 rounded-md text-left transition-all cursor-pointer ${
                                 isActiveSession
-                                  ? 'bg-gradient-to-r from-blue-50 to-blue-100 border-2 border-blue-400 shadow-sm'
+                                  ? 'bg-blue-50 border-l-4 border-l-blue-500 border-y border-r border-y-blue-200 border-r-blue-200'
                                   : 'bg-gray-50 hover:bg-gray-100 border border-gray-200 hover:border-blue-300 hover:shadow-sm'
                               }`}
                             >
-                              <div className="flex items-center justify-between text-xs mb-1">
-                                <span className={`font-semibold ${
-                                  isActiveSession ? 'text-blue-900' : 'text-gray-700'
+                              <div className={`text-xs font-medium truncate ${
+                                isActiveSession ? 'text-blue-900' : 'text-gray-800'
+                              }`} title={session.title || session.id}>
+                                {sessionLabel}
+                              </div>
+                              <div className="flex items-center justify-between text-xs mt-1">
+                                <span className={`${
+                                  isActiveSession ? 'text-blue-600' : 'text-gray-400'
                                 }`}>
-                                  {isActiveSession && '● '}{session.id.substring(0, 8)}
+                                  {formatDate(session.updated_at)}
                                 </span>
-                                <span className={`font-medium ${
-                                  isActiveSession ? 'text-blue-700' : 'text-gray-500'
+                                <span className={`${
+                                  isActiveSession ? 'text-blue-500' : 'text-gray-400'
                                 }`}>
                                   {session.message_count} msgs
                                 </span>
-                              </div>
-                              <div className={`text-xs ${
-                                isActiveSession ? 'text-blue-600 font-medium' : 'text-gray-500'
-                              }`}>
-                                {formatDate(session.updated_at)}
                               </div>
                             </button>
 
@@ -449,12 +445,13 @@ export function SessionsSidebar() {
         <div className="flex-1 overflow-y-auto px-2 py-3 space-y-2">
           {workspaces.slice(0, 5).map((workspace) => {
             const hasActiveSession = workspace.sessions.some(s => s.id === currentSessionId);
-            
+            const projectName = getProjectName(workspace.path);
+
             return (
               <div
                 key={workspace.path}
                 className="relative group"
-                title={`${formatWorkspacePath(workspace.path)} (${workspace.sessions.length} sessions)`}
+                title={`${projectName} (${workspace.sessions.length} sessions)`}
               >
                 <button
                   onClick={() => {
@@ -473,19 +470,19 @@ export function SessionsSidebar() {
                 >
                   <FolderIcon className={`w-5 h-5 ${hasActiveSession ? 'text-blue-600' : 'text-gray-500'}`} />
                 </button>
-                
+
                 {/* Tooltip */}
                 <div className="absolute left-full ml-2 top-1/2 transform -translate-y-1/2 bg-gray-900 text-white text-xs rounded-lg px-3 py-2 whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-50 shadow-lg">
-                  <div className="font-medium text-sm mb-1">{formatWorkspacePath(workspace.path)}</div>
+                  <div className="font-medium text-sm mb-1">{projectName}</div>
                   <div className="text-gray-300 text-xs">{workspace.sessions.length} session{workspace.sessions.length !== 1 ? 's' : ''}</div>
-                  {hasActiveSession && <div className="text-blue-300 text-xs mt-1">● Active</div>}
+                  {hasActiveSession && <div className="text-blue-300 text-xs mt-1">Active</div>}
                   {/* Arrow */}
                   <div className="absolute right-full top-1/2 transform -translate-y-1/2 border-4 border-transparent border-r-gray-900"></div>
                 </div>
               </div>
             );
           })}
-          
+
           {/* New Workspace Button (Collapsed) */}
           <button
             onClick={() => {
@@ -493,7 +490,7 @@ export function SessionsSidebar() {
               setTimeout(() => setIsNewSessionOpen(true), 100);
             }}
             className="w-full aspect-square rounded-lg flex items-center justify-center bg-gradient-to-br from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white shadow-md hover:shadow-lg transition-colors"
-            title="New Workspace"
+            title="Start Conversation"
           >
             <PlusIcon className="w-5 h-5" />
           </button>
@@ -547,66 +544,31 @@ export function SessionsSidebar() {
       {/* Delete Session Confirmation Modal */}
       {deleteSessionId && (
         <div
-          style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            backgroundColor: 'rgba(0, 0, 0, 0.5)',
-            zIndex: 99999,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center'
-          }}
+          className="fixed inset-0 bg-black/50 z-[99999] flex items-center justify-center"
           onClick={() => setDeleteSessionId(null)}
         >
           <div
-            style={{
-              backgroundColor: 'white',
-              padding: '24px',
-              borderRadius: '12px',
-              minWidth: '400px',
-              boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)'
-            }}
+            className="bg-white p-6 rounded-xl min-w-[400px] shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 style={{ margin: '0 0 12px 0', fontSize: '18px', fontWeight: '600', color: '#1f2937' }}>
+            <h3 className="text-lg font-semibold text-gray-900 mb-3">
               Delete Session
             </h3>
-            <p style={{ margin: '0 0 20px 0', fontSize: '14px', color: '#6b7280' }}>
-              Are you sure you want to delete session <strong>{deleteSessionId.substring(0, 8)}</strong>?
+            <p className="text-sm text-gray-500 mb-5">
+              Are you sure you want to delete session <strong className="text-gray-700">{deleteSessionId.substring(0, 8)}</strong>?
               <br />
               This action cannot be undone.
             </p>
-            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+            <div className="flex gap-3 justify-end">
               <button
                 onClick={() => setDeleteSessionId(null)}
-                style={{
-                  padding: '8px 16px',
-                  border: '1px solid #d1d5db',
-                  backgroundColor: 'white',
-                  borderRadius: '8px',
-                  cursor: 'pointer',
-                  fontSize: '14px',
-                  fontWeight: '500',
-                  color: '#374151'
-                }}
+                className="px-4 py-2 border border-gray-300 bg-white rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
               >
                 Cancel
               </button>
               <button
                 onClick={confirmDeleteSession}
-                style={{
-                  padding: '8px 16px',
-                  backgroundColor: '#ef4444',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '8px',
-                  cursor: 'pointer',
-                  fontSize: '14px',
-                  fontWeight: '500'
-                }}
+                className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg text-sm font-medium transition-colors"
               >
                 Delete
               </button>

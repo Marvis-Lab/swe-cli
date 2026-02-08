@@ -11,7 +11,7 @@ export interface ToolCallInfo {
 
 // Message types
 export interface Message {
-  role: 'user' | 'assistant' | 'system' | 'tool_call' | 'tool_result';
+  role: 'user' | 'assistant' | 'system' | 'tool_call' | 'tool_result' | 'thinking';
   content: string;
   timestamp?: string;
   tool_call_id?: string;
@@ -33,6 +33,7 @@ export interface Session {
   updated_at: string;
   message_count: number;
   token_usage: Record<string, number>;
+  title?: string;
 }
 
 // Configuration types
@@ -62,7 +63,7 @@ export interface Provider {
 
 // WebSocket event types
 export interface WSMessage {
-  type: 'user_message' | 'message_start' | 'message_chunk' | 'message_complete' | 'tool_call' | 'tool_result' | 'approval_required' | 'approval_resolved' | 'error' | 'pong' | 'mcp_status_update' | 'mcp_servers_update' | 'connected' | 'disconnected';
+  type: 'user_message' | 'message_start' | 'message_chunk' | 'message_complete' | 'tool_call' | 'tool_result' | 'approval_required' | 'approval_resolved' | 'error' | 'pong' | 'mcp_status_update' | 'mcp_servers_update' | 'connected' | 'disconnected' | 'thinking_block' | 'status_update' | 'ask_user_required' | 'ask_user_resolved';
   data: any;
 }
 
@@ -79,4 +80,32 @@ export interface ApprovalRequest {
   arguments: Record<string, any>;
   description: string;
   preview?: string;
+}
+
+// Status bar info
+export interface StatusInfo {
+  mode: 'normal' | 'plan';
+  autonomy_level: 'Manual' | 'Semi-Auto' | 'Auto';
+  model?: string;
+  model_provider?: string;
+  working_dir?: string;
+  git_branch?: string | null;
+}
+
+// Ask-user question types
+export interface AskUserOption {
+  label: string;
+  description: string;
+}
+
+export interface AskUserQuestion {
+  question: string;
+  header: string;
+  options: AskUserOption[];
+  multi_select: boolean;
+}
+
+export interface AskUserRequest {
+  request_id: string;
+  questions: AskUserQuestion[];
 }

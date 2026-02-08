@@ -30,6 +30,17 @@ class ApprovalResult:
         self.cancelled = cancelled
 
 
+# Safe commands that can be auto-approved in Semi-Auto mode
+SAFE_COMMANDS = [
+    "ls", "cat", "head", "tail", "grep", "find", "wc", "pwd",
+    "echo", "which", "type", "file", "stat", "du", "df", "tree",
+    "git status", "git log", "git diff", "git branch", "git show",
+    "git remote", "git tag", "git stash list",
+    "python --version", "python3 --version", "node --version",
+    "npm --version", "cargo --version", "go version",
+]
+
+
 class WebApprovalManager:
     """Approval manager for web UI that uses WebSocket for approval requests."""
 
@@ -72,6 +83,18 @@ class WebApprovalManager:
         Returns:
             ApprovalResult with approval status
         """
+        # Check autonomy level before prompting
+        autonomy = self.state.get_autonomy_level()
+
+        if autonomy == "Auto":
+            return ApprovalResult(approved=True, choice="approve")
+
+        if autonomy == "Semi-Auto" and command:
+            cmd_lower = command.strip().lower()
+            for safe_cmd in SAFE_COMMANDS:
+                if cmd_lower == safe_cmd or cmd_lower.startswith(safe_cmd + " "):
+                    return ApprovalResult(approved=True, choice="approve")
+
         approval_id = str(uuid.uuid4())
 
         # Create approval request with preview

@@ -2,11 +2,13 @@ import { useEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { useChatStore } from '../../stores/chat';
 import { ToolCallMessage } from './ToolCallMessage';
+import { ThinkingBlock } from './ThinkingBlock';
 import { SPINNER_FRAMES, THINKING_VERBS, SPINNER_COLORS } from '../../constants/spinner';
 
 export function MessageList() {
   const messages = useChatStore(state => state.messages);
   const isLoading = useChatStore(state => state.isLoading);
+  const showThinking = useChatStore(state => state.showThinking);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
@@ -87,6 +89,12 @@ export function MessageList() {
           // Render tool calls with special component
           if (message.role === 'tool_call') {
             return <ToolCallMessage key={index} message={message} />;
+          }
+
+          // Render thinking blocks (only when showThinking is on)
+          if (message.role === 'thinking') {
+            if (!showThinking) return null;
+            return <ThinkingBlock key={index} content={message.content} />;
           }
 
           const isUser = message.role === 'user';

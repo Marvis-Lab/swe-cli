@@ -1,6 +1,7 @@
 import { SessionsSidebar } from '../components/Layout/SessionsSidebar';
 import { ChatInterface } from '../components/Chat/ChatInterface';
 import { ApprovalDialog } from '../components/ApprovalDialog';
+import { AskUserDialog } from '../components/Chat/AskUserDialog';
 
 export function ChatPage() {
   return (
@@ -15,6 +16,7 @@ export function ChatPage() {
 
       {/* Modals */}
       <ApprovalDialog />
+      <AskUserDialog />
     </div>
   );
 }

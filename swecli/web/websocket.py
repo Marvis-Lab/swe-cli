@@ -80,6 +80,8 @@ class WebSocketManager:
             await self._handle_query(websocket, data)
         elif msg_type == "approve":
             await self._handle_approval(websocket, data)
+        elif msg_type == "ask_user_response":
+            await self._handle_ask_user_response(websocket, data)
         elif msg_type == "ping":
             await self.send_message(websocket, {"type": "pong"})
         else:
@@ -163,6 +165,39 @@ class WebSocketManager:
                 "approvalId": approval_id,
                 "approved": approved,
             }
+        })
+
+    async def _handle_ask_user_response(self, websocket: WebSocket, data: Dict[str, Any]):
+        """Handle an ask-user response from the web UI."""
+        logger.info(f"Received ask-user response: {data}")
+        response_data = data.get("data", {})
+        request_id = response_data.get("requestId")
+        answers = response_data.get("answers")
+        cancelled = response_data.get("cancelled", False)
+
+        if not request_id:
+            logger.error(f"Invalid ask-user response data: {response_data}")
+            await self.send_message(
+                websocket,
+                {"type": "error", "data": {"message": "Invalid ask-user response data"}}
+            )
+            return
+
+        state = get_state()
+        success = state.resolve_ask_user(request_id, answers, cancelled)
+
+        if not success:
+            logger.error(f"Ask-user request {request_id} not found in state")
+            await self.send_message(
+                websocket,
+                {"type": "error", "data": {"message": f"Ask-user request {request_id} not found"}}
+            )
+            return
+
+        logger.info(f"✓ Ask-user {request_id} resolved")
+        await self.broadcast({
+            "type": "ask_user_resolved",
+            "data": {"requestId": request_id},
         })
 
 
