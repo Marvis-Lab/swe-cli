@@ -44,7 +44,7 @@ def main() -> None:
         epilog="""
 Examples:
   swecli                          # Start interactive CLI session
-  swecli "do something"           # Same as swecli -p "do something"
+  swecli "do something"           # Start session with initial message
   swecli run ui                   # Start web UI (backend + frontend) and open browser
   swecli -p "create hello.py"     # Non-interactive mode
   swecli mcp list                 # List MCP servers
@@ -93,6 +93,13 @@ Examples:
         "-r",
         metavar="SESSION_ID",
         help="Resume a specific session by its ID",
+    )
+
+    parser.add_argument(
+        "--dangerously-skip-permissions",
+        action="store_true",
+        default=False,
+        help="Skip all permission prompts and auto-approve every operation (use with caution)",
     )
 
     # Add subparsers for commands
@@ -183,6 +190,34 @@ Examples:
     )
     mcp_disable.add_argument("name", help="Name of the server to disable")
 
+    # Debug subcommand
+    debug_parser = subparsers.add_parser(
+        "debug",
+        help="View per-session debug logs (requires --verbose during session)",
+        description="Pretty-print structured debug logs from verbose sessions",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  swecli debug                   # Show debug log for most recent session
+  swecli debug abc12345          # Show debug log for specific session
+  swecli debug --tail 50         # Show last 50 events
+  swecli debug --filter tool     # Show only tool-related events
+  swecli debug --filter llm      # Show only LLM-related events
+        """,
+    )
+    debug_parser.add_argument(
+        "session_id", nargs="?", default=None, help="Session ID (defaults to most recent)"
+    )
+    debug_parser.add_argument(
+        "--tail", "-n", type=int, default=0, metavar="N", help="Show last N events"
+    )
+    debug_parser.add_argument(
+        "--filter",
+        "-f",
+        metavar="COMPONENT",
+        help="Filter by component (e.g., tool, llm, react, approval, runner)",
+    )
+
     # Run subcommand
     run_parser = subparsers.add_parser(
         "run", help="Run development tools", description="Run development servers and tools"
@@ -207,9 +242,10 @@ Examples:
         help="Host for backend API server (default: 127.0.0.1)",
     )
 
-    # Support bare positional prompt: swecli "hello" → swecli -p "hello"
+    # Support bare positional prompt: swecli "hello" opens interactive TUI with initial message
     known_subcommands = {"config", "mcp", "run"}
     argv = sys.argv[1:]
+    bare_prompt = None
 
     # Check if -p/--prompt is already specified
     has_prompt_flag = any(
@@ -234,7 +270,7 @@ Examples:
         and first_positional not in known_subcommands
         and not has_prompt_flag
     ):
-        # Separate flags from positional args, treat positionals as prompt
+        # Separate flags from positional args, store positionals as bare_prompt
         flags: list[str] = []
         prompt_parts: list[str] = []
         i = 0
@@ -249,7 +285,8 @@ Examples:
             else:
                 prompt_parts.append(arg)
                 i += 1
-        argv = flags + ["-p", " ".join(prompt_parts)]
+        bare_prompt = " ".join(prompt_parts)
+        argv = flags
 
     args = parser.parse_args(argv)
 
@@ -266,6 +303,11 @@ Examples:
     # Handle run commands
     if args.command == "run":
         _handle_run_command(args)
+        return
+
+    # Handle debug commands
+    if args.command == "debug":
+        _handle_debug_command(args)
         return
 
     console = Console()
@@ -308,13 +350,46 @@ Examples:
         # Non-interactive mode
         if args.prompt:
             session_manager.create_session(working_directory=str(working_dir))
-            _run_non_interactive(config_manager, session_manager, args.prompt)
+
+            # Initialize debug logger for non-interactive mode
+            if config.verbose:
+                from swecli.core.debug import SessionDebugLogger, set_debug_logger
+
+                session = session_manager.get_current_session()
+                if session:
+                    dbg_logger = SessionDebugLogger(session_dir, session.id)
+                    set_debug_logger(dbg_logger)
+                    dbg_logger.log(
+                        "session_start",
+                        "runner",
+                        session_id=session.id,
+                        working_dir=str(working_dir),
+                        model=config.model,
+                        mode="non_interactive",
+                    )
+
+            _run_non_interactive(
+                config_manager,
+                session_manager,
+                args.prompt,
+                dangerously_skip_permissions=args.dangerously_skip_permissions,
+            )
+
+            # Clean up debug logger
+            if config.verbose:
+                from swecli.core.debug import get_debug_logger, set_debug_logger as _set_dl
+
+                get_debug_logger().log("session_end", "runner")
+                _set_dl(None)
+
             return
 
         launch_textual_cli(
+            message=bare_prompt,
             working_dir=working_dir,
             continue_session=args.continue_session,
             resume_session_id=args.resume,
+            dangerously_skip_permissions=args.dangerously_skip_permissions,
         )
         return
 
@@ -652,10 +727,147 @@ def _handle_run_command(args) -> None:
             sys.exit(1)
 
 
+def _handle_debug_command(args) -> None:
+    """Handle debug subcommand — pretty-print a session's .debug JSONL file.
+
+    Args:
+        args: Parsed command-line arguments
+    """
+    import json
+    from pathlib import Path
+    from datetime import datetime
+
+    console = Console()
+
+    # Resolve session directory
+    config_manager = ConfigManager(Path.cwd())
+    config = config_manager.load_config()
+    session_dir = Path(config.session_dir).expanduser()
+
+    if not session_dir.exists():
+        console.print(f"[{ERROR}]Session directory not found: {session_dir}[/{ERROR}]")
+        sys.exit(1)
+
+    # Find the debug file
+    if args.session_id:
+        debug_file = session_dir / f"{args.session_id}.debug"
+    else:
+        # Find most recent .debug file
+        debug_files = sorted(session_dir.glob("*.debug"), key=lambda f: f.stat().st_mtime)
+        if not debug_files:
+            console.print(
+                f"[{WARNING}]No debug logs found. "
+                f"Run swecli with --verbose to generate debug logs.[/{WARNING}]"
+            )
+            sys.exit(0)
+        debug_file = debug_files[-1]
+
+    if not debug_file.exists():
+        console.print(f"[{ERROR}]Debug log not found: {debug_file}[/{ERROR}]")
+        console.print(
+            f"[{WARNING}]Make sure the session was run with --verbose.[/{WARNING}]"
+        )
+        sys.exit(1)
+
+    # Read and parse events
+    events = []
+    with open(debug_file, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                events.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+
+    if not events:
+        console.print(f"[{WARNING}]Debug log is empty.[/{WARNING}]")
+        sys.exit(0)
+
+    # Apply filter
+    if args.filter:
+        events = [e for e in events if e.get("component") == args.filter]
+        if not events:
+            console.print(
+                f"[{WARNING}]No events matching component '{args.filter}'.[/{WARNING}]"
+            )
+            sys.exit(0)
+
+    # Apply tail
+    if args.tail > 0:
+        events = events[-args.tail:]
+
+    # Color scheme for event types
+    event_colors = {
+        "session_start": "bold green",
+        "session_end": "bold green",
+        "message_submitted": "cyan",
+        "react_iteration_start": "blue",
+        "react_iteration_end": "blue",
+        "llm_call_start": "magenta",
+        "llm_call_end": "magenta",
+        "llm_call_error": "bold red",
+        "tool_call_start": "yellow",
+        "tool_call_end": "yellow",
+        "tool_call_error": "bold red",
+        "approval_request": "bright_yellow",
+        "approval_result": "bright_yellow",
+        "processing_complete": "bold green",
+        "error": "bold red",
+    }
+
+    # Print header
+    session_id = debug_file.stem
+    console.print(f"\n[bold {CYAN}]Debug Log: {session_id}[/bold {CYAN}]")
+    console.print(f"[dim]File: {debug_file}[/dim]")
+    console.print(f"[dim]Events: {len(events)}[/dim]\n")
+
+    # Print events
+    for event in events:
+        ts = event.get("ts", "")
+        elapsed = event.get("elapsed_ms", 0)
+        event_type = event.get("event", "unknown")
+        component = event.get("component", "?")
+        data = event.get("data", {})
+
+        # Format timestamp (show just time portion)
+        try:
+            dt = datetime.fromisoformat(ts)
+            ts_display = dt.strftime("%H:%M:%S.%f")[:-3]
+        except (ValueError, TypeError):
+            ts_display = ts[:12] if ts else "??:??:??"
+
+        # Get color for event type
+        color = event_colors.get(event_type, "white")
+
+        # Format elapsed time
+        elapsed_str = f"+{elapsed}ms"
+
+        # Print event header
+        console.print(
+            f"  [dim]{ts_display} {elapsed_str:>8}[/dim]  "
+            f"[{color}]{event_type}[/{color}]  "
+            f"[dim]({component})[/dim]"
+        )
+
+        # Print data key-value pairs (indented)
+        if data:
+            for key, value in data.items():
+                value_str = str(value) if value is not None else "[dim]null[/dim]"
+                # Truncate long values for display
+                if len(value_str) > 120:
+                    value_str = value_str[:117] + "..."
+                console.print(f"      [dim]{key}:[/dim] {value_str}")
+
+    console.print()
+
+
 def _run_non_interactive(
     config_manager: ConfigManager,
     session_manager: SessionManager,
     prompt: str,
+    dangerously_skip_permissions: bool = False,
 ) -> None:
     """Run a single prompt in non-interactive mode.
 
@@ -663,11 +875,21 @@ def _run_non_interactive(
         config_manager: Configuration manager
         session_manager: Session manager
         prompt: User prompt to execute
+        dangerously_skip_permissions: If True, auto-approve all operations
     """
     console = Console()
+
+    if dangerously_skip_permissions:
+        console.print(
+            f"[{WARNING}]Warning: --dangerously-skip-permissions is enabled. "
+            f"All operations will be auto-approved without confirmation.[/{WARNING}]"
+        )
+
     config = config_manager.get_config()
     mode_manager = ModeManager()
     approval_manager = ApprovalManager(console)
+    if dangerously_skip_permissions:
+        approval_manager.auto_approve_remaining = True
     undo_manager = UndoManager(config.max_undo_history)
 
     file_ops = FileOperations(config, config_manager.working_dir)

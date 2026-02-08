@@ -96,9 +96,11 @@ class TextualRunner:
         continue_session: bool = False,
         resume_session_id: Optional[str] = None,
         initial_message: Optional[str] = None,
+        dangerously_skip_permissions: bool = False,
     ) -> None:
         self.working_dir = Path(working_dir or Path.cwd()).resolve()
         self._initial_message = initial_message
+        self._dangerously_skip_permissions = dangerously_skip_permissions
 
         # 1. Setup Core Runtime (Config, REPL, Session)
         self._setup_runtime(
@@ -110,13 +112,16 @@ class TextualRunner:
             resume_session_id=resume_session_id,
         )
 
-        # 2. Setup Runner Components
+        # 2. Initialize session debug logger (when --verbose)
+        self._init_debug_logger()
+
+        # 3. Setup Runner Components
         self._setup_components(auto_connect_mcp)
 
-        # 3. Setup Textual App
+        # 4. Setup Textual App
         self._setup_app()
 
-        # 4. Finalize
+        # 5. Finalize
         self._loop = asyncio.new_event_loop()
         self._console_task: asyncio.Task[None] | None = None
         self._queue_update_callback: Callable[[int], None] | None = getattr(
@@ -203,6 +208,8 @@ class TextualRunner:
             self.repl = REPL(self.config_manager, self.session_manager, is_tui=True)
             self.repl.mode_manager.set_mode(OperationMode.NORMAL)
             self.repl.approval_manager = ChatApprovalManager(self.repl.console)
+            if self._dangerously_skip_permissions:
+                self.repl.approval_manager.set_autonomy_level("Auto")
 
             if hasattr(self.repl.config, "permissions") and hasattr(
                 self.repl.config.permissions, "bash"
@@ -212,6 +219,30 @@ class TextualRunner:
                 self.repl.config.enable_bash = True
 
             self._auto_connect_mcp = auto_connect_mcp and hasattr(self.repl, "mcp_manager")
+
+    def _init_debug_logger(self) -> None:
+        """Initialize the per-session debug logger when verbose mode is active."""
+        from swecli.core.debug import SessionDebugLogger, set_debug_logger
+
+        if not getattr(self.config, "verbose", False):
+            set_debug_logger(None)
+            return
+
+        session = self.session_manager.get_current_session()
+        if not session:
+            set_debug_logger(None)
+            return
+
+        logger = SessionDebugLogger(self.session_manager.session_dir, session.id)
+        set_debug_logger(logger)
+        logger.log(
+            "session_start",
+            "runner",
+            session_id=session.id,
+            working_dir=str(self.working_dir),
+            model=getattr(self.config, "model", "unknown"),
+            provider=getattr(self.config, "model_provider", "unknown"),
+        )
 
     def _setup_components(self, auto_connect_mcp: bool) -> None:
         """Initialize helper components (History, DOM, MCP, etc)."""
@@ -340,6 +371,10 @@ class TextualRunner:
         # Store approval manager reference on the app for action_cycle_autonomy
         self.app._approval_manager = self.repl.approval_manager
 
+        # Sync status bar if --dangerously-skip-permissions was used
+        if self._dangerously_skip_permissions and hasattr(self.app, "status_bar"):
+            self.app.status_bar.set_autonomy("Auto")
+
         # Store thinking handler reference for action_toggle_thinking to sync with query_processor
         self.app._thinking_handler = getattr(self.repl.tool_registry, "thinking_handler", None)
 
@@ -401,6 +436,11 @@ class TextualRunner:
     def _run_query(self, message: str) -> list[ChatMessage]:
         """Execute a user query via the REPL and return new session messages."""
         import traceback
+        from swecli.core.debug import get_debug_logger
+
+        get_debug_logger().log(
+            "message_submitted", "runner", text=message[:200], source="user"
+        )
 
         # Check for plan approval in PLAN mode
         if self._check_and_execute_plan_approval(message):
@@ -674,6 +714,12 @@ Work through each implementation step in order. Mark each todo item as 'in_progr
         try:
             self._loop.run_until_complete(self._run_app())
         finally:
+            # Log session end before cleanup
+            from swecli.core.debug import get_debug_logger, set_debug_logger
+
+            get_debug_logger().log("session_end", "runner")
+            set_debug_logger(None)
+
             _reset_terminal_mouse_mode()  # Ensure mouse mode is disabled
             self.repl._cleanup()
             with contextlib.suppress(RuntimeError):
@@ -712,6 +758,7 @@ def launch_textual_cli(
     message=None,
     continue_session: bool = False,
     resume_session_id: Optional[str] = None,
+    dangerously_skip_permissions: bool = False,
     **kwargs,
 ) -> None:
     """Public helper for launching the Textual UI from external callers.
@@ -720,6 +767,7 @@ def launch_textual_cli(
         message: Optional message to process automatically
         continue_session: If True, resume the most recent session for the working directory
         resume_session_id: Specific session ID to resume
+        dangerously_skip_permissions: If True, set autonomy to Auto from startup
         **kwargs: Additional arguments passed to TextualRunner
     """
 
@@ -732,6 +780,7 @@ def launch_textual_cli(
         continue_session=continue_session,
         resume_session_id=resume_session_id,
         initial_message=message,
+        dangerously_skip_permissions=dangerously_skip_permissions,
         **kwargs,
     )
 
