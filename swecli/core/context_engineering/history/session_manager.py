@@ -145,7 +145,9 @@ class SessionManager:
         if index is None:
             # Index missing/corrupted — rebuild it entirely
             self.rebuild_index()
-            return
+            index = self._read_index()
+            if index is None:
+                return  # Rebuild itself failed — nothing we can do
 
         new_entry = self._session_to_index_entry(session)
         entries = index["entries"]
@@ -311,10 +313,7 @@ class SessionManager:
 
         session_file = self.session_dir / f"{session.id}.json"
 
-        with open(session_file, "w") as f:
-            json.dump(session.model_dump(), f, indent=2, default=str)
-
-        # Auto-generate title if not set
+        # Auto-generate title before writing (single write)
         if not session.metadata.get("title"):
             msg_dicts = [
                 {"role": m.role.value, "content": m.content} for m in session.messages
@@ -322,9 +321,9 @@ class SessionManager:
             title = self.generate_title(msg_dicts)
             if title != "Untitled":
                 session.metadata["title"] = title
-                # Re-write with the title included
-                with open(session_file, "w") as f:
-                    json.dump(session.model_dump(), f, indent=2, default=str)
+
+        with open(session_file, "w") as f:
+            json.dump(session.model_dump(), f, indent=2, default=str)
 
         # Update the sessions index
         self._update_index_entry(session)

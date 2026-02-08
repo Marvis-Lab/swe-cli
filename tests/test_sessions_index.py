@@ -161,3 +161,55 @@ class TestSessionsIndex:
         # Verify index file is valid
         data = json.loads((tmp_path / SESSIONS_INDEX_FILE_NAME).read_text())
         assert len(data["entries"]) == 1
+
+    def test_repeated_saves_single_index_entry(self, tmp_path: Path) -> None:
+        """Saving the same session 5x produces exactly 1 index entry (upsert)."""
+        mgr = SessionManager(session_dir=tmp_path)
+        session = mgr.create_session()
+        session.add_message(ChatMessage(role=Role.USER, content="Hello"))
+
+        for _ in range(5):
+            mgr.save_session()
+
+        index_path = tmp_path / SESSIONS_INDEX_FILE_NAME
+        data = json.loads(index_path.read_text())
+        assert len(data["entries"]) == 1
+        assert data["entries"][0]["sessionId"] == session.id
+
+    def test_continue_flow_via_index(self, tmp_path: Path) -> None:
+        """A fresh SessionManager can load_latest_session() via index (--continue)."""
+        mgr1 = SessionManager(session_dir=tmp_path)
+        session = mgr1.create_session()
+        _add_user_message(mgr1, "First message for continue test")
+
+        # Simulate a new CLI invocation pointing at the same session dir
+        mgr2 = SessionManager(session_dir=tmp_path)
+        loaded = mgr2.load_latest_session()
+
+        assert loaded is not None
+        assert loaded.id == session.id
+        assert len(loaded.messages) == 1
+        assert loaded.messages[0].content == "First message for continue test"
+
+    def test_update_index_entry_with_missing_index(self, tmp_path: Path) -> None:
+        """_update_index_entry() with no index file still includes the session."""
+        mgr = SessionManager(session_dir=tmp_path)
+        session = mgr.create_session()
+        session.add_message(ChatMessage(role=Role.USER, content="Test"))
+
+        # Write the session file manually (without going through save_session)
+        session_file = tmp_path / f"{session.id}.json"
+        with open(session_file, "w") as f:
+            json.dump(session.model_dump(), f, indent=2, default=str)
+
+        # Ensure no index exists
+        index_path = tmp_path / SESSIONS_INDEX_FILE_NAME
+        assert not index_path.exists()
+
+        # Call _update_index_entry directly — should rebuild then upsert
+        mgr._update_index_entry(session)
+
+        assert index_path.exists()
+        data = json.loads(index_path.read_text())
+        session_ids = [e["sessionId"] for e in data["entries"]]
+        assert session.id in session_ids
