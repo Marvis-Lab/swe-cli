@@ -1,8 +1,6 @@
 """Interactive REPL for SWE-CLI."""
 
-from datetime import datetime
-from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 
 from prompt_toolkit import PromptSession
 from prompt_toolkit.history import FileHistory
@@ -20,9 +18,6 @@ from swecli.core.runtime import (
 from swecli.core.context_engineering.history import SessionManager, UndoManager
 from swecli.core.runtime.monitoring import ErrorHandler
 from swecli.core.runtime.services import RuntimeService
-from swecli.models.message import ChatMessage, Role
-from swecli.models.operation import Operation, OperationType
-from swecli.models.agent_deps import AgentDependencies
 from swecli.core.context_engineering.tools.implementations import (
     FileOperations,
     WriteTool,
@@ -119,8 +114,12 @@ class REPL:
             VLMTool,
             WebScreenshotTool,
         )
-        from swecli.core.context_engineering.tools.implementations.web_search_tool import WebSearchTool
-        from swecli.core.context_engineering.tools.implementations.notebook_edit_tool import NotebookEditTool
+        from swecli.core.context_engineering.tools.implementations.web_search_tool import (
+            WebSearchTool,
+        )
+        from swecli.core.context_engineering.tools.implementations.notebook_edit_tool import (
+            NotebookEditTool,
+        )
         from swecli.core.context_engineering.tools.implementations.ask_user_tool import AskUserTool
         from swecli.core.context_engineering.mcp.manager import MCPManager
 
@@ -217,6 +216,7 @@ class REPL:
         """Initialize prompt session with history and autocomplete."""
         # Setup prompt session with history
         from swecli.core.paths import get_paths
+
         paths = get_paths(self.config_manager.working_dir)
         history_file = paths.global_history_file
         history_file.parent.mkdir(parents=True, exist_ok=True)
@@ -225,16 +225,18 @@ class REPL:
         self.completer = SwecliCompleter(working_dir=self.config_manager.working_dir)
 
         # Elegant autocomplete styling
-        autocomplete_style = Style.from_dict({
-            'completion-menu': f'bg:{PT_BG_BLACK}',
-            'completion-menu.completion': '#FFFFFF',
-            'completion-menu.completion.current': f'bg:{PT_BG_SELECTED} #FFFFFF',
-            'completion-menu.meta': PT_META_GREY,
-            'completion-menu.completion.current.meta': '#A0A0A0',
-            'mode-normal': f'bold {PT_ORANGE}',
-            'mode-plan': f'bold {PT_GREEN}',
-            'toolbar-text': PT_GREY,
-        })
+        autocomplete_style = Style.from_dict(
+            {
+                "completion-menu": f"bg:{PT_BG_BLACK}",
+                "completion-menu.completion": "#FFFFFF",
+                "completion-menu.completion.current": f"bg:{PT_BG_SELECTED} #FFFFFF",
+                "completion-menu.meta": PT_META_GREY,
+                "completion-menu.completion.current.meta": "#A0A0A0",
+                "mode-normal": f"bold {PT_ORANGE}",
+                "mode-plan": f"bold {PT_GREEN}",
+                "toolbar-text": PT_GREY,
+            }
+        )
 
         self.prompt_session: PromptSession[str] = PromptSession(
             history=FileHistory(str(history_file)),
@@ -295,7 +297,11 @@ class REPL:
         self.agents_commands = AgentsCommands(
             self.console,
             self.config_manager,
-            subagent_manager=self.runtime_suite.subagent_manager if hasattr(self.runtime_suite, 'subagent_manager') else None,
+            subagent_manager=(
+                self.runtime_suite.subagent_manager
+                if hasattr(self.runtime_suite, "subagent_manager")
+                else None
+            ),
         )
 
         self.skills_commands = SkillsCommands(
@@ -423,14 +429,8 @@ class REPL:
         # Connect to enabled MCP servers
         self._connect_mcp_servers()
 
-        # Load context files
-        context_files = self.config_manager.load_context_files()
-        if context_files:
-            system_message = ChatMessage(
-                role=Role.SYSTEM,
-                content="\n\n".join(context_files),
-            )
-            self.session_manager.add_message(system_message, self.config.auto_save_interval)
+        # Project instructions (SWECLI.md) are now included in the system prompt
+        # via EnvironmentContext, so no separate injection is needed here.
 
         while self.running:
             try:
@@ -487,7 +487,7 @@ class REPL:
                 self.console.print(styled)
             elif "Shortcuts:" in line:
                 styled = f"[bold white]{line.split(':')[0]}:[/bold white]"
-                rest = line.split(':', 1)[1] if ':' in line else ""
+                rest = line.split(":", 1)[1] if ":" in line else ""
                 styled += rest.replace("Shift+Tab", f"[{WARNING}]Shift+Tab[/{WARNING}]")
                 styled = styled.replace("@file", f"[{WARNING}]@file[/{WARNING}]")
                 styled = styled.replace("↑↓", f"[{WARNING}]↑↓[/{WARNING}]")
@@ -496,14 +496,13 @@ class REPL:
                 mode = self.mode_manager.current_mode.value.upper()
                 mode_color = "green" if mode == "PLAN" else "yellow"
                 styled = f"[bold white]{line.split(':')[0]}:[/bold white]"
-                rest = line.split(':', 1)[1] if ':' in line else ""
+                rest = line.split(":", 1)[1] if ":" in line else ""
                 if mode in rest:
                     rest = rest.replace(mode, f"[{mode_color}]{mode}[/{mode_color}]")
                 styled += rest
                 self.console.print(styled)
             else:
                 self.console.print(line)
-
 
     def _process_query(self, query: str) -> None:
         """Process a user query with AI using ReAct pattern.
@@ -531,7 +530,7 @@ class REPL:
             ui_callback: UI callback for real-time tool display
         """
         # Delegate to query processor with callback
-        if hasattr(self.query_processor, 'process_query_with_callback'):
+        if hasattr(self.query_processor, "process_query_with_callback"):
             result = self.query_processor.process_query_with_callback(
                 query,
                 self.agent,
@@ -591,7 +590,6 @@ class REPL:
             self.console.print("  ⎿  Type /help for available commands")
             self.console.print("")  # Blank line for spacing
 
-
     def _connect_mcp_servers(self) -> None:
         """Connect to enabled MCP servers on startup asynchronously."""
         import threading
@@ -619,7 +617,9 @@ class REPL:
         try:
             self.mcp_manager.disconnect_all_sync()
         except Exception as e:
-            self.console.print(f"[{WARNING}]Warning: Error disconnecting MCP servers: {e}[/{WARNING}]")
+            self.console.print(
+                f"[{WARNING}]Warning: Error disconnecting MCP servers: {e}[/{WARNING}]"
+            )
 
         # Save current session
         if self.session_manager.current_session:

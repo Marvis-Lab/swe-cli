@@ -79,6 +79,7 @@ class SwecliAgent(BaseAgent):
         mode_manager: Any,
         working_dir: Any = None,
         allowed_tools: Any = None,
+        env_context: Any = None,
     ) -> None:
         """Initialize the SwecliAgent.
 
@@ -91,11 +92,13 @@ class SwecliAgent(BaseAgent):
                           If None, all tools are allowed. Used by subagents
                           to restrict available tools (e.g., Code-Explorer
                           only gets read_file, search, list_files, etc.)
+            env_context: Optional EnvironmentContext for rich system prompt
         """
         self.__http_client = None  # Lazy initialization - defer API key validation
         self.__thinking_http_client = None  # Lazy initialization for Thinking model
         self._response_cleaner = ResponseCleaner()
         self._working_dir = working_dir
+        self._env_context = env_context
         self._schema_builder = ToolSchemaBuilder(tool_registry, allowed_tools)
         super().__init__(config, tool_registry, mode_manager)
 
@@ -136,8 +139,12 @@ class SwecliAgent(BaseAgent):
             The formatted system prompt string
         """
         if thinking_visible:
-            return ThinkingPromptBuilder(self.tool_registry, self._working_dir).build()
-        return SystemPromptBuilder(self.tool_registry, self._working_dir).build()
+            return ThinkingPromptBuilder(
+                self.tool_registry, self._working_dir, env_context=self._env_context
+            ).build()
+        return SystemPromptBuilder(
+            self.tool_registry, self._working_dir, env_context=self._env_context
+        ).build()
 
     def build_tool_schemas(self, thinking_visible: bool = True) -> list[dict[str, Any]]:
         return self._schema_builder.build(thinking_visible=thinking_visible)

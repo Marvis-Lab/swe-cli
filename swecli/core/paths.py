@@ -47,7 +47,7 @@ INSTALLED_PLUGINS_FILE_NAME = "installed_plugins.json"
 BUNDLES_FILE_NAME = "bundles.json"
 SETTINGS_FILE_NAME = "settings.json"
 AGENTS_FILE_NAME = "agents.json"
-CONTEXT_FILE_NAME = "OPENCLI.md"
+CONTEXT_FILE_NAME = "SWECLI.md"
 HISTORY_FILE_NAME = "history.txt"
 
 # Environment variable names for overrides
@@ -176,9 +176,9 @@ class Paths:
 
     @cached_property
     def global_context_file(self) -> Path:
-        """Get global context file (OPENCLI.md) path.
+        """Get global context file (SWECLI.md) path.
 
-        Default: ~/.swecli/OPENCLI.md
+        Default: ~/.swecli/SWECLI.md
         """
         return self.global_dir / CONTEXT_FILE_NAME
 
@@ -320,9 +320,9 @@ class Paths:
 
     @cached_property
     def project_context_file(self) -> Path:
-        """Get project context file (OPENCLI.md) path.
+        """Get project context file (SWECLI.md) path.
 
-        Default: <working_dir>/OPENCLI.md (at project root, not in .swecli)
+        Default: <working_dir>/SWECLI.md (at project root, not in .swecli)
         """
         return self._working_dir / CONTEXT_FILE_NAME
 

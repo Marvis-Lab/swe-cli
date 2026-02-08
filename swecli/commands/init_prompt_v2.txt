@@ -1,4 +1,4 @@
-Analyze the codebase at `{path}` and create an OPENCLI.md file with comprehensive project documentation.
+Analyze the codebase at `{path}` and create an SWECLI.md file with comprehensive project documentation.
 
 **Your Task:**
 1. First, count files to understand the repo size (use run_command with find commands)
@@ -8,7 +8,7 @@ Analyze the codebase at `{path}` and create an OPENCLI.md file with comprehensiv
 5. Identify entry points (main files)
 6. Get folder structure (use run_command with tree or find)
 7. Extract TODOs/FIXMEs if found
-8. Generate OPENCLI.md with:
+8. Generate SWECLI.md with:
    - Project name and description
    - Language and type
    - Folder structure
@@ -16,13 +16,13 @@ Analyze the codebase at `{path}` and create an OPENCLI.md file with comprehensiv
    - Key files
    - Development workflow commands (install, run, test)
    - Known issues (if any)
-9. **CRITICAL**: Use write_file() to save the content to `{path}/OPENCLI.md`
+9. **CRITICAL**: Use write_file() to save the content to `{path}/SWECLI.md`
 
 **Important Guidelines:**
 - Start all commands with: cd {path} &&
 - Exclude: node_modules, .git, __pycache__, venv, build, dist
 - Limit find/grep results with | head -N
 - Be strategic: read only essential files based on repo size
-- Use run_command() for bash, read_file() to read files, write_file() to save OPENCLI.md
+- Use run_command() for bash, read_file() to read files, write_file() to save SWECLI.md
 
 **Begin the analysis now.**

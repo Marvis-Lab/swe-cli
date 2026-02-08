@@ -1,4 +1,4 @@
-"""Templates for OPENCLI.md generation.
+"""Templates for SWECLI.md generation.
 
 These templates provide structure for the AI agent's output,
 but the agent has full flexibility to adapt them based on
@@ -10,7 +10,7 @@ from typing import Optional
 
 
 class OCLITemplate:
-    """Template generator for OPENCLI.md files."""
+    """Template generator for SWECLI.md files."""
 
     @staticmethod
     def generate_header(project_name: str) -> str:
@@ -79,9 +79,7 @@ class OCLITemplate:
 """
 
     @staticmethod
-    def generate_dependencies(
-        dependencies: Optional[dict[str, list[str]]] = None
-    ) -> str:
+    def generate_dependencies(dependencies: Optional[dict[str, list[str]]] = None) -> str:
         """Generate dependencies section.
 
         Args:
@@ -155,9 +153,7 @@ class OCLITemplate:
         return "\n".join(lines)
 
     @staticmethod
-    def generate_workflow(
-        commands: Optional[dict[str, str]] = None
-    ) -> str:
+    def generate_workflow(commands: Optional[dict[str, str]] = None) -> str:
         """Generate development workflow section.
 
         Args:
@@ -228,7 +224,7 @@ class OCLITemplate:
         workflow_commands: Optional[dict[str, str]] = None,
         issues: Optional[list[str]] = None,
     ) -> str:
-        """Generate complete OPENCLI.md template.
+        """Generate complete SWECLI.md template.
 
         Args:
             project_name: Name of the project
@@ -244,7 +240,7 @@ class OCLITemplate:
             issues: Known issues/TODOs
 
         Returns:
-            Complete OPENCLI.md content
+            Complete SWECLI.md content
         """
         sections = [
             cls.generate_header(project_name),

@@ -84,6 +84,7 @@ class SubAgentManager:
         tool_registry: Any,
         mode_manager: Any,
         working_dir: Any = None,
+        env_context: Any = None,
     ) -> None:
         """Initialize the SubAgentManager.
 
@@ -92,11 +93,13 @@ class SubAgentManager:
             tool_registry: The tool registry for tool execution
             mode_manager: Mode manager for operation mode
             working_dir: Working directory for file operations
+            env_context: Optional EnvironmentContext for rich system prompt
         """
         self._config = config
         self._tool_registry = tool_registry
         self._mode_manager = mode_manager
         self._working_dir = working_dir
+        self._env_context = env_context
         self._agents: dict[str, CompiledSubAgent] = {}
         self._all_tool_names: list[str] = self._get_all_tool_names()
 
@@ -143,6 +146,7 @@ class SubAgentManager:
             mode_manager=self._mode_manager,
             working_dir=self._working_dir,
             allowed_tools=tool_names,  # Pass tool filtering to agent
+            env_context=self._env_context,
         )
 
         # Override system prompt for subagent
@@ -868,7 +872,7 @@ class SubAgentManager:
         """
         import asyncio
         from swecli.core.docker.deployment import DockerDeployment
-        from swecli.core.docker.tool_handler import DockerToolHandler, DockerToolRegistry
+        from swecli.core.docker.tool_handler import DockerToolHandler
 
         docker_config = spec.get("docker_config")
         if docker_config is None:
@@ -1295,6 +1299,7 @@ class SubAgentManager:
                     tool_registry=tool_registry,
                     mode_manager=self._mode_manager,
                     working_dir=working_dir if working_dir is not None else self._working_dir,
+                    env_context=self._env_context,
                 )
             else:
                 agent = SwecliAgent(
@@ -1303,6 +1308,7 @@ class SubAgentManager:
                     mode_manager=self._mode_manager,
                     working_dir=working_dir if working_dir is not None else self._working_dir,
                     allowed_tools=allowed_tools,  # Pass tool filtering
+                    env_context=self._env_context,
                 )
 
             # Apply system prompt override

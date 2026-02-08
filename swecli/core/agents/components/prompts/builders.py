@@ -9,6 +9,7 @@ from swecli.core.agents.prompts import load_prompt
 if TYPE_CHECKING:
     from swecli.core.skills import SkillLoader
     from swecli.core.agents.subagents.manager import SubAgentManager
+    from .environment import EnvironmentContext
 
 
 class SystemPromptBuilder:
@@ -16,7 +17,8 @@ class SystemPromptBuilder:
 
     Uses a component-based architecture for assembling the system prompt:
     - Core identity (from main_system_prompt.txt)
-    - Environment context (working directory)
+    - Environment context (working directory, git status, project structure)
+    - Project instructions (SWECLI.md content)
     - Skills index (available skills for invoke_skill tool)
     - MCP section (connected servers)
 
@@ -30,17 +32,20 @@ class SystemPromptBuilder:
         working_dir: Any | None = None,
         skill_loader: "SkillLoader | None" = None,
         subagent_manager: "SubAgentManager | None" = None,
+        env_context: "EnvironmentContext | None" = None,
     ) -> None:
         self._tool_registry = tool_registry
         self._working_dir = working_dir
         self._skill_loader = skill_loader
         self._subagent_manager = subagent_manager
+        self._env_context = env_context
 
     def build(self) -> str:
         """Build complete system prompt from components."""
         sections = [
             self._build_core_identity(),
             self._build_environment(),
+            self._build_project_instructions(),
             self._build_skills_index(),
             self._build_mcp_section() or self._build_mcp_config_section(),
         ]
@@ -52,6 +57,21 @@ class SystemPromptBuilder:
 
     def _build_environment(self) -> str:
         """Build environment context section."""
+        if self._env_context:
+            from .environment import (
+                build_env_block,
+                build_git_status_block,
+                build_project_structure_block,
+            )
+
+            parts = [
+                build_env_block(self._env_context),
+                build_git_status_block(self._env_context),
+                build_project_structure_block(self._env_context),
+            ]
+            return "\n\n".join(filter(None, parts))
+
+        # Fallback: minimal working directory text
         if not self._working_dir:
             return ""
         return f"""# Working Directory Context
@@ -59,6 +79,14 @@ class SystemPromptBuilder:
 You are currently working in the directory: `{self._working_dir}`
 
 When processing file paths without explicit directories (like `app.py` or `README.md`), assume they are located in the current working directory unless the user provides a specific path. Use relative paths from the working directory for file operations."""
+
+    def _build_project_instructions(self) -> str:
+        """Build project instructions section from SWECLI.md content."""
+        if self._env_context:
+            from .environment import build_project_instructions_block
+
+            return build_project_instructions_block(self._env_context)
+        return ""
 
     def _build_skills_index(self) -> str:
         """Build available skills section from SkillLoader."""
@@ -132,17 +160,20 @@ class ThinkingPromptBuilder:
         working_dir: Any | None = None,
         skill_loader: "SkillLoader | None" = None,
         subagent_manager: "SubAgentManager | None" = None,
+        env_context: "EnvironmentContext | None" = None,
     ) -> None:
         self._tool_registry = tool_registry
         self._working_dir = working_dir
         self._skill_loader = skill_loader
         self._subagent_manager = subagent_manager
+        self._env_context = env_context
 
     def build(self) -> str:
         """Build thinking-specialized system prompt from components."""
         sections = [
             self._build_core_identity(),
             self._build_environment(),
+            self._build_project_instructions(),
             self._build_skills_index(),
             self._build_mcp_section(),
         ]
@@ -154,9 +185,31 @@ class ThinkingPromptBuilder:
 
     def _build_environment(self) -> str:
         """Build environment context section."""
+        if self._env_context:
+            from .environment import (
+                build_env_block,
+                build_git_status_block,
+                build_project_structure_block,
+            )
+
+            parts = [
+                build_env_block(self._env_context),
+                build_git_status_block(self._env_context),
+                build_project_structure_block(self._env_context),
+            ]
+            return "\n\n".join(filter(None, parts))
+
         if not self._working_dir:
             return ""
         return f"# Working Directory\nCurrent directory: `{self._working_dir}`"
+
+    def _build_project_instructions(self) -> str:
+        """Build project instructions section from SWECLI.md content."""
+        if self._env_context:
+            from .environment import build_project_instructions_block
+
+            return build_project_instructions_block(self._env_context)
+        return ""
 
     def _build_skills_index(self) -> str:
         """Build available skills section from SkillLoader."""
@@ -192,15 +245,58 @@ class ThinkingPromptBuilder:
 class PlanningPromptBuilder:
     """Constructs the PLAN mode strategic planning prompt."""
 
-    def __init__(self, working_dir: Any | None = None) -> None:
+    def __init__(
+        self,
+        working_dir: Any | None = None,
+        env_context: "EnvironmentContext | None" = None,
+    ) -> None:
         self._working_dir = working_dir
+        self._env_context = env_context
 
     def build(self) -> str:
         """Return the planning prompt with working directory context."""
         prompt = load_prompt("planner_system_prompt")
 
-        # Add working directory context
-        if self._working_dir:
-            prompt += f"\n\n# Working Directory Context\n\nYou are currently exploring the codebase in: `{self._working_dir}`\n\nUse this as the base directory for all file operations and searches.\n"
+        # Add environment context
+        env_section = self._build_environment()
+        if env_section:
+            prompt += "\n\n" + env_section
+
+        # Add project instructions
+        instructions = self._build_project_instructions()
+        if instructions:
+            prompt += "\n\n" + instructions
 
         return prompt
+
+    def _build_environment(self) -> str:
+        """Build environment context section."""
+        if self._env_context:
+            from .environment import (
+                build_env_block,
+                build_git_status_block,
+                build_project_structure_block,
+            )
+
+            parts = [
+                build_env_block(self._env_context),
+                build_git_status_block(self._env_context),
+                build_project_structure_block(self._env_context),
+            ]
+            return "\n\n".join(filter(None, parts))
+
+        if not self._working_dir:
+            return ""
+        return (
+            f"# Working Directory Context\n\n"
+            f"You are currently exploring the codebase in: `{self._working_dir}`\n\n"
+            f"Use this as the base directory for all file operations and searches.\n"
+        )
+
+    def _build_project_instructions(self) -> str:
+        """Build project instructions section from SWECLI.md content."""
+        if self._env_context:
+            from .environment import build_project_instructions_block
+
+            return build_project_instructions_block(self._env_context)
+        return ""

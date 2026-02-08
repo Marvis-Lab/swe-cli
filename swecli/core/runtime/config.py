@@ -143,7 +143,7 @@ class ConfigManager:
             local_cmd_dir.mkdir(parents=True, exist_ok=True)
 
     def load_context_files(self) -> list[str]:
-        """Load OPENCLI.md context files hierarchically.
+        """Load SWECLI.md context files hierarchically.
 
         Returns:
             List of context file contents, from global to local
@@ -157,14 +157,14 @@ class ConfigManager:
             contexts.append(global_context.read_text())
 
         # Project root context
-        project_context = self.working_dir / "OPENCLI.md"
+        project_context = self.working_dir / "SWECLI.md"
         if project_context.exists():
             contexts.append(project_context.read_text())
 
         # Subdirectory contexts (walk up from current dir to project root)
         current = self.working_dir
         while current != current.parent:
-            subdir_context = current / "OPENCLI.md"
+            subdir_context = current / "SWECLI.md"
             if subdir_context.exists() and subdir_context != project_context:
                 contexts.insert(1, subdir_context.read_text())  # Insert after global
             current = current.parent

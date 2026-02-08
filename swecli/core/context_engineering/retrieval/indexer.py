@@ -1,4 +1,4 @@
-"""Codebase indexer for generating concise OPENCLI.md summaries."""
+"""Codebase indexer for generating concise SWECLI.md summaries."""
 
 from __future__ import annotations
 
@@ -99,7 +99,13 @@ class CodebaseIndexer:
         lines = ["## Key Files\n"]
         key_patterns = {
             "Main": ["main.py", "index.js", "app.py", "server.py", "__init__.py"],
-            "Config": ["setup.py", "package.json", "pyproject.toml", "requirements.txt", "Dockerfile"],
+            "Config": [
+                "setup.py",
+                "package.json",
+                "pyproject.toml",
+                "requirements.txt",
+                "Dockerfile",
+            ],
             "Tests": ["test_*.py", "*_test.py", "tests/", "spec/"],
             "Docs": ["README.md", "CHANGELOG.md", "docs/"],
         }

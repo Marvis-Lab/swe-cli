@@ -7,8 +7,11 @@ This subpackage contains prompt builders for different agent modes:
 """
 
 from .builders import PlanningPromptBuilder, SystemPromptBuilder, ThinkingPromptBuilder
+from .environment import EnvironmentCollector, EnvironmentContext
 
 __all__ = [
+    "EnvironmentCollector",
+    "EnvironmentContext",
     "PlanningPromptBuilder",
     "SystemPromptBuilder",
     "ThinkingPromptBuilder",

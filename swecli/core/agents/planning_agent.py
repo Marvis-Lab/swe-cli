@@ -37,6 +37,7 @@ class PlanningAgent(BaseAgent):
         tool_registry: Any,
         mode_manager: Any,
         working_dir: Any = None,
+        env_context: Any = None,
     ) -> None:
         # Lazy initialization - defer API key validation until first API call
         self.__http_client = None
@@ -45,6 +46,7 @@ class PlanningAgent(BaseAgent):
         self._headers = None
         self._response_cleaner = ResponseCleaner()
         self._working_dir = working_dir
+        self._env_context = env_context
         super().__init__(config, tool_registry, mode_manager)
 
     def _ensure_api_config(self) -> None:
@@ -83,8 +85,10 @@ class PlanningAgent(BaseAgent):
             The formatted system prompt string
         """
         if thinking_visible:
-            return ThinkingPromptBuilder(self.tool_registry, self._working_dir).build()
-        return PlanningPromptBuilder(self._working_dir).build()
+            return ThinkingPromptBuilder(
+                self.tool_registry, self._working_dir, env_context=self._env_context
+            ).build()
+        return PlanningPromptBuilder(self._working_dir, env_context=self._env_context).build()
 
     def call_thinking_llm(
         self,
@@ -298,11 +302,14 @@ class PlanningAgent(BaseAgent):
 
                 # Notify UI of tool result if callback provided
                 if ui_callback:
-                    ui_callback("tool_result", {
-                        "name": tool_name,
-                        "result": tool_result,
-                        "success": result.get("success", False),
-                    })
+                    ui_callback(
+                        "tool_result",
+                        {
+                            "name": tool_name,
+                            "result": tool_result,
+                            "success": result.get("success", False),
+                        },
+                    )
 
                 messages.append(
                     {

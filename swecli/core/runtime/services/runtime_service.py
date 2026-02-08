@@ -18,6 +18,7 @@ class RuntimeSuite:
     agents: AgentSuite
     agent_factory: AgentFactory
     tool_factory: ToolFactory
+    env_context: Any = None
 
     def refresh_agents(self) -> None:
         """Refresh tool schemas/prompts for both agents after tool updates."""
@@ -39,6 +40,7 @@ class RuntimeSuite:
             self.tool_registry,
             mode_manager,
             working_dir,
+            env_context=self.env_context,
         )
         self.agents = self.agent_factory.create_agents()
 
@@ -71,6 +73,15 @@ class RuntimeService:
         mcp_manager: Union[Any, None] = None,
     ) -> RuntimeSuite:
         """Create a runtime suite containing the tool registry and agents."""
+        # Collect environment once at startup
+        from swecli.core.agents.components.prompts.environment import EnvironmentCollector
+
+        env_context = EnvironmentCollector(
+            self._config_manager.working_dir,
+            self._config_manager.get_config(),
+            self._config_manager,
+        ).collect()
+
         tool_factory = ToolFactory(
             ToolDependencies(
                 file_ops=file_ops,
@@ -94,6 +105,7 @@ class RuntimeService:
             self._mode_manager,
             self._config_manager.working_dir,
             config_manager=self._config_manager,
+            env_context=env_context,
         )
         agents = agent_factory.create_agents()
 
@@ -102,6 +114,7 @@ class RuntimeService:
             agents=agents,
             agent_factory=agent_factory,
             tool_factory=tool_factory,
+            env_context=env_context,
         )
 
     def rebuild_tool_registry(
@@ -119,6 +132,7 @@ class RuntimeService:
             self._mode_manager,
             self._config_manager.working_dir,
             config_manager=self._config_manager,
+            env_context=suite.env_context,
         )
         suite.agents = suite.agent_factory.create_agents()
         return registry

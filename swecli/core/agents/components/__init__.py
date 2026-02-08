@@ -9,12 +9,20 @@ from .api import (
     build_max_tokens_param,
     build_temperature_param,
 )
-from .prompts import PlanningPromptBuilder, SystemPromptBuilder, ThinkingPromptBuilder
+from .prompts import (
+    EnvironmentCollector,
+    EnvironmentContext,
+    PlanningPromptBuilder,
+    SystemPromptBuilder,
+    ThinkingPromptBuilder,
+)
 from .response import ParsedPlan, ResponseCleaner, extract_plan_from_response, parse_plan
 from .schemas import PLANNING_TOOLS, PlanningToolSchemaBuilder, ToolSchemaBuilder
 
 __all__ = [
     "AgentHttpClient",
+    "EnvironmentCollector",
+    "EnvironmentContext",
     "HttpResult",
     "PLANNING_TOOLS",
     "ParsedPlan",

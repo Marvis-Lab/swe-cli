@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any, TYPE_CHECKING
 
 from swecli.core.agents import SwecliAgent
@@ -42,6 +41,7 @@ class AgentFactory:
         working_dir: Any = None,
         enable_subagents: bool = True,
         config_manager: "ConfigManager | None" = None,
+        env_context: Any = None,
     ) -> None:
         self._config = config
         self._tool_registry = tool_registry
@@ -49,6 +49,7 @@ class AgentFactory:
         self._working_dir = working_dir
         self._enable_subagents = enable_subagents
         self._config_manager = config_manager
+        self._env_context = env_context
         self._subagent_manager: SubAgentManager | None = None
         self._skill_loader: "SkillLoader | None" = None
 
@@ -70,6 +71,7 @@ class AgentFactory:
                 tool_registry=self._tool_registry,
                 mode_manager=self._mode_manager,
                 working_dir=self._working_dir,
+                env_context=self._env_context,
             )
             # Register default subagents
             self._subagent_manager.register_defaults()
@@ -81,8 +83,20 @@ class AgentFactory:
             self._tool_registry.set_subagent_manager(self._subagent_manager)
 
         # Create main agents
-        normal = SwecliAgent(self._config, self._tool_registry, self._mode_manager, self._working_dir)
-        planning = PlanningAgent(self._config, self._tool_registry, self._mode_manager, self._working_dir)
+        normal = SwecliAgent(
+            self._config,
+            self._tool_registry,
+            self._mode_manager,
+            self._working_dir,
+            env_context=self._env_context,
+        )
+        planning = PlanningAgent(
+            self._config,
+            self._tool_registry,
+            self._mode_manager,
+            self._working_dir,
+            env_context=self._env_context,
+        )
 
         return AgentSuite(
             normal=normal,
@@ -105,7 +119,9 @@ class AgentFactory:
                 # Pre-discover skills for the index
                 skills = self._skill_loader.discover_skills()
                 if skills:
-                    logger.info(f"Discovered {len(skills)} skills from {len(skill_dirs)} directories")
+                    logger.info(
+                        f"Discovered {len(skills)} skills from {len(skill_dirs)} directories"
+                    )
                 # Register with tool registry
                 self._tool_registry.set_skill_loader(self._skill_loader)
         except ImportError:
