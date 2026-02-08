@@ -95,8 +95,10 @@ class TextualRunner:
         auto_connect_mcp: bool = False,
         continue_session: bool = False,
         resume_session_id: Optional[str] = None,
+        initial_message: Optional[str] = None,
     ) -> None:
         self.working_dir = Path(working_dir or Path.cwd()).resolve()
+        self._initial_message = initial_message
 
         # 1. Setup Core Runtime (Config, REPL, Session)
         self._setup_runtime(
@@ -309,6 +311,14 @@ class TextualRunner:
             self._history_hydrator.start_async_hydration(self.app)
             if downstream_on_ready:
                 downstream_on_ready()
+            # Post initial message as a Submitted event so it flows through
+            # the normal UI submit path (welcome panel dismissal, MessageController, etc.)
+            if self._initial_message:
+                from swecli.ui_textual.widgets.chat_text_area import ChatTextArea
+
+                self.app.input_field.post_message(
+                    ChatTextArea.Submitted(self.app.input_field, self._initial_message)
+                )
 
         create_kwargs["on_ready"] = _on_ready_with_hydration
 
@@ -721,12 +731,9 @@ def launch_textual_cli(
     runner = TextualRunner(
         continue_session=continue_session,
         resume_session_id=resume_session_id,
+        initial_message=message,
         **kwargs,
     )
-
-    # If a message is provided, enqueue it for processing
-    if message:
-        runner.enqueue_message(message)
 
     runner.run()
 
