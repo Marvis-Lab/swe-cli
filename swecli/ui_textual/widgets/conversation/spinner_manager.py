@@ -318,6 +318,11 @@ class DefaultSpinnerManager:
                 if i < len(self.log.lines):
                     del self.log.lines[i]
 
+            # Sync block registry so stale blocks don't re-render on resize
+            actual_deleted = len(to_delete)
+            if actual_deleted > 0 and hasattr(self.log, "_block_registry"):
+                self.log._block_registry.remove_lines_range(start, actual_deleted)
+
             # Update protected line indices
             if protected_lines:
                 new_protected = set()

@@ -8,6 +8,7 @@ from datetime import datetime
 from typing import Any
 
 from swecli.core.context_engineering.tools.context import ToolExecutionContext
+from swecli.core.context_engineering.tools.implementations.bash_tool import truncate_output
 from swecli.models.operation import Operation, OperationType
 
 
@@ -81,7 +82,7 @@ class ProcessToolHandler:
             context.undo_manager.record_operation(operation)
 
         output_parts = [part for part in (result.stdout, result.stderr) if part]
-        combined_output = "\n".join(output_parts)
+        combined_output = truncate_output("\n".join(output_parts))
 
         if result.success:
             return {

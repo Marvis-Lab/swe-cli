@@ -237,17 +237,11 @@ class TextualUICallback:
         Args:
             context: "thinking" for prompt phase, "tool" for tool execution
         """
-        from swecli.ui_textual.debug_logger import debug_log
-        debug_log("UICallback", f"on_interrupt called with context={context}")
         try:
-            debug_log("UICallback", "Cleaning up spinners...")
             self._cleanup_spinners()
-            debug_log("UICallback", "Showing interrupt message...")
             self._show_interrupt_message(context)
-            debug_log("UICallback", "on_interrupt complete")
         except Exception as e:
             # Fallback: at minimum ensure processing state is cleared
-            debug_log("UICallback", f"on_interrupt ERROR: {e}")
             logger.error(f"Interrupt handler error: {e}")
             if self.chat_app:
                 self.chat_app._is_processing = False

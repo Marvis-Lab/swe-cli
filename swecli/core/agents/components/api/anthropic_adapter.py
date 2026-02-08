@@ -1,7 +1,18 @@
 """Anthropic API adapter for handling Anthropic-specific request/response formats."""
 
+import logging
+import time
 from typing import Any, Dict, List, Optional
+
 import requests
+
+from swecli.core.agents.components.api.http_client import (
+    MAX_RETRIES,
+    RETRYABLE_STATUS_CODES,
+    RETRY_DELAYS,
+)
+
+logger = logging.getLogger(__name__)
 
 
 class AnthropicAdapter:
@@ -172,9 +183,10 @@ class AnthropicAdapter:
         }
 
     def post_json(self, payload: Dict[str, Any], *, task_monitor: Any = None) -> Any:
-        """Make a request to Anthropic API.
+        """Make a request to Anthropic API with retry logic.
 
-        Converts the payload and response to match OpenAI format for compatibility.
+        Retries on HTTP 429/503 with exponential backoff. Converts the payload
+        and response to match OpenAI format for compatibility.
         """
         from dataclasses import dataclass
         from typing import Union
@@ -193,39 +205,61 @@ class AnthropicAdapter:
             status_code: int
             _json_data: Dict[str, Any]
             text: str
+            headers: Dict[str, str]
 
-            def json(self):
+            def json(self) -> Dict[str, Any]:
                 return self._json_data
 
-        try:
-            # Convert OpenAI-style payload to Anthropic format
-            anthropic_payload = self.convert_request(payload)
+        anthropic_payload = self.convert_request(payload)
+        last_result: Any = None
 
-            # Make request with extended timeout for long LLM responses
-            # (connect_timeout=10s, read_timeout=300s)
-            response = requests.post(
-                self.api_url,
-                headers=self.headers,
-                json=anthropic_payload,
-                timeout=(10, 300),
-            )
+        for attempt in range(MAX_RETRIES + 1):
+            try:
+                response = requests.post(
+                    self.api_url,
+                    headers=self.headers,
+                    json=anthropic_payload,
+                    timeout=(10, 300),
+                )
 
-            if response.status_code != 200:
-                # Return actual response for error handling
-                return HttpResult(success=True, response=response)
+                if response.status_code in RETRYABLE_STATUS_CODES:
+                    last_result = HttpResult(success=True, response=response)
+                    if attempt < MAX_RETRIES:
+                        retry_after = response.headers.get("Retry-After")
+                        if retry_after is not None:
+                            try:
+                                delay = max(0.0, float(retry_after))
+                            except ValueError:
+                                delay = RETRY_DELAYS[min(attempt, len(RETRY_DELAYS) - 1)]
+                        else:
+                            delay = RETRY_DELAYS[min(attempt, len(RETRY_DELAYS) - 1)]
+                        logger.warning(
+                            "Anthropic HTTP %d — retrying in %.1fs (attempt %d/%d)",
+                            response.status_code,
+                            delay,
+                            attempt + 1,
+                            MAX_RETRIES,
+                        )
+                        time.sleep(delay)
+                        continue
+                    return last_result
 
-            # Convert Anthropic response to OpenAI format
-            anthropic_data = response.json()
-            openai_data = self.convert_response(anthropic_data)
+                if response.status_code != 200:
+                    return HttpResult(success=True, response=response)
 
-            # Create mock response with converted data
-            mock_response = MockResponse(
-                status_code=200,
-                _json_data=openai_data,
-                text=json.dumps(openai_data)
-            )
+                anthropic_data = response.json()
+                openai_data = self.convert_response(anthropic_data)
 
-            return HttpResult(success=True, response=mock_response)
+                mock_response = MockResponse(
+                    status_code=200,
+                    _json_data=openai_data,
+                    text=json.dumps(openai_data),
+                    headers=dict(response.headers),
+                )
 
-        except Exception as exc:
-            return HttpResult(success=False, error=str(exc))
+                return HttpResult(success=True, response=mock_response)
+
+            except Exception as exc:
+                return HttpResult(success=False, error=str(exc))
+
+        return last_result or HttpResult(success=False, error="Unexpected retry exhaustion")

@@ -16,6 +16,24 @@ The subagent has completed successfully. DO NOT make any additional tool calls. 
 --- failed_tool_nudge ---
 The previous operation failed. Please fix the issue and try again, or call task_complete with status='failed' if you cannot proceed.
 
+--- nudge_permission_error ---
+The operation failed due to a file permission error. Check if the file is read-only or owned by another user. Try a different path or use run_command with appropriate permissions.
+
+--- nudge_file_not_found ---
+The file was not found. Use list_files or search to locate the correct path before retrying.
+
+--- nudge_syntax_error ---
+The edit resulted in a syntax error. Read the file again to see its current state, then retry with corrected content.
+
+--- nudge_rate_limit ---
+The API rate limit was hit. Wait a moment before retrying. Consider reducing concurrent operations.
+
+--- nudge_timeout ---
+The command timed out. Try a more targeted approach (e.g., search specific directories instead of the entire repo).
+
+--- nudge_edit_mismatch ---
+The edit_file old_content did not match. The file may have changed. Read the file again to get the exact current content, then retry.
+
 --- consecutive_reads_nudge ---
 Based on what you've seen, please summarize your findings and explain what needs to be done next.
 

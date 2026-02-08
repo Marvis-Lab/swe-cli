@@ -8,12 +8,16 @@ from swecli.core.context_engineering.tools.implementations.file_ops import FileO
 from swecli.core.context_engineering.tools.implementations.open_browser_tool import OpenBrowserTool
 from swecli.core.context_engineering.tools.implementations.vlm_tool import VLMTool
 from swecli.core.context_engineering.tools.implementations.web_fetch_tool import WebFetchTool
-from swecli.core.context_engineering.tools.implementations.web_screenshot_tool import WebScreenshotTool
+from swecli.core.context_engineering.tools.implementations.web_screenshot_tool import (
+    WebScreenshotTool,
+)
 from swecli.core.context_engineering.tools.implementations.write_tool import WriteTool
+from swecli.core.context_engineering.tools.implementations.batch_tool import BatchTool
 
 __all__ = [
     "BaseTool",
     "BashTool",
+    "BatchTool",
     "Diff",
     "DiffPreview",
     "EditTool",

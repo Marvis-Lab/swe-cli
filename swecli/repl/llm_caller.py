@@ -239,6 +239,15 @@ class LLMCaller:
             # DEBUG: Log any exception
             logger.error(f"[LLM_CALLER] Exception during LLM call: {type(e).__name__}: {e}")
             logger.error(f"[LLM_CALLER] Full traceback:\n{traceback.format_exc()}")
+
+            from swecli.core.debug import get_debug_logger
+            get_debug_logger().log(
+                "llm_call_error",
+                "llm",
+                error=str(e),
+                traceback=traceback.format_exc(),
+            )
+
             progress.stop()
             # Return error response
             return {

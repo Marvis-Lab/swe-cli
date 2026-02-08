@@ -158,8 +158,13 @@ class ConversationLog(RichLog):
         if new_width <= 0:
             return
 
+        # If we haven't captured an initial width yet, don't swallow the first resize.
+        # RichLog does not automatically reflow already-rendered strips, so we want
+        # the first user-driven resize to trigger a rebuild.
         if self._last_render_width == 0:
             self._last_render_width = new_width
+            if len(self.lines) > 0 and len(self._block_registry) > 0:
+                self._schedule_rerender()
             return
 
         if new_width != self._last_render_width:
@@ -266,6 +271,9 @@ class ConversationLog(RichLog):
                     )
                 )
 
+            # Keep RichLog's virtual size in sync after direct line manipulation.
+            self._recalculate_virtual_size()
+
             # 5. Adjust all component indices if delta != 0
             if cumulative_delta != 0:
                 self._spinner_manager.adjust_indices(cumulative_delta, first_affected)
@@ -301,6 +309,26 @@ class ConversationLog(RichLog):
                 self.app.spinner_service.resume_after_resize()
 
         self.refresh()
+
+    def _recalculate_virtual_size(self) -> None:
+        """Recompute virtual_size after direct edits to self.lines."""
+        widths: List[int] = []
+        for strip in self.lines:
+            cell_length = getattr(strip, "cell_length", None)
+            if callable(cell_length):
+                try:
+                    value = cell_length()
+                    widths.append(value if isinstance(value, int) else 0)
+                except Exception:
+                    widths.append(0)
+            elif isinstance(cell_length, int):
+                widths.append(cell_length)
+            else:
+                widths.append(0)
+
+        self._widest_line_width = max(widths, default=0)
+        self._start_line = max(0, min(self._start_line, len(self.lines)))
+        self.virtual_size = Size(self._widest_line_width, len(self.lines))
 
     def _render_source_to_strips(self, source: RenderableType, console: Console) -> list[Strip]:
         """Render a source renderable to Strip objects.
@@ -744,15 +772,8 @@ class ConversationLog(RichLog):
                 new_protected.add(p - deleted_before)
         self._protected_lines = new_protected
 
-        # Recalculate virtual size
-        widths: List[int] = []
-        for strip in self.lines:
-            cell_length = getattr(strip, "cell_length", None)
-            widths.append(cell_length() if callable(cell_length) else cell_length or 0)
-
-        self._widest_line_width = max(widths, default=0)
-        self._start_line = max(0, min(self._start_line, len(self.lines)))
-        self.virtual_size = Size(self._widest_line_width, len(self.lines))
+        # Recalculate virtual size after direct deletions
+        self._recalculate_virtual_size()
 
         if self.auto_scroll:
             self.scroll_end(animate=False)

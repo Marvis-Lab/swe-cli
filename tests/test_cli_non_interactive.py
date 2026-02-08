@@ -40,7 +40,7 @@ def _setup_config(tmp_path, monkeypatch):
     config.permissions.bash.enabled = True
     config_manager._config = config  # Reassign cached config
 
-    session_manager = SessionManager(tmp_path / "sessions")
+    session_manager = SessionManager(session_dir=tmp_path / "sessions")
     session_manager.create_session(str(tmp_path))
 
     # Avoid touching the real console output by patching Console.print

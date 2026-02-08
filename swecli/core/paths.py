@@ -32,6 +32,8 @@ APP_DIR_NAME = ".swecli"
 MCP_CONFIG_NAME = "mcp.json"
 MCP_PROJECT_CONFIG_NAME = ".mcp.json"  # Project-level uses dot prefix at root
 SESSIONS_DIR_NAME = "sessions"
+PROJECTS_DIR_NAME = "projects"
+FALLBACK_PROJECT_DIR_NAME = "-unknown-"
 LOGS_DIR_NAME = "logs"
 CACHE_DIR_NAME = "cache"
 SKILLS_DIR_NAME = "skills"
@@ -55,6 +57,28 @@ ENV_SWECLI_DIR = "SWECLI_DIR"
 ENV_SWECLI_SESSION_DIR = "SWECLI_SESSION_DIR"
 ENV_SWECLI_LOG_DIR = "SWECLI_LOG_DIR"
 ENV_SWECLI_CACHE_DIR = "SWECLI_CACHE_DIR"
+
+
+# ============================================================================
+# Helpers
+# ============================================================================
+
+
+def encode_project_path(path: Path) -> str:
+    """Encode an absolute path into a directory-safe string.
+
+    Replaces ``/`` with ``-`` so the result can be used as a single directory name.
+    Mirrors the convention used by Claude Code (e.g. ``/Users/foo/bar`` becomes
+    ``-Users-foo-bar``).
+
+    Args:
+        path: Absolute filesystem path to encode.
+
+    Returns:
+        Encoded string suitable for use as a directory name.
+    """
+    resolved = str(path.resolve())
+    return resolved.replace("/", "-")
 
 
 # ============================================================================
@@ -125,6 +149,26 @@ class Paths:
         if env_override:
             return Path(env_override)
         return self.global_dir / SESSIONS_DIR_NAME
+
+    @cached_property
+    def global_projects_dir(self) -> Path:
+        """Get global projects directory for project-scoped sessions.
+
+        Default: ~/.swecli/projects/
+        """
+        return self.global_dir / PROJECTS_DIR_NAME
+
+    def project_sessions_dir(self, working_dir: Path) -> Path:
+        """Get the project-scoped sessions directory for a given working directory.
+
+        Args:
+            working_dir: The project working directory.
+
+        Returns:
+            Path like ``~/.swecli/projects/-Users-foo-bar/``
+        """
+        encoded = encode_project_path(working_dir)
+        return self.global_projects_dir / encoded
 
     @cached_property
     def global_logs_dir(self) -> Path:
@@ -388,6 +432,7 @@ class Paths:
         """
         self.global_dir.mkdir(parents=True, exist_ok=True)
         self.global_sessions_dir.mkdir(parents=True, exist_ok=True)
+        self.global_projects_dir.mkdir(parents=True, exist_ok=True)
         self.global_logs_dir.mkdir(parents=True, exist_ok=True)
         self.global_cache_dir.mkdir(parents=True, exist_ok=True)
         self.global_skills_dir.mkdir(parents=True, exist_ok=True)

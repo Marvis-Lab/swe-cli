@@ -106,6 +106,28 @@ class BlockRegistry:
         self._blocks = [b for b in self._blocks if b.start_line < start_line]
         self._block_map = {b.block_id: b for b in self._blocks}
 
+    def remove_lines_range(self, start: int, count: int) -> None:
+        """Remove blocks affected by line deletion and adjust remaining indices.
+
+        When lines are deleted from the RichLog, this method keeps the registry
+        in sync by removing blocks that occupied the deleted range and shifting
+        subsequent blocks backward.
+
+        Args:
+            start: First deleted line index
+            count: Number of lines deleted
+        """
+        end = start + count
+        new_blocks = []
+        for b in self._blocks:
+            if start <= b.start_line < end:
+                continue  # Remove blocks in deleted range
+            if b.start_line >= end:
+                b.start_line -= count  # Shift blocks after deleted range
+            new_blocks.append(b)
+        self._blocks = new_blocks
+        self._block_map = {b.block_id: b for b in self._blocks}
+
     def get_wrappable_unlocked_blocks(self) -> list[ContentBlock]:
         """Get blocks that should be re-rendered on resize.
 

@@ -122,17 +122,28 @@ class ConfigManager:
 
     def ensure_directories(self) -> None:
         """Ensure all required directories exist."""
+        import shutil
+
         config = self.get_config()
 
         # Expand paths
         swecli_dir = Path(config.swecli_dir).expanduser()
-        session_dir = Path(config.session_dir).expanduser()
         log_dir = Path(config.log_dir).expanduser()
 
         # Create directories
         swecli_dir.mkdir(parents=True, exist_ok=True)
-        session_dir.mkdir(parents=True, exist_ok=True)
         log_dir.mkdir(parents=True, exist_ok=True)
+
+        # Create projects directory for project-scoped sessions
+        paths = get_paths(self.working_dir)
+        paths.global_projects_dir.mkdir(parents=True, exist_ok=True)
+
+        # Migrate: delete the old flat sessions directory if it has session files
+        old_sessions_dir = Path(config.session_dir).expanduser()
+        if old_sessions_dir.exists() and any(old_sessions_dir.glob("*.json")):
+            shutil.rmtree(old_sessions_dir, ignore_errors=True)
+        # Still ensure it exists (some code paths may reference it)
+        old_sessions_dir.mkdir(parents=True, exist_ok=True)
 
         # Create user skills directory
         self.user_skills_dir.mkdir(parents=True, exist_ok=True)

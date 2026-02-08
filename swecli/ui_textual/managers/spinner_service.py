@@ -480,6 +480,9 @@ class SpinnerService:
             # Delete tip line if it exists (inserted after spinner, before placeholders)
             if tip_line_num is not None and tip_line_num < len(conversation.lines):
                 del conversation.lines[tip_line_num]
+                # Sync block registry so stale blocks don't re-render on resize
+                if hasattr(conversation, "_block_registry"):
+                    conversation._block_registry.remove_lines_range(tip_line_num, 1)
                 # Adjust indices for lines that came after the deleted tip line
                 if result_line_num is not None:
                     result_line_num -= 1
@@ -633,6 +636,9 @@ class SpinnerService:
             # Delete each tip line and adjust result/spacing lines
             for spinner_id, tip_line_num in tips_to_delete:
                 del conversation.lines[tip_line_num]
+                # Sync block registry (deleting bottom-to-top, so indices stay valid)
+                if hasattr(conversation, "_block_registry"):
+                    conversation._block_registry.remove_lines_range(tip_line_num, 1)
 
                 # Adjust result and spacing line indices for this spinner
                 if spinner_id in self._result_lines:

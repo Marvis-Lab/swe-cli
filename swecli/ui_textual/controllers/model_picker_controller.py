@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import inspect
-from typing import Any, Mapping, TYPE_CHECKING
+from typing import Any, Mapping, Optional, TYPE_CHECKING
 
 from rich import box
 from rich.console import Group, RenderableType
@@ -15,13 +15,19 @@ from swecli.ui_textual.style_tokens import BLUE_BG_ACTIVE, BLUE_LIGHT, GREY
 
 if TYPE_CHECKING:
     from swecli.ui_textual.chat_app import SWECLIChatApp
+    from swecli.ui_textual.managers.interrupt_manager import InterruptManager
 
 
 class ModelPickerController:
     """Encapsulates the model selection flow rendered inside the conversation log."""
 
-    def __init__(self, app: "SWECLIChatApp") -> None:
+    def __init__(
+        self,
+        app: "SWECLIChatApp",
+        interrupt_manager: Optional["InterruptManager"] = None,
+    ) -> None:
         self.app = app
+        self._interrupt_manager = interrupt_manager
         self.state: dict[str, Any] | None = None
 
     # ---------------------------------------------------------------------
@@ -77,6 +83,15 @@ class ModelPickerController:
             "panel_start": None,
         }
 
+        # Track state for interrupt handling
+        if self._interrupt_manager:
+            from swecli.ui_textual.managers.interrupt_manager import InterruptState
+
+            self._interrupt_manager.enter_state(
+                InterruptState.MODEL_PICKER,
+                controller_ref=self,
+            )
+
         input_field = self.app.input_field
         input_field.load_text("")
         input_field.cursor_position = 0
@@ -85,6 +100,10 @@ class ModelPickerController:
 
     def end(self, message: str | None, *, clear_panel: bool = False) -> None:
         """Reset picker state and optionally emit a message."""
+        # Exit state tracking
+        if self._interrupt_manager:
+            self._interrupt_manager.exit_state()
+
         state = self.state
         if clear_panel and state:
             start = state.get("panel_start")

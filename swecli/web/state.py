@@ -209,7 +209,7 @@ def get_state() -> WebState:
         paths = get_paths(working_dir)
 
         config_manager = ConfigManager(working_dir)
-        session_manager = SessionManager(paths.global_sessions_dir)
+        session_manager = SessionManager(working_dir=working_dir)
         mode_manager = ModeManager()
         approval_manager = ApprovalManager(console)
         undo_manager = UndoManager(50)

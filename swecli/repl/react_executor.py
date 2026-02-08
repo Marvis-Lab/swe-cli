@@ -33,6 +33,13 @@ def _debug_log(message: str) -> None:
         f.write(f"[{timestamp}] {message}\n")
 
 
+def _session_debug() -> "SessionDebugLogger":
+    """Get the current session debug logger."""
+    from swecli.core.debug import get_debug_logger
+
+    return get_debug_logger()
+
+
 if TYPE_CHECKING:
     from rich.console import Console
     from swecli.core.context_engineering.history import SessionManager
@@ -41,6 +48,7 @@ if TYPE_CHECKING:
     from swecli.repl.tool_executor import ToolExecutor
     from swecli.core.runtime.approval import ApprovalManager
     from swecli.core.context_engineering.history import UndoManager
+    from swecli.core.debug.session_debug_logger import SessionDebugLogger
 
 
 class LoopAction(Enum):
@@ -162,15 +170,32 @@ class ReactExecutor:
         try:
             while True:
                 ctx.iteration_count += 1
+                _session_debug().log(
+                    "react_iteration_start",
+                    "react",
+                    iteration=ctx.iteration_count,
+                    query_preview=query[:200],
+                    message_count=len(messages),
+                )
                 action = self._run_iteration(ctx)
+                _session_debug().log(
+                    "react_iteration_end",
+                    "react",
+                    iteration=ctx.iteration_count,
+                    action=action.name.lower(),
+                )
                 if action == LoopAction.BREAK:
                     break
         except Exception as e:
             self.console.print(f"[red]Error: {str(e)}[/red]")
             import traceback
 
+            tb = traceback.format_exc()
             traceback.print_exc()
             self._last_error = str(e)
+            _session_debug().log(
+                "error", "react", error=str(e), traceback=tb
+            )
 
         return (self._last_operation_summary, self._last_error, self._last_latency_ms)
 
@@ -425,6 +450,13 @@ class ReactExecutor:
             "ReactExecutor",
             f"Calling call_llm_with_progress, _llm_caller={id(self._llm_caller)}, task_monitor={task_monitor}",
         )
+        _session_debug().log(
+            "llm_call_start",
+            "llm",
+            model=getattr(ctx.agent, "model", "unknown"),
+            message_count=len(ctx.messages),
+            thinking_visible=thinking_visible,
+        )
         response, latency_ms = self._llm_caller.call_llm_with_progress(
             ctx.agent, ctx.messages, task_monitor, thinking_visible=thinking_visible
         )
@@ -432,6 +464,15 @@ class ReactExecutor:
             "ReactExecutor", f"call_llm_with_progress returned, success={response.get('success')}"
         )
         self._last_latency_ms = latency_ms
+        _session_debug().log(
+            "llm_call_end",
+            "llm",
+            duration_ms=latency_ms,
+            success=response.get("success", False),
+            tokens=response.get("usage"),
+            has_tool_calls=bool(response.get("tool_calls") or (response.get("message") or {}).get("tool_calls")),
+            content_preview=(response.get("content") or "")[:200],
+        )
 
         # Debug logging
         if ctx.ui_callback and hasattr(ctx.ui_callback, "on_debug"):
@@ -482,6 +523,7 @@ class ReactExecutor:
     def _handle_llm_error(self, response: dict, ctx: IterationContext) -> LoopAction:
         """Handle LLM errors."""
         error_text = response.get("error", "Unknown error")
+        _session_debug().log("llm_call_error", "llm", error=error_text)
 
         if "interrupted" in error_text.lower():
             self._last_error = error_text
@@ -697,27 +739,58 @@ class ReactExecutor:
         if ctx.ui_callback and hasattr(ctx.ui_callback, "on_debug"):
             ctx.ui_callback.on_debug(f"Executing tool: {tool_name}", "TOOL")
 
+        args_str = tool_call["function"]["arguments"]
+        _session_debug().log(
+            "tool_call_start", "tool", name=tool_name, params_preview=args_str[:200]
+        )
+
         # Notify UI call
         if ctx.ui_callback and hasattr(ctx.ui_callback, "on_tool_call"):
-            ctx.ui_callback.on_tool_call(tool_name, tool_call["function"]["arguments"])
+            ctx.ui_callback.on_tool_call(tool_name, args_str)
 
         # Execute
-        result = self._execute_tool_call(
-            tool_call,
-            ctx.tool_registry,
-            ctx.approval_manager,
-            ctx.undo_manager,
-            ui_callback=ctx.ui_callback,
+        import time as _time
+
+        tool_start = _time.monotonic()
+        try:
+            result = self._execute_tool_call(
+                tool_call,
+                ctx.tool_registry,
+                ctx.approval_manager,
+                ctx.undo_manager,
+                ui_callback=ctx.ui_callback,
+            )
+        except Exception as exc:
+            import traceback
+
+            _session_debug().log(
+                "tool_call_error",
+                "tool",
+                name=tool_name,
+                error=str(exc),
+                traceback=traceback.format_exc(),
+            )
+            raise
+        tool_duration_ms = int((_time.monotonic() - tool_start) * 1000)
+
+        result_preview = (result.get("output") or result.get("error") or "")[:200]
+        _session_debug().log(
+            "tool_call_end",
+            "tool",
+            name=tool_name,
+            duration_ms=tool_duration_ms,
+            success=result.get("success", False),
+            result_preview=result_preview,
         )
 
         # Store summary
         self._last_operation_summary = format_tool_call(
-            tool_name, json.loads(tool_call["function"]["arguments"])
+            tool_name, json.loads(args_str)
         )
 
         # Notify UI result
         if ctx.ui_callback and hasattr(ctx.ui_callback, "on_tool_result"):
-            ctx.ui_callback.on_tool_result(tool_name, tool_call["function"]["arguments"], result)
+            ctx.ui_callback.on_tool_result(tool_name, args_str, result)
 
         # Handle subagent display (suppress in parallel mode for aggregation)
         separate_response = result.get("separate_response")

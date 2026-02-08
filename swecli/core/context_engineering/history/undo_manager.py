@@ -1,5 +1,6 @@
 """Undo system for rolling back operations."""
 
+import json
 import shutil
 from pathlib import Path
 from typing import Optional
@@ -31,17 +32,21 @@ class UndoResult:
 class UndoManager:
     """Manager for undoing operations."""
 
-    def __init__(self, max_history: int = 50):
+    def __init__(self, max_history: int = 50, session_dir: Optional[Path] = None):
         """Initialize undo manager.
 
         Args:
             max_history: Maximum number of operations to track
+            session_dir: Directory for persistent operation log (JSONL)
         """
         self.max_history = max_history
         self.history: list[Operation] = []
+        self._session_dir = session_dir
 
     def record_operation(self, operation: Operation) -> None:
         """Record an operation for potential undo.
+
+        Also appends to the persistent JSONL log if session_dir is set.
 
         Args:
             operation: Operation to record
@@ -51,6 +56,58 @@ class UndoManager:
         # Trim history if needed
         if len(self.history) > self.max_history:
             self.history = self.history[-self.max_history :]
+
+        # Persist to JSONL
+        self._append_to_log(operation)
+
+    def _append_to_log(self, operation: Operation) -> None:
+        """Append an operation to the persistent JSONL log file.
+
+        Args:
+            operation: Operation to persist
+        """
+        if not self._session_dir:
+            return
+
+        try:
+            self._session_dir.mkdir(parents=True, exist_ok=True)
+            log_file = self._session_dir / "operations.jsonl"
+            record = {
+                "timestamp": operation.created_at.isoformat(),
+                "type": operation.type.value,
+                "path": operation.target,
+                "status": operation.status.value,
+                "id": operation.id,
+            }
+            with open(log_file, "a") as f:
+                f.write(json.dumps(record) + "\n")
+        except Exception:
+            pass  # Don't let logging failures break operations
+
+    @staticmethod
+    def load_operations(session_dir: Path) -> list[dict]:
+        """Load operations from the persistent JSONL log.
+
+        Args:
+            session_dir: Directory containing operations.jsonl
+
+        Returns:
+            List of operation dicts from the log
+        """
+        log_file = session_dir / "operations.jsonl"
+        if not log_file.exists():
+            return []
+
+        operations = []
+        with open(log_file) as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    try:
+                        operations.append(json.loads(line))
+                    except json.JSONDecodeError:
+                        continue
+        return operations
 
     def undo_last(self) -> UndoResult:
         """Undo the last operation.

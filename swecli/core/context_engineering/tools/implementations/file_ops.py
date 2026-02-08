@@ -155,21 +155,44 @@ class FileOperations:
                 return True
         return False
 
-    def read_file(self, file_path: str, line_start: Optional[int] = None,
-                  line_end: Optional[int] = None) -> str:
-        """Read a file's contents.
+    # Truncation constants
+    DEFAULT_MAX_LINES = 2000
+    MAX_LINE_LENGTH = 2000
+    MAX_LIST_ENTRIES = 500
+
+    @staticmethod
+    def _is_binary_file(path: Path) -> bool:
+        """Check if a file is binary by looking for null bytes in the first 8192 bytes."""
+        try:
+            with open(path, "rb") as f:
+                chunk = f.read(8192)
+            return b"\x00" in chunk
+        except OSError:
+            return False
+
+    def read_file(
+        self,
+        file_path: str,
+        line_start: Optional[int] = None,
+        line_end: Optional[int] = None,
+        offset: Optional[int] = None,
+        max_lines: Optional[int] = None,
+    ) -> str:
+        """Read a file's contents with line-numbered output and truncation.
 
         Args:
-            file_path: Path to the file (relative or absolute)
-            line_start: Optional starting line number (1-indexed)
-            line_end: Optional ending line number (1-indexed, inclusive)
+            file_path: Path to the file (relative or absolute).
+            line_start: Optional starting line number (1-indexed). Alias for offset.
+            line_end: Optional ending line number (1-indexed, inclusive).
+            offset: Optional 1-indexed line number to start reading from.
+            max_lines: Maximum number of lines to return (default 2000).
 
         Returns:
-            File contents or line range
+            File contents in ``cat -n`` format with line numbers.
 
         Raises:
-            FileNotFoundError: If file doesn't exist
-            PermissionError: If file read is not permitted
+            FileNotFoundError: If file doesn't exist.
+            PermissionError: If file read is not permitted.
         """
         path = self._resolve_path(file_path)
 
@@ -180,13 +203,46 @@ class FileOperations:
         if not path.exists():
             raise FileNotFoundError(f"File not found: {path}")
 
+        # Detect binary files
+        if self._is_binary_file(path):
+            return f"Error: {path} appears to be a binary file. Cannot display binary content."
+
+        # Determine effective start/limit
+        effective_offset = offset or line_start or 1
+        if effective_offset < 1:
+            effective_offset = 1
+
+        effective_max = max_lines if max_lines is not None else self.DEFAULT_MAX_LINES
+        if line_end is not None:
+            effective_max = line_end - effective_offset + 1
+
         with open(path, "r", encoding="utf-8", errors="ignore") as f:
-            if line_start is not None or line_end is not None:
-                lines = f.readlines()
-                start = (line_start - 1) if line_start else 0
-                end = line_end if line_end else len(lines)
-                return "".join(lines[start:end])
-            return f.read()
+            all_lines = f.readlines()
+
+        total_lines = len(all_lines)
+        start_idx = effective_offset - 1
+        end_idx = min(start_idx + effective_max, total_lines)
+        selected = all_lines[start_idx:end_idx]
+
+        # Format as cat -n style with line numbers
+        output_parts: list[str] = []
+        for i, line in enumerate(selected, start=effective_offset):
+            text = line.rstrip("\n")
+            # Truncate long lines
+            if len(text) > self.MAX_LINE_LENGTH:
+                text = text[: self.MAX_LINE_LENGTH] + "... (line truncated)"
+            output_parts.append(f"  {i}\t{text}")
+
+        result = "\n".join(output_parts)
+
+        # Add truncation message if we didn't show everything
+        if end_idx < total_lines:
+            result += (
+                f"\n... (truncated: showing lines {effective_offset}-{end_idx}"
+                f" of {total_lines}. Use offset/max_lines to see more.)"
+            )
+
+        return result
 
     def glob_files(
         self,
@@ -227,6 +283,9 @@ class FileOperations:
             return str(path.relative_to(self.working_dir))
         except ValueError:
             return str(path)
+
+    # Maximum character count for search output
+    MAX_SEARCH_OUTPUT_CHARS = 30_000
 
     def grep_files(
         self,

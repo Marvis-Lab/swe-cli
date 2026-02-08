@@ -123,7 +123,7 @@ def test_full_session_persistence_round_trip():
 
     with tempfile.TemporaryDirectory() as tmpdir:
         session_dir = Path(tmpdir)
-        session_manager = SessionManager(session_dir)
+        session_manager = SessionManager(session_dir=session_dir)
         session_manager.create_session(working_directory=str(Path.cwd()))
 
         # Create ReactExecutor with mocked dependencies
@@ -193,7 +193,7 @@ def test_full_session_persistence_round_trip():
         print("✓ Summarizer cache saved to metadata")
 
         # STEP 3: Simulate session reload
-        new_session_manager = SessionManager(session_dir)
+        new_session_manager = SessionManager(session_dir=session_dir)
         new_session_manager.load_session(session.id)
 
         # Create new ReactExecutor (simulates app restart)
@@ -265,7 +265,7 @@ def test_backward_compatibility():
             json.dump(old_session_data, f)
 
         # Load session
-        session_manager = SessionManager(session_dir)
+        session_manager = SessionManager(session_dir=session_dir)
         session_manager.load_session("test123")
 
         # Verify old messages load with None for new fields

@@ -1373,6 +1373,10 @@ class DefaultToolRenderer:
         else:
             del self.log.lines[index:]
 
+        # Sync block registry so stale blocks don't re-render on resize
+        if hasattr(self.log, "_block_registry"):
+            self.log._block_registry.remove_blocks_from(index)
+
         # Clear cache if available
         if hasattr(self.log, "_line_cache"):
             self.log._line_cache.clear()

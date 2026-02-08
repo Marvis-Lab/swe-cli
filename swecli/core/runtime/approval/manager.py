@@ -226,28 +226,55 @@ class ApprovalManager:
         timeout: Union[Any, None] = None,
         force_prompt: bool = False,
     ) -> ApprovalResult:
+        from swecli.core.debug import get_debug_logger
+
+        get_debug_logger().log(
+            "approval_request",
+            "approval",
+            command=command,
+            operation=operation.type.value if operation else None,
+        )
+
         if self.auto_approve_remaining and not force_prompt:
+            get_debug_logger().log(
+                "approval_result", "approval", approved=True, method="auto"
+            )
             return ApprovalResult(True, ApprovalChoice.APPROVE)
 
         message = self._create_operation_message(operation, preview)
         choice = self._show_interactive_menu(message, preview, command, working_dir)
 
         if choice == ApprovalChoice.APPROVE:
+            get_debug_logger().log(
+                "approval_result", "approval", approved=True, method="user", choice="approve"
+            )
             return ApprovalResult(True, choice)
 
         if choice == ApprovalChoice.APPROVE_ALL:
             self.auto_approve_remaining = True
             if command and working_dir:
                 self.approved_patterns.add((command, working_dir))
+            get_debug_logger().log(
+                "approval_result", "approval", approved=True, method="user", choice="approve_all"
+            )
             return ApprovalResult(True, choice, apply_to_all=True)
 
         if choice == ApprovalChoice.DENY:
+            get_debug_logger().log(
+                "approval_result", "approval", approved=False, method="user", choice="deny"
+            )
             return ApprovalResult(False, choice)
 
         if choice == ApprovalChoice.EDIT and allow_edit:
             edited = prompt("Enter your revised content:\n")
+            get_debug_logger().log(
+                "approval_result", "approval", approved=True, method="user", choice="edit"
+            )
             return ApprovalResult(True, ApprovalChoice.APPROVE, edited_content=edited)
 
+        get_debug_logger().log(
+            "approval_result", "approval", approved=False, method="user", choice="deny"
+        )
         return ApprovalResult(False, ApprovalChoice.DENY)
 
     def render_operation_preview(self, operation: Operation, preview: str) -> None:

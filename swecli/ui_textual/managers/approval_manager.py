@@ -386,11 +386,22 @@ class ChatApprovalManager:
     ):
         """Request approval for an operation with interactive prompt."""
         from swecli.core.runtime.approval import ApprovalResult, ApprovalChoice
+        from swecli.core.debug import get_debug_logger
+
+        get_debug_logger().log(
+            "approval_request",
+            "approval",
+            command=command,
+            operation=operation.type.value if operation and hasattr(operation, "type") else None,
+        )
 
         matched_rule = None
 
         # AUTO mode always bypasses approval, even with force_prompt
         if self.autonomy_level == AutonomyLevel.AUTO:
+            get_debug_logger().log(
+                "approval_result", "approval", approved=True, method="auto", choice="auto_mode"
+            )
             return ApprovalResult(
                 approved=True,
                 choice=ApprovalChoice.APPROVE,
@@ -399,6 +410,9 @@ class ChatApprovalManager:
 
         # SEMI_AUTO mode: auto-approve safe commands even with force_prompt
         if self.autonomy_level == AutonomyLevel.SEMI_AUTO and self._is_safe_command(command):
+            get_debug_logger().log(
+                "approval_result", "approval", approved=True, method="auto", choice="semi_auto_safe"
+            )
             return ApprovalResult(
                 approved=True,
                 choice=ApprovalChoice.APPROVE,
@@ -408,10 +422,25 @@ class ChatApprovalManager:
         if not force_prompt:
             auto_result = self._check_auto_approval(operation, command)
             if auto_result:
+                get_debug_logger().log(
+                    "approval_result",
+                    "approval",
+                    approved=auto_result.approved,
+                    method="auto",
+                    choice=auto_result.choice.value,
+                )
                 return auto_result
 
             rule_result, matched_rule = self._check_approval_rules(command)
             if rule_result:
+                get_debug_logger().log(
+                    "approval_result",
+                    "approval",
+                    approved=rule_result.approved,
+                    method="rule",
+                    choice=rule_result.choice.value,
+                    rule=matched_rule.name if matched_rule else None,
+                )
                 return rule_result
 
         # Check if already interrupted before showing modal
@@ -420,6 +449,9 @@ class ChatApprovalManager:
             if hasattr(runner, 'query_processor'):
                 task_monitor = getattr(runner.query_processor, 'task_monitor', None)
                 if task_monitor and task_monitor.should_interrupt():
+                    get_debug_logger().log(
+                        "approval_result", "approval", approved=False, method="interrupted"
+                    )
                     return ApprovalResult(
                         approved=False,
                         choice=ApprovalChoice.DENY,
@@ -431,10 +463,19 @@ class ChatApprovalManager:
 
         # Process user choice
         if choice == "1":
+            get_debug_logger().log(
+                "approval_result", "approval", approved=True, method="user", choice="approve"
+            )
             return self._process_approve_choice(command, edited_command, matched_rule)
         elif choice == "2":
+            get_debug_logger().log(
+                "approval_result", "approval", approved=True, method="user", choice="approve_all"
+            )
             return self._process_approve_all_choice(command, edited_command, matched_rule)
         else:
+            get_debug_logger().log(
+                "approval_result", "approval", approved=False, method="user", choice="deny"
+            )
             return self._process_deny_choice(command, matched_rule)
 
     def skip_approval(self) -> bool:

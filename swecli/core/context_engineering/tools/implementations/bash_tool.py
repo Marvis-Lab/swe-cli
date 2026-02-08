@@ -55,6 +55,27 @@ INTERACTIVE_COMMANDS = [
 IDLE_TIMEOUT = 60  # Timeout after 60 seconds of no output
 MAX_TIMEOUT = 600  # Absolute max runtime: 10 minutes (safety cap)
 
+# Output truncation
+MAX_OUTPUT_CHARS = 30_000
+KEEP_HEAD_CHARS = 10_000
+KEEP_TAIL_CHARS = 10_000
+
+
+def truncate_output(text: str, max_chars: int = MAX_OUTPUT_CHARS) -> str:
+    """Truncate output by removing the middle when it exceeds the limit.
+
+    Keeps the first KEEP_HEAD_CHARS and last KEEP_TAIL_CHARS characters
+    so both context and final error messages are preserved.
+    """
+    if len(text) <= max_chars:
+        return text
+    removed = len(text) - KEEP_HEAD_CHARS - KEEP_TAIL_CHARS
+    return (
+        text[:KEEP_HEAD_CHARS]
+        + f"\n... (truncated {removed} chars) ...\n"
+        + text[-KEEP_TAIL_CHARS:]
+    )
+
 
 class BashTool(BaseTool):
     """Tool for executing bash commands with safety checks."""

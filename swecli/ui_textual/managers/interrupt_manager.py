@@ -33,6 +33,16 @@ class InterruptState(Enum):
     PROCESSING_PARALLEL_TOOLS = auto()
 
 
+# States that represent active modal controllers
+_CONTROLLER_STATES = {
+    InterruptState.APPROVAL_PROMPT,
+    InterruptState.ASK_USER_PROMPT,
+    InterruptState.MODEL_PICKER,
+    InterruptState.AGENT_WIZARD,
+    InterruptState.SKILL_WIZARD,
+}
+
+
 @dataclass
 class InterruptContext:
     """Context information for the current interrupt state."""
@@ -144,19 +154,12 @@ class InterruptManager:
             True if the interrupt was consumed (no further handling needed),
             False if the caller should handle the interrupt
         """
-        from swecli.ui_textual.debug_logger import debug_log
-        debug_log("InterruptManager", "handle_interrupt called")
-        debug_log("InterruptManager", f"current_state={self._current_state}")
-
         # First, check for autocomplete (highest priority)
         if self._has_autocomplete():
-            debug_log("InterruptManager", "Has autocomplete, dismissing")
             return self._dismiss_autocomplete()
 
-        # Check for active controllers by querying the app
-        # This allows controllers that don't explicitly register to still be handled
-        if self._cancel_any_active_controller():
-            debug_log("InterruptManager", "Cancelled an active controller")
+        # Check for active controllers (state-tracked or direct query)
+        if self._cancel_active_controller():
             return True
 
         with self._lock:
@@ -164,7 +167,6 @@ class InterruptManager:
 
             # Check for exit confirmation mode
             if state == InterruptState.EXIT_CONFIRMATION:
-                debug_log("InterruptManager", "Clearing exit confirmation")
                 return self._clear_exit_confirmation()
 
             # Processing states - handled by caller (action_interrupt)
@@ -174,12 +176,10 @@ class InterruptManager:
                 InterruptState.PROCESSING_PARALLEL_TOOLS,
             ):
                 # Cleanup spinners but let caller handle the actual interrupt
-                debug_log("InterruptManager", "Processing state, cleaning spinners, returning False")
                 self.cleanup_spinners()
                 return False
 
             # IDLE state - nothing to handle
-            debug_log("InterruptManager", "IDLE state, returning False")
             return False
 
     def handle_cancel(self) -> bool:
@@ -191,8 +191,6 @@ class InterruptManager:
         Returns:
             True if the cancel was consumed, False otherwise
         """
-        # For now, delegate to handle_interrupt
-        # Controllers can check for Ctrl+C vs ESC if needed
         return self.handle_interrupt()
 
     def cleanup_spinners(self) -> None:
@@ -263,98 +261,44 @@ class InterruptManager:
                 return True
         return False
 
-    def _cancel_any_active_controller(self) -> bool:
-        """Check for and cancel any active controller.
-
-        This checks controllers by querying them directly rather than
-        relying on state tracking. This is more robust for controllers
-        that don't explicitly register with the InterruptManager.
-
-        Returns:
-            True if a controller was cancelled
-        """
-        from swecli.ui_textual.debug_logger import debug_log
-
-        # Check approval controller
-        approval = getattr(self.app, "_approval_controller", None)
-        approval_active = approval and getattr(approval, "active", False)
-        debug_log("InterruptManager", f"approval_controller active={approval_active}")
-        if approval_active:
-            if hasattr(self.app, "_approval_cancel"):
-                self.app._approval_cancel()
-                return True
-
-        # Check ask-user controller
-        ask_user = getattr(self.app, "_ask_user_controller", None)
-        ask_user_active = ask_user and getattr(ask_user, "active", False)
-        debug_log("InterruptManager", f"ask_user_controller active={ask_user_active}")
-        if ask_user_active:
-            if hasattr(self.app, "_ask_user_cancel"):
-                self.app._ask_user_cancel()
-                return True
-
-        # Check model picker
-        model_picker = getattr(self.app, "_model_picker", None)
-        model_picker_active = model_picker and getattr(model_picker, "active", False)
-        debug_log("InterruptManager", f"model_picker active={model_picker_active}")
-        if model_picker_active:
-            if hasattr(self.app, "_model_picker_cancel"):
-                self.app._model_picker_cancel()
-                return True
-
-        # Check agent wizard
-        agent_creator = getattr(self.app, "_agent_creator", None)
-        agent_creator_active = agent_creator and getattr(agent_creator, "active", False)
-        debug_log("InterruptManager", f"agent_creator active={agent_creator_active}")
-        if agent_creator_active:
-            if hasattr(self.app, "_agent_wizard_cancel"):
-                self.app._agent_wizard_cancel()
-                return True
-
-        # Check skill wizard
-        skill_creator = getattr(self.app, "_skill_creator", None)
-        skill_creator_active = skill_creator and getattr(skill_creator, "active", False)
-        debug_log("InterruptManager", f"skill_creator active={skill_creator_active}")
-        if skill_creator_active:
-            if hasattr(self.app, "_skill_wizard_cancel"):
-                self.app._skill_wizard_cancel()
-                return True
-
-        debug_log("InterruptManager", "No active controllers")
-        return False
-
     def _cancel_active_controller(self) -> bool:
-        """Cancel the active modal controller based on tracked state.
+        """Cancel any active modal controller.
+
+        Uses the state-tracked controller_ref when available (registered via
+        enter_state), falling back to direct app attribute querying as a
+        safety net.
 
         Returns:
             True if a controller was cancelled
         """
+        # First, try using the state-tracked controller_ref
         with self._lock:
             context = self._context
             state = self._current_state
 
-        if context is None:
-            return False
+        if context and state in _CONTROLLER_STATES:
+            controller = context.controller_ref
+            if controller and hasattr(controller, "cancel"):
+                controller.cancel()
+                return True
 
-        # Try to use controller_ref if available
-        controller = context.controller_ref
-        if controller and hasattr(controller, "cancel"):
-            controller.cancel()
-            return True
-
-        # Fall back to app method lookup based on state
-        method_map = {
-            InterruptState.APPROVAL_PROMPT: "_approval_cancel",
-            InterruptState.ASK_USER_PROMPT: "_ask_user_cancel",
-            InterruptState.MODEL_PICKER: "_model_picker_cancel",
-            InterruptState.AGENT_WIZARD: "_agent_wizard_cancel",
-            InterruptState.SKILL_WIZARD: "_skill_wizard_cancel",
-        }
-
-        method_name = method_map.get(state)
-        if method_name and hasattr(self.app, method_name):
-            getattr(self.app, method_name)()
-            return True
+        # Fallback: query controllers directly on the app
+        # This handles edge cases where a controller is active but wasn't
+        # registered via enter_state
+        _controllers = [
+            ("_approval_controller", "_approval_cancel"),
+            ("_ask_user_controller", "_ask_user_cancel"),
+            ("_model_picker", "_model_picker_cancel"),
+            ("_agent_creator", "_agent_wizard_cancel"),
+            ("_skill_creator", "_skill_wizard_cancel"),
+        ]
+        for attr_name, cancel_method in _controllers:
+            controller = getattr(self.app, attr_name, None)
+            if controller and getattr(controller, "active", False):
+                method = getattr(self.app, cancel_method, None)
+                if method:
+                    method()
+                    return True
 
         return False
 

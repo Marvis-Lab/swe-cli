@@ -34,6 +34,48 @@ class WebInterruptMonitor:
 class SwecliAgent(BaseAgent):
     """Custom agent that coordinates LLM interactions via HTTP."""
 
+    @staticmethod
+    def _classify_error(error_text: str) -> str:
+        """Classify error type for targeted nudge selection.
+
+        Args:
+            error_text: The error message from a failed tool execution
+
+        Returns:
+            Error classification string matching a nudge_* injection name suffix
+        """
+        error_lower = error_text.lower()
+        if "permission denied" in error_lower:
+            return "permission_error"
+        if "old_content" in error_lower or "old content" in error_lower:
+            return "edit_mismatch"
+        if "no such file" in error_lower or "not found" in error_lower:
+            return "file_not_found"
+        if "syntax" in error_lower:
+            return "syntax_error"
+        if "429" in error_lower or "rate limit" in error_lower:
+            return "rate_limit"
+        if "timeout" in error_lower or "timed out" in error_lower:
+            return "timeout"
+        return "generic"
+
+    def _get_smart_nudge(self, error_text: str) -> str:
+        """Get a failure-type-specific nudge message.
+
+        Args:
+            error_text: The error message from a failed tool execution
+
+        Returns:
+            Appropriate nudge message for the error type
+        """
+        error_type = self._classify_error(error_text)
+        if error_type == "generic":
+            return get_injection("failed_tool_nudge")
+        try:
+            return get_injection(f"nudge_{error_type}")
+        except KeyError:
+            return get_injection("failed_tool_nudge")
+
     def _check_todo_completion(self) -> tuple[bool, str]:
         """Check if completion is allowed given todo state.
 
@@ -96,6 +138,7 @@ class SwecliAgent(BaseAgent):
         """
         self.__http_client = None  # Lazy initialization - defer API key validation
         self.__thinking_http_client = None  # Lazy initialization for Thinking model
+        self._compactor = None  # Lazy initialization for context compaction
         self._response_cleaner = ResponseCleaner()
         self._working_dir = working_dir
         self._env_context = env_context
@@ -148,6 +191,17 @@ class SwecliAgent(BaseAgent):
 
     def build_tool_schemas(self, thinking_visible: bool = True) -> list[dict[str, Any]]:
         return self._schema_builder.build(thinking_visible=thinking_visible)
+
+    def _maybe_compact(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Auto-compact messages if approaching the context window limit."""
+        if self._compactor is None:
+            from swecli.core.context_engineering.compaction import ContextCompactor
+
+            self._compactor = ContextCompactor(self.config, self._http_client)
+
+        if self._compactor.should_compact(messages, self.system_prompt):
+            return self._compactor.compact(messages, self.system_prompt)
+        return messages
 
     def call_thinking_llm(
         self,
@@ -339,6 +393,9 @@ class SwecliAgent(BaseAgent):
                     "interrupted": True,
                 }
 
+            # Auto-compact context if approaching the model's token limit
+            messages = self._maybe_compact(messages)
+
             payload = {
                 "model": self.config.model,
                 "messages": messages,
@@ -390,11 +447,13 @@ class SwecliAgent(BaseAgent):
                 # No tool calls - check if we should nudge or accept implicit completion
                 # Check if last tool execution failed (should nudge to retry)
                 last_tool_failed = False
+                last_error_text = ""
                 for msg in reversed(messages):
                     if msg.get("role") == "tool":
                         content = msg.get("content", "")
                         if content.startswith("Error:"):
                             last_tool_failed = True
+                            last_error_text = content
                         break
 
                 if last_tool_failed:
@@ -416,11 +475,11 @@ class SwecliAgent(BaseAgent):
                             "success": True,
                         }
 
-                    # Nudge agent to fix the error and retry
+                    # Use smart nudge with error-specific guidance
                     messages.append(
                         {
                             "role": "user",
-                            "content": get_injection("failed_tool_nudge"),
+                            "content": self._get_smart_nudge(last_error_text),
                         }
                     )
                     continue

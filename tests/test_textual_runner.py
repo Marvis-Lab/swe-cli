@@ -74,7 +74,7 @@ def test_textual_runner_process_query(tmp_path):
     config_manager = DummyConfigManager(working_dir)
     config_manager.load_config()
     session_root = Path(config_manager.get_config().session_dir)
-    session_manager = SessionManager(session_root)
+    session_manager = SessionManager(session_dir=session_root)
     session_manager.create_session(working_directory=str(working_dir))
 
     repl = DummyRepl(config_manager, session_manager)

@@ -1,113 +1,114 @@
-"""Test context compaction with 1000 token limit."""
+"""Tests for context compaction feature."""
 
-import asyncio
-from swecli.models.config import AppConfig
+from unittest.mock import MagicMock
+
+
+from swecli.core.context_engineering.compaction import ContextCompactor
 from swecli.core.context_engineering.retrieval.token_monitor import ContextTokenMonitor
-# CompactAgent has been removed/moved - skipping that test
+from swecli.models.config import AppConfig
 
 
-def test_token_counting():
-    """Test that token counting works correctly."""
-    monitor = ContextTokenMonitor(model="gpt-4")
-
-    # Test simple text
-    text = "Hello, world! This is a test of token counting."
-    token_count = monitor.count_tokens(text)
-
-    print(f"✓ Token counting works: '{text}' = {token_count} tokens")
-    assert token_count > 0, "Token count should be positive"
+def _make_compactor(max_context_tokens: int = 1000) -> ContextCompactor:
+    """Create a ContextCompactor with a small context window for testing."""
+    config = AppConfig()
+    config.max_context_tokens = max_context_tokens
+    config.model = "gpt-4"
+    mock_client = MagicMock()
+    return ContextCompactor(config, mock_client)
 
 
-def test_compaction_threshold():
-    """Test that compaction triggers at correct threshold."""
-    # Note: ContextTokenMonitor no longer has threshold logic
-    # This test now just verifies basic functionality
-    monitor = ContextTokenMonitor(model="gpt-4")
-
-    # Verify the monitor was created successfully
-    assert monitor is not None
-    assert monitor.encoding is not None
-
-    print("✓ Compaction threshold test updated - monitor created successfully")
+def _make_messages(count: int) -> list[dict]:
+    """Generate a list of alternating user/assistant messages."""
+    msgs = [{"role": "system", "content": "You are a helpful assistant."}]
+    for i in range(count):
+        role = "user" if i % 2 == 0 else "assistant"
+        msgs.append({"role": role, "content": f"Message {i}: {'x' * 200}"})
+    return msgs
 
 
-def test_usage_stats():
-    """Test usage statistics calculation."""
-    # Note: ContextTokenMonitor no longer has get_usage_stats method
-    # This test now just verifies basic counting
-    monitor = ContextTokenMonitor(model="gpt-4")
+class TestContextCompactor:
+    """Tests for ContextCompactor."""
 
-    # Test token counting at 50 tokens
-    text = "Hello, world! " * 5  # Create some text
-    token_count = monitor.count_tokens(text)
+    def test_should_compact_at_70_percent(self) -> None:
+        """Should trigger at 70% of context window."""
+        compactor = _make_compactor(max_context_tokens=100)
+        # Many messages will definitely exceed 70 tokens
+        messages = _make_messages(20)
+        assert compactor.should_compact(messages, "System prompt")
 
-    assert token_count > 0, "Token count should be positive"
+    def test_should_not_compact_below_threshold(self) -> None:
+        """Should NOT trigger below 70%."""
+        compactor = _make_compactor(max_context_tokens=500_000)
+        messages = [
+            {"role": "system", "content": "System prompt"},
+            {"role": "user", "content": "Hello"},
+            {"role": "assistant", "content": "Hi there"},
+        ]
+        assert not compactor.should_compact(messages, "System prompt")
 
-    print(f"✓ Token counting works: {token_count} tokens counted")
+    def test_preserves_system_prompt(self) -> None:
+        """First message (system) should always be preserved."""
+        compactor = _make_compactor(max_context_tokens=100)
+        messages = _make_messages(20)
+        result = compactor.compact(messages, "System prompt")
+        assert result[0]["role"] == "system"
+        assert result[0]["content"] == "You are a helpful assistant."
+
+    def test_preserves_recent_messages(self) -> None:
+        """Last N messages should remain intact."""
+        compactor = _make_compactor(max_context_tokens=100)
+        messages = _make_messages(30)
+        result = compactor.compact(messages, "System prompt")
+        # Recent messages should be preserved exactly
+        assert result[-1] == messages[-1]
+        assert result[-2] == messages[-2]
+
+    def test_summarizes_middle_messages(self) -> None:
+        """Messages between system and recent should be summarized."""
+        compactor = _make_compactor(max_context_tokens=100)
+        messages = _make_messages(20)
+        result = compactor.compact(messages, "System prompt")
+        # Should have: system + summary + recent messages
+        assert len(result) < len(messages)
+        # Second message should be the summary
+        assert "CONVERSATION SUMMARY" in result[1]["content"]
+
+    def test_summary_replaces_old_messages(self) -> None:
+        """After compaction, old messages replaced with summary."""
+        compactor = _make_compactor(max_context_tokens=100)
+        messages = _make_messages(20)
+        original_count = len(messages)
+        result = compactor.compact(messages, "System prompt")
+        assert len(result) < original_count
+
+    def test_handles_minimal_messages(self) -> None:
+        """Should not crash on minimal message history."""
+        compactor = _make_compactor(max_context_tokens=100)
+        messages = [
+            {"role": "system", "content": "System"},
+            {"role": "user", "content": "Hi"},
+        ]
+        result = compactor.compact(messages, "System")
+        # Too few messages to compact — should return as-is
+        assert result == messages
+
+    def test_handles_empty_messages(self) -> None:
+        """Should handle empty message list gracefully."""
+        compactor = _make_compactor(max_context_tokens=100)
+        result = compactor.compact([], "System")
+        assert result == []
 
 
-def test_compactor_agent():
-    """Test compactor agent (requires API key)."""
-    print("\n⚠ Compactor test skipped: CompactAgent class not implemented")
-    print("(This test is pending implementation)")
+class TestTokenCounting:
+    """Tests for ContextTokenMonitor."""
 
+    def test_token_counting_works(self) -> None:
+        """Token counting should return positive values."""
+        monitor = ContextTokenMonitor(model="gpt-4")
+        count = monitor.count_tokens("Hello, world! This is a test.")
+        assert count > 0
 
-def test_message_replacement():
-    """Test message buffer replacement logic."""
-    # Simulate message history
-    messages = [
-        {"role": "system", "content": "System prompt"},
-        {"role": "user", "content": "First message"},
-        {"role": "assistant", "content": "First response"},
-        {"role": "user", "content": "Second message"},
-        {"role": "assistant", "content": "Second response"},
-        {"role": "user", "content": "Third message"},
-        {"role": "assistant", "content": "Third response"},
-    ]
-
-    # Simulate replacement
-    system_msg = messages[0]
-    recent_msgs = messages[-2:]  # Last 2 messages
-
-    summary_msg = {
-        "role": "system",
-        "content": "# Summary\n\nPrevious conversation about creating a Flask app.",
-    }
-
-    new_messages = [system_msg, summary_msg] + recent_msgs
-
-    # Verify structure
-    assert len(new_messages) == 4, "Should have 4 messages after compaction"
-    assert new_messages[0]["role"] == "system"
-    assert new_messages[1]["role"] == "system"  # Summary
-    assert new_messages[-2]["role"] == "user"
-    assert new_messages[-1]["role"] == "assistant"
-
-    print("✓ Message replacement logic works correctly")
-
-
-if __name__ == "__main__":
-    print("Testing Context Compaction Feature\n")
-    print("=" * 50)
-
-    # Run sync tests
-    print("\n1. Token Counting:")
-    test_token_counting()
-
-    print("\n2. Compaction Threshold:")
-    test_compaction_threshold()
-
-    print("\n3. Usage Statistics:")
-    test_usage_stats()
-
-    print("\n4. Message Replacement:")
-    test_message_replacement()
-
-    # Run async test
-    print("\n5. Compactor Agent:")
-    test_compactor_agent()
-
-    print("\n" + "=" * 50)
-    print("\n✅ All tests passed!")
-    print("\nNext step: Run SWE-CLI and test with actual conversations")
-    print("The context should trigger compaction at 99% (0% remaining)")
+    def test_empty_string(self) -> None:
+        """Empty string should return 0 tokens."""
+        monitor = ContextTokenMonitor(model="gpt-4")
+        assert monitor.count_tokens("") == 0

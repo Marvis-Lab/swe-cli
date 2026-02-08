@@ -67,6 +67,8 @@ class ToolExecutor:
         Returns:
             Tool execution result
         """
+        import time as _time
+        from swecli.core.debug import get_debug_logger
         from swecli.core.runtime.monitoring import TaskMonitor
         from swecli.ui_textual.components.task_progress import TaskProgressDisplay
         from swecli.ui_textual.utils.tool_display import format_tool_call
@@ -77,6 +79,10 @@ class ToolExecutor:
         # Format tool call display if not provided
         if tool_call_display is None:
             tool_call_display = format_tool_call(tool_name, tool_args)
+
+        get_debug_logger().log(
+            "tool_call_start", "tool", name=tool_name, params_preview=str(tool_args)[:200]
+        )
 
         # Create task monitor for interrupt support
         tool_monitor = TaskMonitor()
@@ -90,6 +96,7 @@ class ToolExecutor:
         tool_progress = TaskProgressDisplay(self.console, tool_monitor)
         tool_progress.start()
 
+        tool_start = _time.monotonic()
         try:
             # Execute tool with interrupt support
             result = tool_registry.execute_tool(
@@ -101,6 +108,8 @@ class ToolExecutor:
                 task_monitor=tool_monitor,
                 session_manager=self.session_manager,
             )
+
+            tool_duration_ms = int((_time.monotonic() - tool_start) * 1000)
 
             # Update state
             self._last_operation_summary = tool_call_display
@@ -117,7 +126,27 @@ class ToolExecutor:
             panel = self.output_formatter.format_tool_result(tool_name, tool_args, result)
             self.console.print(panel)
 
+            get_debug_logger().log(
+                "tool_call_end",
+                "tool",
+                name=tool_name,
+                duration_ms=tool_duration_ms,
+                success=result.get("success", False),
+                result_preview=(result.get("output") or result.get("error") or "")[:200],
+            )
+
             return result
+        except Exception as exc:
+            import traceback
+
+            get_debug_logger().log(
+                "tool_call_error",
+                "tool",
+                name=tool_name,
+                error=str(exc),
+                traceback=traceback.format_exc(),
+            )
+            raise
         finally:
             # Clear current monitor
             self._current_task_monitor = None

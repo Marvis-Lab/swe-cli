@@ -22,6 +22,7 @@ class SessionMetadata(BaseModel):
     updated_at: datetime
     message_count: int
     total_tokens: int
+    title: Optional[str] = None
     summary: Optional[str] = None
     tags: list[str] = Field(default_factory=list)
     working_directory: Optional[str] = None
@@ -42,11 +43,11 @@ class Session(BaseModel):
     working_directory: Optional[str] = None
     metadata: dict[str, Any] = Field(default_factory=dict)
     playbook: Optional[dict] = Field(default_factory=dict)  # Serialized ACE Playbook
-    file_changes: list[FileChange] = Field(default_factory=list)  # Track file changes in this session
+    file_changes: list[FileChange] = Field(
+        default_factory=list
+    )  # Track file changes in this session
 
-    model_config = ConfigDict(
-        json_encoders={datetime: lambda v: v.isoformat()}
-    )
+    model_config = ConfigDict(json_encoders={datetime: lambda v: v.isoformat()})
 
     def get_playbook(self) -> "Playbook":
         """Get the session's ACE playbook, creating if needed.
@@ -80,19 +81,23 @@ class Session(BaseModel):
         """Add a file change to the session."""
         # Check if this is a modification of an existing file
         for i, existing_change in enumerate(self.file_changes):
-            if (existing_change.file_path == file_change.file_path and 
-                existing_change.type == FileChangeType.MODIFIED and
-                file_change.type == FileChangeType.MODIFIED):
+            if (
+                existing_change.file_path == file_change.file_path
+                and existing_change.type == FileChangeType.MODIFIED
+                and file_change.type == FileChangeType.MODIFIED
+            ):
                 # Merge with existing change
                 self.file_changes[i].lines_added += file_change.lines_added
                 self.file_changes[i].lines_removed += file_change.lines_removed
                 self.file_changes[i].timestamp = file_change.timestamp
                 self.file_changes[i].description = file_change.description
                 return
-        
+
         # Remove any previous change for the same file (for non-modifications)
-        self.file_changes = [fc for fc in self.file_changes if fc.file_path != file_change.file_path]
-        
+        self.file_changes = [
+            fc for fc in self.file_changes if fc.file_path != file_change.file_path
+        ]
+
         # Add the new change
         file_change.session_id = self.id
         self.file_changes.append(file_change)
@@ -106,7 +111,7 @@ class Session(BaseModel):
         renamed = len([fc for fc in self.file_changes if fc.type == FileChangeType.RENAMED])
         total_lines_added = sum(fc.lines_added for fc in self.file_changes)
         total_lines_removed = sum(fc.lines_removed for fc in self.file_changes)
-        
+
         return {
             "total": len(self.file_changes),
             "created": created,
@@ -115,9 +120,8 @@ class Session(BaseModel):
             "renamed": renamed,
             "total_lines_added": total_lines_added,
             "total_lines_removed": total_lines_removed,
-            "net_lines": total_lines_added - total_lines_removed
+            "net_lines": total_lines_added - total_lines_removed,
         }
-
 
     def total_tokens(self) -> int:
         """Calculate total token count."""
@@ -131,6 +135,7 @@ class Session(BaseModel):
             updated_at=self.updated_at,
             message_count=len(self.messages),
             total_tokens=self.total_tokens(),
+            title=self.metadata.get("title"),
             summary=self.metadata.get("summary"),
             tags=self.metadata.get("tags", []),
             working_directory=self.working_directory,
@@ -185,10 +190,7 @@ class Session(BaseModel):
                     {
                         "id": tc.id,
                         "type": "function",
-                        "function": {
-                            "name": tc.name,
-                            "arguments": json.dumps(tc.parameters)
-                        }
+                        "function": {"name": tc.name, "arguments": json.dumps(tc.parameters)},
                     }
                     for tc in msg.tool_calls
                 ]
@@ -214,11 +216,7 @@ class Session(BaseModel):
                         else:
                             tool_content = "✓ Success"
 
-                    result.append({
-                        "role": "tool",
-                        "tool_call_id": tc.id,
-                        "content": tool_content
-                    })
+                    result.append({"role": "tool", "tool_call_id": tc.id, "content": tool_content})
             else:
                 result.append(api_msg)
         return result

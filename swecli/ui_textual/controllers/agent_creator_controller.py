@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, TYPE_CHECKING
+from typing import Any, Optional, TYPE_CHECKING
 
 from rich.console import RenderableType
 from rich.text import Text
@@ -22,6 +22,7 @@ from swecli.ui_textual.managers.spinner_service import SpinnerType
 
 if TYPE_CHECKING:
     from swecli.ui_textual.chat_app import SWECLIChatApp
+    from swecli.ui_textual.managers.interrupt_manager import InterruptManager
 
 
 # Default template for new agents
@@ -76,8 +77,13 @@ class AgentCreatorController:
     STAGE_TOOLS = "tools"
     STAGE_GENERATING = "generating"
 
-    def __init__(self, app: "SWECLIChatApp") -> None:
+    def __init__(
+        self,
+        app: "SWECLIChatApp",
+        interrupt_manager: Optional["InterruptManager"] = None,
+    ) -> None:
         self.app = app
+        self._interrupt_manager = interrupt_manager
         self.state: dict[str, Any] | None = None
         self._config_manager: Any = None
         self._on_complete: Any = None
@@ -140,6 +146,15 @@ class AgentCreatorController:
             "tools_warning": "",
         }
 
+        # Track state for interrupt handling
+        if self._interrupt_manager:
+            from swecli.ui_textual.managers.interrupt_manager import InterruptState
+
+            self._interrupt_manager.enter_state(
+                InterruptState.AGENT_WIZARD,
+                controller_ref=self,
+            )
+
         # Clear input field and focus
         input_field = self.app.input_field
         input_field.load_text("")
@@ -150,6 +165,10 @@ class AgentCreatorController:
 
     def end(self, message: str | None = None, *, clear_panel: bool = False) -> None:
         """Reset wizard state and optionally emit a message."""
+        # Exit state tracking
+        if self._interrupt_manager:
+            self._interrupt_manager.exit_state()
+
         state = self.state
         if clear_panel and state:
             start = state.get("panel_start")

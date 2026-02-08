@@ -20,6 +20,7 @@ from swecli.core.context_engineering.tools.handlers.todo_handler import TodoHand
 from swecli.core.context_engineering.tools.handlers.mcp_config_handler import MCPConfigHandler
 from swecli.core.context_engineering.tools.handlers.thinking_handler import ThinkingHandler
 from swecli.core.context_engineering.tools.handlers.search_tools_handler import SearchToolsHandler
+from swecli.core.context_engineering.tools.handlers.batch_handler import BatchToolHandler
 
 if TYPE_CHECKING:
     from swecli.core.skills import SkillLoader
@@ -117,6 +118,7 @@ class ToolRegistry:
             mcp_manager=mcp_manager,
             on_discover=self.discover_mcp_tool,
         )
+        self._batch_handler: Union[BatchToolHandler, None] = None  # Lazy init after registry ready
 
         self.set_mcp_manager(mcp_manager)
 
@@ -164,7 +166,12 @@ class ToolRegistry:
             "task_complete": self._execute_task_complete,
             # Skills system tool
             "invoke_skill": self._handle_invoke_skill,
+            # Batch tool for parallel/serial multi-tool execution
+            "batch_tool": self._execute_batch_tool,
         }
+
+        # Initialize batch handler now that _handlers is set up
+        self._batch_handler = BatchToolHandler(self)
 
     def set_subagent_manager(self, manager: Any) -> None:
         """Set the subagent manager for task tool execution.
@@ -417,7 +424,7 @@ class ToolRegistry:
                 # spawn_subagent needs tool_call_id for parent context tracking
                 return self._execute_spawn_subagent(arguments, context, tool_call_id)
 
-            if tool_name in {"write_file", "edit_file", "run_command"}:
+            if tool_name in {"write_file", "edit_file", "run_command", "batch_tool"}:
                 # Handlers requiring context
                 return handler(arguments, context)
 
@@ -623,6 +630,31 @@ class ToolRegistry:
         status = arguments.get("status", "success")
 
         return self._task_complete_tool.execute(summary=summary, status=status)
+
+    def _execute_batch_tool(self, arguments: dict[str, Any], context: Any = None) -> dict[str, Any]:
+        """Execute the batch_tool for parallel/serial multi-tool invocations.
+
+        Args:
+            arguments: Dict with 'invocations' list and optional 'mode'
+            context: Tool execution context
+
+        Returns:
+            Result with list of tool outputs
+        """
+        if not self._batch_handler:
+            return {"success": False, "error": "Batch handler not initialized", "results": []}
+
+        # Pass context-related kwargs for tool execution
+        kwargs: dict[str, Any] = {}
+        if context:
+            kwargs["mode_manager"] = getattr(context, "mode_manager", None)
+            kwargs["approval_manager"] = getattr(context, "approval_manager", None)
+            kwargs["undo_manager"] = getattr(context, "undo_manager", None)
+            kwargs["task_monitor"] = getattr(context, "task_monitor", None)
+            kwargs["session_manager"] = getattr(context, "session_manager", None)
+            kwargs["ui_callback"] = getattr(context, "ui_callback", None)
+
+        return self._batch_handler.handle(arguments, **kwargs)
 
     def _handle_invoke_skill(
         self, arguments: dict[str, Any], context: Any = None

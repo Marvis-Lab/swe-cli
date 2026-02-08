@@ -170,8 +170,15 @@ class TextualRunner:
             self.config = self.config_manager.load_config()
             self.config_manager.ensure_directories()
 
-            session_root = Path(self.config.session_dir).expanduser()
-            self.session_manager = session_manager or SessionManager(session_root)
+            import os
+
+            env_session_dir = os.environ.get("SWECLI_SESSION_DIR")
+            if session_manager is not None:
+                self.session_manager = session_manager
+            elif env_session_dir:
+                self.session_manager = SessionManager(session_dir=Path(env_session_dir))
+            else:
+                self.session_manager = SessionManager(working_dir=self.working_dir)
 
             # Handle session resumption
             session_loaded = False

@@ -14,7 +14,14 @@ _BUILTIN_TOOL_SCHEMAS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "write_file",
-            "description": "Create a new file with the specified content. Use this when the user asks to create, write, or save a file.",
+            "description": (
+                "Create a new file with the specified content.\n\n"
+                "Usage notes:\n"
+                "- Use this when the user asks to create, write, or save a new file.\n"
+                "- Prefer edit_file for modifying existing files.\n"
+                "- Parent directories are created automatically when create_dirs=true.\n"
+                "- IMPORTANT: Do not create files unless absolutely necessary. Prefer editing existing files."
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -40,7 +47,15 @@ _BUILTIN_TOOL_SCHEMAS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "edit_file",
-            "description": "Edit an existing file by replacing old content with new content. Use this to modify, update, or fix code in existing files.",
+            "description": (
+                "Edit an existing file by replacing old content with new content.\n\n"
+                "Usage notes:\n"
+                "- IMPORTANT: You MUST read the file first with read_file before editing it.\n"
+                "- The old_content must match EXACTLY — including indentation, whitespace, and newlines.\n"
+                "- If old_content is not found, the edit will fail. Read the file again to get the exact content.\n"
+                "- Use match_all=true to replace all occurrences.\n"
+                "- Prefer edit_file over write_file for modifications (preserves unrelated content)."
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -70,14 +85,34 @@ _BUILTIN_TOOL_SCHEMAS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "read_file",
-            "description": "Read the contents of a file. Use this when you need to see what's in a file before editing it or to answer questions about file contents.",
+            "description": (
+                "Read a file from the local filesystem. Returns content with line "
+                "numbers in cat -n format.\n\n"
+                "Usage notes:\n"
+                "- The file_path must be an absolute or relative path.\n"
+                "- By default reads up to 2000 lines. Use offset/max_lines for "
+                "large files.\n"
+                "- Lines longer than 2000 chars are truncated.\n"
+                "- Binary files are detected and rejected with an error message.\n"
+                "- IMPORTANT: Always read a file before editing it. edit_file will "
+                "fail if the old_content doesn't match.\n"
+                "- Prefer read_file over run_command with cat/head/tail."
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "file_path": {
                         "type": "string",
                         "description": "The path to the file to read",
-                    }
+                    },
+                    "offset": {
+                        "type": "integer",
+                        "description": "1-based line number to start reading from. Defaults to 1.",
+                    },
+                    "max_lines": {
+                        "type": "integer",
+                        "description": "Maximum number of lines to return. Defaults to 2000.",
+                    },
                 },
                 "required": ["file_path"],
             },
@@ -87,7 +122,13 @@ _BUILTIN_TOOL_SCHEMAS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "list_files",
-            "description": "List files in a directory or search for files matching a pattern. Use this to explore the codebase structure.",
+            "description": (
+                "List files in a directory or search for files matching a glob pattern.\n\n"
+                "Usage notes:\n"
+                "- Use glob patterns like '**/*.py' or 'src/**/*.ts' to filter.\n"
+                "- Results are capped at 500 entries to prevent context bloat.\n"
+                "- Prefer this over run_command with ls or find."
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -109,7 +150,15 @@ _BUILTIN_TOOL_SCHEMAS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "search",
-            "description": "Search for patterns in code. Supports two modes: 'text' (default) for regex/string search using ripgrep, and 'ast' for structural code pattern matching using ast-grep. AST mode matches code structure regardless of formatting - use $VAR wildcards to match any AST node.",
+            "description": (
+                "Search for patterns in code. Supports 'text' mode (default, regex via ripgrep) "
+                "and 'ast' mode (structural matching via ast-grep).\n\n"
+                "Usage notes:\n"
+                "- Text mode: literal string matching. Be specific with the path to avoid timeouts.\n"
+                "- AST mode: use $VAR wildcards for structural patterns (e.g., '$A && $A()').\n"
+                "- Results are capped at 50 matches and 30,000 chars total.\n"
+                "- Prefer search over run_command with grep or rg."
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -140,7 +189,16 @@ _BUILTIN_TOOL_SCHEMAS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "run_command",
-            "description": "Execute any bash/shell command. Use this whenever the user asks you to run a command. Commands are subject to safety checks and may require approval.",
+            "description": (
+                "Execute a bash/shell command.\n\n"
+                "Usage notes:\n"
+                "- Commands are subject to safety checks and may require approval.\n"
+                "- Output is capped at 30,000 chars (middle-truncated for large outputs).\n"
+                "- Use background=true for long-running servers (Flask, Django, npm start).\n"
+                "- Prefer dedicated tools over shell commands: read_file over cat, "
+                "edit_file over sed, search over grep.\n"
+                "- IMPORTANT: If a command fails, analyze the error before retrying."
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -213,7 +271,14 @@ _BUILTIN_TOOL_SCHEMAS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "fetch_url",
-            "description": "Fetch content from a URL or perform a deep crawl across linked pages. Useful for reading documentation, APIs, or entire site sections. Automatically extracts text from HTML.",
+            "description": (
+                "Fetch content from a URL or perform a deep crawl across linked pages.\n\n"
+                "Usage notes:\n"
+                "- Automatically extracts text from HTML.\n"
+                "- Use deep_crawl=true with max_depth and max_pages to crawl documentation sites.\n"
+                "- Content is capped at max_length (default 50,000 chars).\n"
+                "- IMPORTANT: Never generate or guess URLs. Only use URLs from user messages or local files."
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -953,6 +1018,51 @@ _BUILTIN_TOOL_SCHEMAS: list[dict[str, Any]] = [
                     },
                 },
                 "required": ["task_id"],
+            },
+        },
+    },
+    # ===== Batch Tool =====
+    {
+        "type": "function",
+        "function": {
+            "name": "batch_tool",
+            "description": (
+                "Execute multiple tool invocations in parallel or serial.\n\n"
+                "Usage notes:\n"
+                "- Use parallel mode (default) for independent operations like reading multiple files.\n"
+                "- Use serial mode when operations depend on each other's results.\n"
+                "- Max 5 concurrent workers in parallel mode.\n"
+                "- Results are returned in the same order as the invocations."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "invocations": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "tool": {
+                                    "type": "string",
+                                    "description": "Name of the tool to invoke",
+                                },
+                                "input": {
+                                    "type": "object",
+                                    "description": "Arguments to pass to the tool",
+                                },
+                            },
+                            "required": ["tool", "input"],
+                        },
+                        "description": "List of tool invocations to execute",
+                    },
+                    "mode": {
+                        "type": "string",
+                        "enum": ["parallel", "serial"],
+                        "description": "Execution mode: 'parallel' (concurrent) or 'serial' (sequential)",
+                        "default": "parallel",
+                    },
+                },
+                "required": ["invocations"],
             },
         },
     },

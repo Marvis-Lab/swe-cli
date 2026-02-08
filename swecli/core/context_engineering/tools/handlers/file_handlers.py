@@ -172,7 +172,11 @@ class FileToolHandler:
 
         file_path = sanitize_path(args["file_path"])
         try:
-            content = self._file_ops.read_file(file_path)
+            content = self._file_ops.read_file(
+                file_path,
+                offset=args.get("offset"),
+                max_lines=args.get("max_lines"),
+            )
             return {"success": True, "output": content, "error": None}
         except Exception as exc:  # noqa: BLE001
             return {"success": False, "error": str(exc), "output": None}
@@ -215,6 +219,14 @@ class FileToolHandler:
                 if output and not output.startswith(("Directory not found", "Not a directory")):
                     entries = [line for line in output.splitlines() if line.strip()]
 
+            # Truncate list output to prevent context bloat
+            max_list_entries = 500
+            if entries and len(entries) > max_list_entries:
+                total = len(entries)
+                entries = entries[:max_list_entries]
+                output = "\n".join(entries)
+                output += f"\n... (showing {max_list_entries} of {total} entries)"
+
             return {"success": True, "output": output, "entries": entries, "error": None}
         except Exception as exc:  # noqa: BLE001
             return {"success": False, "error": str(exc), "output": None}
@@ -248,12 +260,24 @@ class FileToolHandler:
                 if not matches:
                     return {"success": True, "output": "No matches found", "matches": []}
 
-            lines = [
-                f"{match['file']}:{match['line']} - {match['content']}"
-                for match in matches[:50]
-            ]
-            if len(matches) > 50:
-                lines.append(f"\n... and {len(matches) - 50} more matches")
+            lines = []
+            total_chars = 0
+            max_output_chars = 30_000
+            shown = 0
+            for match in matches[:50]:
+                line = f"{match['file']}:{match['line']} - {match['content']}"
+                total_chars += len(line) + 1  # +1 for newline
+                if total_chars > max_output_chars:
+                    lines.append(
+                        f"\n... (output truncated at {max_output_chars} chars. "
+                        f"Showing {shown} of {len(matches)} matches.)"
+                    )
+                    break
+                lines.append(line)
+                shown += 1
+            else:
+                if len(matches) > 50:
+                    lines.append(f"\n... and {len(matches) - 50} more matches")
             output = "\n".join(lines)
 
             return {"success": True, "output": output, "matches": matches}
