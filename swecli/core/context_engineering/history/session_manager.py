@@ -362,6 +362,72 @@ class SessionManager:
         # Index missing or corrupted — rebuild (returns sorted)
         return self.rebuild_index()
 
+    def list_all_sessions(self) -> list[SessionMetadata]:
+        """List sessions from ALL project directories.
+
+        Scans every subdirectory under ``~/.opendev/projects/`` and merges
+        their session indexes into a single list. Useful for the web UI
+        sidebar which needs to display sessions across all workspaces.
+
+        Returns:
+            List of session metadata from all projects, sorted by update time
+            (newest first).
+        """
+        from swecli.core.paths import get_paths, SESSIONS_INDEX_FILE_NAME
+
+        paths = get_paths()
+        projects_dir = paths.global_projects_dir
+        if not projects_dir.exists():
+            return []
+
+        all_sessions: list[SessionMetadata] = []
+        seen_ids: set[str] = set()
+
+        for project_dir in projects_dir.iterdir():
+            if not project_dir.is_dir():
+                continue
+
+            index_path = project_dir / SESSIONS_INDEX_FILE_NAME
+            try:
+                if index_path.exists():
+                    with open(index_path) as f:
+                        data = json.load(f)
+                    if (
+                        isinstance(data, dict)
+                        and data.get("version") == _INDEX_VERSION
+                        and isinstance(data.get("entries"), list)
+                    ):
+                        for entry in data["entries"]:
+                            sid = entry.get("sessionId")
+                            if sid and sid not in seen_ids:
+                                seen_ids.add(sid)
+                                all_sessions.append(
+                                    self._metadata_from_index_entry(entry)
+                                )
+                        continue
+
+                # No valid index — rebuild from JSON files in this dir
+                for session_file in project_dir.glob("*.json"):
+                    if session_file.name == SESSIONS_INDEX_FILE_NAME:
+                        continue
+                    try:
+                        session = self._load_from_file(session_file)
+                        if len(session.messages) == 0:
+                            continue
+                        sid = session.id
+                        if sid not in seen_ids:
+                            seen_ids.add(sid)
+                            entry = self._session_to_index_entry(session)
+                            all_sessions.append(
+                                self._metadata_from_index_entry(entry)
+                            )
+                    except Exception:
+                        continue
+            except Exception:
+                continue
+
+        return sorted(all_sessions, key=lambda s: s.updated_at, reverse=True)
+
     def find_latest_session(
         self, working_directory: Union[Path, str, None] = None
     ) -> Optional[SessionMetadata]:

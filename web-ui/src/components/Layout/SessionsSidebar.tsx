@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { ChevronDownIcon, Cog6ToothIcon, FolderIcon, PlusIcon, ChatBubbleLeftRightIcon } from '@heroicons/react/24/outline';
-import { PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { PanelLeft } from 'lucide-react';
 import { useChatStore } from '../../stores/chat';
 import { SettingsModal } from '../Settings/SettingsModal';
 import { NewSessionModal } from './NewSessionModal';
@@ -267,7 +267,7 @@ export function SessionsSidebar() {
               className="p-1.5 rounded-md hover:bg-beige-200/50 bg-white shadow-sm"
               title="Expand sidebar (Ctrl/Cmd+B)"
             >
-              <PanelLeftOpen className="w-4 h-4 text-beige-600" />
+              <PanelLeft className="w-5 h-5 text-beige-600" />
             </button>
           </div>
 
@@ -344,7 +344,7 @@ export function SessionsSidebar() {
               className="p-2 rounded-lg self-end hover:bg-beige-200/50"
               title="Collapse sidebar (Ctrl/Cmd+B)"
             >
-              <PanelLeftClose className="w-4 h-4 text-beige-600" />
+              <PanelLeft className="w-5 h-5 text-beige-600" />
             </button>
 
             <div className="flex flex-col items-center gap-2 mb-2">

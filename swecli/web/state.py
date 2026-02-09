@@ -97,7 +97,7 @@ class WebState:
         return session.id if session else None
 
     def list_sessions(self) -> List[Dict[str, Any]]:
-        """List all available sessions."""
+        """List all available sessions across all projects."""
         return [
             {
                 "id": s.id,
@@ -108,7 +108,7 @@ class WebState:
                 "total_tokens": s.total_tokens,
                 "title": s.title,
             }
-            for s in self.session_manager.list_sessions()
+            for s in self.session_manager.list_all_sessions()
         ]
 
     def resume_session(self, session_id: str) -> bool:
