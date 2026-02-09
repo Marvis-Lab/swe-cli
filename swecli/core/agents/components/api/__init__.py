@@ -5,6 +5,7 @@ and provider-specific adapters (Anthropic, OpenAI, Fireworks).
 """
 
 from .anthropic_adapter import AnthropicAdapter
+from .openai_responses_adapter import OpenAIResponsesAdapter
 from .configuration import (
     build_max_tokens_param,
     build_temperature_param,
@@ -18,6 +19,7 @@ __all__ = [
     "AgentHttpClient",
     "AnthropicAdapter",
     "HttpResult",
+    "OpenAIResponsesAdapter",
     "build_max_tokens_param",
     "build_temperature_param",
     "create_http_client",

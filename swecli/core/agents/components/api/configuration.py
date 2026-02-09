@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Tuple, Any
+from typing import Any, Tuple
 
 from swecli.models.config import AppConfig
 
@@ -94,17 +94,22 @@ def create_http_client(config: AppConfig) -> Any:
     """Create the appropriate HTTP client based on the provider.
 
     Returns:
-        AgentHttpClient for OpenAI-compatible APIs (Fireworks, OpenAI)
+        OpenAIResponsesAdapter for OpenAI (all models use /v1/responses)
         AnthropicAdapter for Anthropic
+        AgentHttpClient for other OpenAI-compatible APIs (Fireworks, etc.)
     """
     if config.model_provider == "anthropic":
         from .anthropic_adapter import AnthropicAdapter
         api_key = config.get_api_key()
         return AnthropicAdapter(api_key)
-    else:
-        from .http_client import AgentHttpClient
-        api_url, headers = resolve_api_config(config)
-        return AgentHttpClient(api_url, headers)
+
+    if config.model_provider == "openai":
+        from .openai_responses_adapter import OpenAIResponsesAdapter
+        return OpenAIResponsesAdapter(config.get_api_key())
+
+    from .http_client import AgentHttpClient
+    api_url, headers = resolve_api_config(config)
+    return AgentHttpClient(api_url, headers)
 
 
 def create_http_client_for_provider(provider_id: str, config: AppConfig) -> Any:
@@ -118,21 +123,23 @@ def create_http_client_for_provider(provider_id: str, config: AppConfig) -> Any:
         config: AppConfig for getting API keys
 
     Returns:
-        AgentHttpClient for OpenAI-compatible APIs
+        OpenAIResponsesAdapter for OpenAI (all models use /v1/responses)
         AnthropicAdapter for Anthropic
+        AgentHttpClient for other OpenAI-compatible APIs (Fireworks, etc.)
 
     Raises:
         ValueError: If provider is unknown or API key is missing
     """
     import os
 
-    # Get API key based on provider
     if provider_id == "openai":
         api_key = os.getenv("OPENAI_API_KEY")
-        api_url = "https://api.openai.com/v1/chat/completions"
+        if not api_key:
+            raise ValueError("OPENAI_API_KEY environment variable not set")
+        from .openai_responses_adapter import OpenAIResponsesAdapter
+        return OpenAIResponsesAdapter(api_key)
     elif provider_id == "anthropic":
         api_key = os.getenv("ANTHROPIC_API_KEY")
-        # Return Anthropic adapter directly
         if not api_key:
             raise ValueError("ANTHROPIC_API_KEY environment variable not set")
         from .anthropic_adapter import AnthropicAdapter

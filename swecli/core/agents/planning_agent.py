@@ -7,14 +7,13 @@ from typing import Any, Optional
 
 from swecli.core.base.abstract import BaseAgent
 from swecli.core.agents.components import (
-    AgentHttpClient,
     PlanningPromptBuilder,
     PlanningToolSchemaBuilder,
     ThinkingPromptBuilder,
     ResponseCleaner,
     build_max_tokens_param,
     build_temperature_param,
-    resolve_api_config,
+    create_http_client,
 )
 from swecli.models.config import AppConfig
 
@@ -41,38 +40,16 @@ class PlanningAgent(BaseAgent):
     ) -> None:
         # Lazy initialization - defer API key validation until first API call
         self.__http_client = None
-        self.__api_config_resolved = False
-        self._api_url = None
-        self._headers = None
         self._response_cleaner = ResponseCleaner()
         self._working_dir = working_dir
         self._env_context = env_context
         super().__init__(config, tool_registry, mode_manager)
 
-    def _ensure_api_config(self) -> None:
-        """Lazily resolve API config on first access (defers API key validation)."""
-        if not self.__api_config_resolved:
-            self._api_url, self._headers = resolve_api_config(self.config)
-            self.__api_config_resolved = True
-
     @property
-    def api_url(self) -> str:
-        """Lazily get API URL."""
-        self._ensure_api_config()
-        return self._api_url
-
-    @property
-    def headers(self) -> dict:
-        """Lazily get headers."""
-        self._ensure_api_config()
-        return self._headers
-
-    @property
-    def _http_client(self) -> AgentHttpClient:
+    def _http_client(self) -> Any:
         """Lazily create HTTP client on first access (defers API key validation)."""
         if self.__http_client is None:
-            self._ensure_api_config()
-            self.__http_client = AgentHttpClient(self._api_url, self._headers)
+            self.__http_client = create_http_client(self.config)
         return self.__http_client
 
     def build_system_prompt(self, thinking_visible: bool = False) -> str:

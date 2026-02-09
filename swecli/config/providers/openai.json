@@ -96,7 +96,9 @@
       "context_length": 128000,
       "capabilities": [
         "text"
-      ]
+      ],
+      "api_type": "responses",
+      "supports_temperature": false
     },
     "gpt-5.1-codex": {
       "id": "gpt-5.1-codex",
@@ -105,7 +107,9 @@
       "context_length": 128000,
       "capabilities": [
         "text"
-      ]
+      ],
+      "api_type": "responses",
+      "supports_temperature": false
     },
     "gpt-5-codex": {
       "id": "gpt-5-codex",
@@ -114,7 +118,9 @@
       "context_length": 128000,
       "capabilities": [
         "text"
-      ]
+      ],
+      "api_type": "responses",
+      "supports_temperature": false
     },
     "gpt-5.1-codex-mini": {
       "id": "gpt-5.1-codex-mini",
@@ -123,7 +129,9 @@
       "context_length": 128000,
       "capabilities": [
         "text"
-      ]
+      ],
+      "api_type": "responses",
+      "supports_temperature": false
     },
     "codex-mini-latest": {
       "id": "codex-mini-latest",
@@ -132,7 +140,9 @@
       "context_length": 128000,
       "capabilities": [
         "text"
-      ]
+      ],
+      "api_type": "responses",
+      "supports_temperature": false
     },
     "gpt-5.2-pro": {
       "id": "gpt-5.2-pro",
@@ -143,7 +153,9 @@
         "text",
         "vision",
         "reasoning"
-      ]
+      ],
+      "api_type": "responses",
+      "supports_temperature": false
     },
     "gpt-5-pro": {
       "id": "gpt-5-pro",
@@ -154,7 +166,9 @@
         "text",
         "vision",
         "reasoning"
-      ]
+      ],
+      "api_type": "responses",
+      "supports_temperature": false
     },
     "gpt-4.1": {
       "id": "gpt-4.1",
@@ -235,6 +249,7 @@
         "text",
         "reasoning"
       ],
+      "api_type": "responses",
       "supports_temperature": false
     },
     "o1-mini": {
@@ -268,6 +283,7 @@
         "text",
         "reasoning"
       ],
+      "api_type": "responses",
       "supports_temperature": false
     },
     "o3-mini": {
