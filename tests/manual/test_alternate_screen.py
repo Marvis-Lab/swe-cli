@@ -97,7 +97,7 @@ def test_textual_alternate_screen():
 
     if response == 'y':
         print("\n✓ Excellent! Textual full-screen works correctly.")
-        print("  The SWE-CLI UI should work perfectly!")
+        print("  The OpenDev UI should work perfectly!")
     else:
         print("\n✗ Textual might not be using alternate screen properly.")
         print("  This could be a terminal or configuration issue.")

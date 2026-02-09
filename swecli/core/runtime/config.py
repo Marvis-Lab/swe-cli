@@ -29,8 +29,8 @@ class ConfigManager:
         """Load and merge configuration from multiple sources.
 
         Priority (highest to lowest):
-        1. Local project config (.swecli/settings.json)
-        2. Global user config (~/.swecli/settings.json)
+        1. Local project config (.opendev/settings.json)
+        2. Global user config (~/.opendev/settings.json)
         3. Default values
         """
         # Start with defaults
@@ -113,6 +113,8 @@ class ConfigManager:
             "model_thinking",
             "model_vlm_provider",
             "model_vlm",
+            "model_critique_provider",
+            "model_critique",
             "api_base_url",
             "debug_logging",
         }
@@ -154,7 +156,7 @@ class ConfigManager:
             local_cmd_dir.mkdir(parents=True, exist_ok=True)
 
     def load_context_files(self) -> list[str]:
-        """Load SWECLI.md context files hierarchically.
+        """Load OPENDEV.md context files hierarchically.
 
         Returns:
             List of context file contents, from global to local
@@ -168,14 +170,14 @@ class ConfigManager:
             contexts.append(global_context.read_text())
 
         # Project root context
-        project_context = self.working_dir / "SWECLI.md"
+        project_context = self.working_dir / "OPENDEV.md"
         if project_context.exists():
             contexts.append(project_context.read_text())
 
         # Subdirectory contexts (walk up from current dir to project root)
         current = self.working_dir
         while current != current.parent:
-            subdir_context = current / "SWECLI.md"
+            subdir_context = current / "OPENDEV.md"
             if subdir_context.exists() and subdir_context != project_context:
                 contexts.insert(1, subdir_context.read_text())  # Insert after global
             current = current.parent
@@ -190,6 +192,7 @@ class ConfigManager:
             ("model_provider", "model"),
             ("model_thinking_provider", "model_thinking"),
             ("model_vlm_provider", "model_vlm"),
+            ("model_critique_provider", "model_critique"),
         ]
 
         for provider_key, model_key in mapping:
@@ -214,12 +217,12 @@ class ConfigManager:
 
     @property
     def user_skills_dir(self) -> Path:
-        """Get user-global skills directory (~/.swecli/skills/)."""
+        """Get user-global skills directory (~/.opendev/skills/)."""
         return get_paths(self.working_dir).global_skills_dir
 
     @property
     def project_skills_dir(self) -> Path | None:
-        """Get project-local skills directory (<project>/.swecli/skills/).
+        """Get project-local skills directory (<project>/.opendev/skills/).
 
         Returns None if no working directory is set.
         """
@@ -231,10 +234,10 @@ class ConfigManager:
         """Get all skill directories in priority order.
 
         Returns directories from highest to lowest priority:
-        1. Project skills (.swecli/skills/)
-        2. User global skills (~/.swecli/skills/)
-        3. Project bundle skills (.swecli/plugins/bundles/*/skills/)
-        4. User bundle skills (~/.swecli/plugins/bundles/*/skills/)
+        1. Project skills (.opendev/skills/)
+        2. User global skills (~/.opendev/skills/)
+        3. Project bundle skills (.opendev/plugins/bundles/*/skills/)
+        4. User bundle skills (~/.opendev/plugins/bundles/*/skills/)
 
         Returns:
             List of existing skill directories, highest priority first
@@ -332,10 +335,10 @@ class ConfigManager:
         """Load custom agent definitions from config files and markdown agents.
 
         Loads from (in priority order, later sources override earlier):
-        1. ~/.swecli/agents.json (user global JSON)
-        2. ~/.swecli/agents/*.md (user global markdown)
-        3. <project>/.swecli/agents.json (project local JSON)
-        4. <project>/.swecli/agents/*.md (project local markdown)
+        1. ~/.opendev/agents.json (user global JSON)
+        2. ~/.opendev/agents/*.md (user global markdown)
+        3. <project>/.opendev/agents.json (project local JSON)
+        4. <project>/.opendev/agents/*.md (project local markdown)
 
         Returns:
             List of agent definitions merged from all sources

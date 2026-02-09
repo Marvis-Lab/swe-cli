@@ -18,7 +18,7 @@ class MCPServerConfig(BaseModel):
 
     # Common fields
     enabled: bool = Field(default=True, description="Whether the server is enabled")
-    auto_start: bool = Field(default=True, description="Auto-start when SWE-CLI launches")
+    auto_start: bool = Field(default=True, description="Auto-start when OpenDev launches")
     transport: str = Field(default="stdio", description="Transport type (stdio, sse, http)")
 
 

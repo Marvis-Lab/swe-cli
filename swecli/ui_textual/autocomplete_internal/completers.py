@@ -13,7 +13,7 @@ from .completion_strategies import SlashCommandStrategy, FileMentionStrategy
 
 
 class SwecliCompleter(Completer):
-    """Custom completer for SWE-CLI that handles @ mentions and / commands."""
+    """Custom completer for OpenDev that handles @ mentions and / commands."""
 
     def __init__(self, working_dir: Path, command_registry: Optional[CommandRegistry] = None):
         """Initialize completer.

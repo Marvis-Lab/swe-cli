@@ -1,4 +1,4 @@
-"""Interfaces for SWE-CLI tool execution components."""
+"""Interfaces for OpenDev tool execution components."""
 
 from __future__ import annotations
 

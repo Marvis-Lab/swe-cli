@@ -1,4 +1,4 @@
-"""Tool subsystem for SWE-CLI core.
+"""Tool subsystem for OpenDev core.
 
 This package contains:
 - implementations/: Low-level tool implementations (BashTool, EditTool, etc.)

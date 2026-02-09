@@ -39,7 +39,7 @@ def render_welcome_panel(
             conversation.write(Text.from_ansi(line), wrappable=False)
 
     else:
-        heading = Text("SWE-CLI (Preview)", style=f"bold {BLUE_BRIGHT}")
+        heading = Text("OpenDev (Preview)", style=f"bold {BLUE_BRIGHT}")
         subheading = Text("Textual POC interface", style=SUBTLE)
         body = Text(
             "Use this playground to explore the upcoming Textual UI.\n"
@@ -69,7 +69,7 @@ def render_welcome_panel(
             border_style=BLUE_BRIGHT,
             padding=(1, 3),
             title="Welcome",
-            subtitle="swecli",
+            subtitle="opendev",
             subtitle_align="left",
             width=78,
         )

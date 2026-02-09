@@ -1,4 +1,4 @@
-"""Runtime subsystem for SWE-CLI.
+"""Runtime subsystem for OpenDev.
 
 This package manages runtime/operational concerns:
 - config.py: Configuration management

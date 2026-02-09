@@ -1,1 +1,1 @@
-"""Tests for SWE-CLI."""
+"""Tests for OpenDev."""

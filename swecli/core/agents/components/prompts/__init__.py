@@ -1,4 +1,4 @@
-"""System prompt construction for SWE-CLI agents.
+"""System prompt construction for OpenDev agents.
 
 This subpackage contains prompt builders for different agent modes:
 - SystemPromptBuilder: NORMAL mode with full tool access

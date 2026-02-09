@@ -117,6 +117,10 @@ class AppConfig(BaseModel):
     model_vlm: Optional[str] = None
     model_vlm_provider: Optional[str] = None
 
+    # Critique model: For self-critique of reasoning (optional, falls back to thinking model if not set)
+    model_critique: Optional[str] = None
+    model_critique_provider: Optional[str] = None
+
     api_key: Optional[str] = None
     api_base_url: Optional[str] = None
     max_tokens: int = 16384
@@ -255,6 +259,32 @@ class AppConfig(BaseModel):
 
         # No vision model available
         return None
+
+    def get_critique_model_info(self):
+        """Get critique model information, fallback to thinking model if not set.
+
+        Returns:
+            Tuple of (provider_id, model_id, ModelInfo) or None
+        """
+        from swecli.config import get_model_registry
+
+        registry = get_model_registry()
+
+        # Use critique model if configured
+        if self.model_critique and self.model_critique_provider:
+            result = registry.find_model_by_id(self.model_critique)
+            if result:
+                return result
+
+        # Fallback to thinking model if configured
+        if self.model_thinking and self.model_thinking_provider:
+            result = registry.find_model_by_id(self.model_thinking)
+            if result:
+                return result
+
+        # Fallback to normal model
+        result = registry.find_model_by_id(self.model)
+        return result
 
     def should_use_provider_for_all(self, provider_id: str) -> bool:
         """Check if provider supports all capabilities in all models (OpenAI/Anthropic).

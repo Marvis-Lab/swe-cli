@@ -1,4 +1,4 @@
-"""Per-session debug logging for SWE-CLI."""
+"""Per-session debug logging for OpenDev."""
 
 from swecli.core.debug.session_debug_logger import (
     SessionDebugLogger,

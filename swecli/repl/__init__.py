@@ -1,4 +1,4 @@
-"""REPL interface for SWE-CLI."""
+"""REPL interface for OpenDev."""
 
 from swecli.repl.repl import REPL
 

@@ -183,7 +183,7 @@ class WebFetchTool:
             browser_config = BrowserConfig(
                 headless=True,
                 verbose=False,
-                user_agent="SWE-CLI/1.0 (AI Assistant Tool; Crawl4AI)",
+                user_agent="OpenDev/1.0 (AI Assistant Tool; Crawl4AI)",
             )
 
             # Configure crawler

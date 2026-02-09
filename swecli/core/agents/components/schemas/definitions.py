@@ -1,4 +1,4 @@
-"""Master list of built-in tool schemas used by SWE-CLI agents.
+"""Master list of built-in tool schemas used by OpenDev agents.
 
 This module contains the complete schema definitions for all built-in tools.
 These schemas are imported by ToolSchemaBuilder and PlanningToolSchemaBuilder.
@@ -950,7 +950,7 @@ _BUILTIN_TOOL_SCHEMAS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "configure_mcp_server",
-            "description": "Configure an MCP (Model Context Protocol) server from a preset. Use this when user asks to set up integrations like GitHub, database connections, or other MCP servers. This will add the server to ~/.swecli/mcp.json and optionally connect to it.",
+            "description": "Configure an MCP (Model Context Protocol) server from a preset. Use this when user asks to set up integrations like GitHub, database connections, or other MCP servers. This will add the server to ~/.opendev/mcp.json and optionally connect to it.",
             "parameters": {
                 "type": "object",
                 "properties": {

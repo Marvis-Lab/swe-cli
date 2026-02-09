@@ -1,4 +1,4 @@
-"""Notification center for SWE-CLI."""
+"""Notification center for OpenDev."""
 
 from __future__ import annotations
 

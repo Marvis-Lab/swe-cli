@@ -1,4 +1,4 @@
-"""Interfaces describing agent behavior within SWE-CLI core."""
+"""Interfaces describing agent behavior within OpenDev core."""
 
 from __future__ import annotations
 

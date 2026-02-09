@@ -3,7 +3,7 @@
 import logging
 import sys
 
-# Create a custom logger for SWE-CLI web
+# Create a custom logger for OpenDev web
 logger = logging.getLogger("swecli.web")
 logger.setLevel(logging.DEBUG)
 

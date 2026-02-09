@@ -54,7 +54,7 @@ class TestApp(App):
 
     def on_mount(self):
         """Initialize the app on mount."""
-        self.title = "SWE-CLI UI Test"
+        self.title = "OpenDev UI Test"
         self.conversation = self.query_one("#conversation", ConversationLog)
 
         # Add welcome message

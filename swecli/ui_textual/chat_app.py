@@ -1,4 +1,4 @@
-"""Textual-based chat application for SWE-CLI - POC."""
+"""Textual-based chat application for OpenDev - POC."""
 
 import threading
 from typing import Any, Callable, Mapping, Optional
@@ -35,7 +35,7 @@ from swecli.ui_textual.managers.interrupt_manager import InterruptManager, Inter
 
 
 class SWECLIChatApp(App):
-    """SWE-CLI Chat Application using Textual."""
+    """OpenDev Chat Application using Textual."""
 
     CSS_PATH = "styles/chat.tcss"
 
@@ -134,6 +134,7 @@ class SWECLIChatApp(App):
         self._selection_tip_timer: Any | None = None
         self._default_label = "› Type your message (Enter to send, Shift+Enter for new line):"
         self._thinking_visible = True  # Thinking mode visibility state (default ON)
+        self._thinking_level = None  # ThinkingLevel enum, set when handler available
         self._progress_bar: ProgressBar | None = None
         self._welcome_panel: AnimatedWelcomePanel | None = None
         self._is_resumed_session = is_resumed_session
@@ -225,10 +226,10 @@ class SWECLIChatApp(App):
 
         # Set titles based on whether we have real backend integration
         if self.on_message:
-            self.title = "SWE-CLI Chat"
+            self.title = "OpenDev Chat"
             self.sub_title = "AI-powered coding assistant"
         else:
-            self.title = "SWE-CLI Chat (Textual POC)"
+            self.title = "OpenDev Chat (Textual POC)"
             self.sub_title = "Full-screen terminal interface"
 
         # Note: Welcome panel is now an animated widget mounted in compose()
@@ -772,23 +773,35 @@ class SWECLIChatApp(App):
             pass
 
     def action_toggle_thinking(self) -> None:
-        """Toggle thinking content visibility (Ctrl+Shift+T).
+        """Cycle thinking level (Ctrl+Shift+T).
 
-        Toggles whether thinking blocks from the think tool are displayed.
-        When hidden, thinking content is still captured but not shown.
-        Also syncs with tool_registry.thinking_handler for prompt injection.
+        Cycles through: Off → Low → Medium → High → Self-Critique → Off
+        Controls thinking depth and whether self-critique is enabled.
         """
-        # Toggle the app's thinking visibility state
-        self._thinking_visible = not self._thinking_visible
-
-        # Sync with thinking handler (used by query_processor for prompt injection)
+        # Cycle thinking level via handler
         if hasattr(self, "_thinking_handler") and self._thinking_handler:
-            self._thinking_handler._visible = self._thinking_visible
+            new_level = self._thinking_handler.cycle_level()
+            self._thinking_level = new_level
+            self._thinking_visible = new_level.is_enabled
+        else:
+            # Fallback if no handler - cycle through levels manually
+            levels = ["Off", "Low", "Medium", "High", "Self-Critique"]
+            current = getattr(self, "_thinking_level_str", "Medium")
+            try:
+                idx = levels.index(current)
+                new_level_str = levels[(idx + 1) % len(levels)]
+            except ValueError:
+                new_level_str = "Medium"
+            self._thinking_level_str = new_level_str
+            self._thinking_visible = new_level_str != "Off"
 
-        # Update status bar
+        # Update status bar with new level
         try:
             status_bar = self.query_one("#status-bar", StatusBar)
-            status_bar.set_thinking_enabled(self._thinking_visible)
+            if hasattr(self, "_thinking_handler") and self._thinking_handler:
+                status_bar.set_thinking_level(self._thinking_handler.level.value)
+            else:
+                status_bar.set_thinking_level(getattr(self, "_thinking_level_str", "Medium"))
         except Exception:  # pragma: no cover - defensive
             pass
 

@@ -23,9 +23,9 @@ def create_location_panel(selected_index: int, working_dir: str = "") -> Rendera
     """
     # Build project path label - show actual path if available
     if working_dir:
-        project_label = f"Project ({working_dir}/.swecli/agents/)"
+        project_label = f"Project ({working_dir}/.opendev/agents/)"
     else:
-        project_label = "Project (.swecli/agents/)"
+        project_label = "Project (.opendev/agents/)"
 
     items = [
         {
@@ -33,7 +33,7 @@ def create_location_panel(selected_index: int, working_dir: str = "") -> Rendera
             "label": project_label,
             "summary": "Local to this repository",
         },
-        {"option": "2", "label": "Personal (~/.swecli/agents/)", "summary": "Available everywhere"},
+        {"option": "2", "label": "Personal (~/.opendev/agents/)", "summary": "Available everywhere"},
     ]
 
     table = Table.grid(expand=False, padding=(0, 1))

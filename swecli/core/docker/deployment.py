@@ -126,7 +126,7 @@ class DockerDeployment:
 
         # Generate unique identifiers
         self._auth_token = str(uuid.uuid4())
-        self._container_name = f"swecli-runtime-{uuid.uuid4().hex[:8]}"
+        self._container_name = f"opendev-runtime-{uuid.uuid4().hex[:8]}"
         self._host_port = _find_free_port()
 
         # State
@@ -247,8 +247,8 @@ class DockerDeployment:
 
         # Add environment variables
         env_vars = {
-            "SWECLI_AUTH_TOKEN": self._auth_token,
-            "SWECLI_PORT": str(self.config.server_port),
+            "OPENDEV_AUTH_TOKEN": self._auth_token,
+            "OPENDEV_PORT": str(self.config.server_port),
             **self.config.environment,
         }
         for key, value in env_vars.items():
@@ -293,8 +293,8 @@ import asyncio
 app = FastAPI()
 
 # Auth token from environment
-AUTH_TOKEN = os.environ.get("SWECLI_AUTH_TOKEN")
-PORT = int(os.environ.get("SWECLI_PORT", "8000"))
+AUTH_TOKEN = os.environ.get("OPENDEV_AUTH_TOKEN")
+PORT = int(os.environ.get("OPENDEV_PORT", "8000"))
 
 # Session storage
 sessions = {}
@@ -333,7 +333,7 @@ def verify_auth(x_api_key: str = Header(None)):
 def strip_ansi(s: str) -> str:
     return re.sub(r"\\x1B[@-_][0-?]*[ -/]*[@-~]", "", s).replace("\\r\\n", "\\n")
 
-PS1 = "SWECLI_PS1> "
+PS1 = "OPENDEV_PS1> "
 
 @app.get("/is_alive")
 async def is_alive(x_api_key: str = Header(None)):

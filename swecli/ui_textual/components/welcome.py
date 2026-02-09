@@ -1,4 +1,4 @@
-"""Welcome banner and session info for SWE-CLI (Textual UI)."""
+"""Welcome banner and session info for OpenDev (Textual UI)."""
 
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ class WelcomeMessage:
 
     @staticmethod
     def get_version() -> str:
-        """Get SWE-CLI version."""
+        """Get OpenDev version."""
         try:
             from importlib.metadata import version
 
@@ -105,7 +105,7 @@ class WelcomeMessage:
     @classmethod
     def generate_banner(cls) -> List[str]:
         version = cls.get_version()
-        header = cls._header_line(f"SWE-CLI {version}")
+        header = cls._header_line(f"OpenDev {version}")
         welcome_line = cls._two_column(
             "Welcome to your coding assistant",
             "Quick start: /help · /models · /mode plan",
@@ -159,7 +159,7 @@ class WelcomeMessage:
             (f"{BOLD}{CYAN}Welcome back {user_display}!{RESET}", "center"),
             ("", "left"),
             (f"{CYAN}╔═══════════╗{RESET}", "center"),
-            (f"{CYAN}║  {BOLD}SWE-CLI{RESET}{CYAN}  ║{RESET}", "center"),
+            (f"{CYAN}║  {BOLD}OpenDev{RESET}{CYAN}  ║{RESET}", "center"),
             (f"{CYAN}╚═══════════╝{RESET}", "center"),
             ("", "left"),
             (f"{BOLD}Workspace{RESET}", "left"),
@@ -215,7 +215,7 @@ class WelcomeMessage:
 
         return [
             "",
-            cls._header_line(f"SWE-CLI {version}"),
+            cls._header_line(f"OpenDev {version}"),
             *rows,
             cls._footer_line(),
         ]

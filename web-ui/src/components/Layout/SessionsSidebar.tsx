@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
-import { ChevronDownIcon, Cog6ToothIcon, Bars3Icon, XMarkIcon, FolderIcon, PlusIcon, ChatBubbleLeftRightIcon } from '@heroicons/react/24/outline';
+import { ChevronDownIcon, Cog6ToothIcon, FolderIcon, PlusIcon, ChatBubbleLeftRightIcon } from '@heroicons/react/24/outline';
+import { PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { useChatStore } from '../../stores/chat';
 import { SettingsModal } from '../Settings/SettingsModal';
 import { NewSessionModal } from './NewSessionModal';
@@ -263,15 +264,15 @@ export function SessionsSidebar() {
           <div className="border-b border-beige-200 p-3 flex flex-col items-center">
             <button
               onClick={() => setIsCollapsed(false)}
-              className="p-2 rounded-lg hover:bg-beige-200/50 bg-white shadow-sm"
+              className="p-1.5 rounded-md hover:bg-beige-200/50 bg-white shadow-sm"
               title="Expand sidebar (Ctrl/Cmd+B)"
             >
-              <Bars3Icon className="w-5 h-5 text-beige-600" />
+              <PanelLeftOpen className="w-4 h-4 text-beige-600" />
             </button>
           </div>
 
           {/* Collapsed Workspace Icons */}
-          <div className="flex-1 overflow-y-auto px-2 py-3 space-y-2">
+          <div className="flex-1 overflow-y-auto py-3 space-y-2 flex flex-col items-center">
             {workspaces.slice(0, 5).map((workspace) => {
               const hasActiveSession = workspace.sessions.some(s => s.id === currentSessionId);
               const projectName = getProjectName(workspace.path);
@@ -289,7 +290,7 @@ export function SessionsSidebar() {
                         setExpandedWorkspaces(prev => new Set([...prev, workspace.path]));
                       }, 100);
                     }}
-                    className={`w-full aspect-square rounded-xl flex items-center justify-center ${
+                    className={`w-10 h-10 rounded-lg flex items-center justify-center ${
                       hasActiveSession
                         ? 'bg-amber-100 border-2 border-amber-400 shadow-sm'
                         : 'bg-white hover:bg-beige-100 border border-beige-200 hover:shadow-md'
@@ -315,7 +316,7 @@ export function SessionsSidebar() {
                 setIsCollapsed(false);
                 setTimeout(() => setIsNewSessionOpen(true), 100);
               }}
-              className="w-full aspect-square rounded-xl flex items-center justify-center bg-gradient-to-br from-amber-400 to-orange-500 hover:from-amber-500 hover:to-orange-600 text-white shadow-md hover:shadow-lg"
+              className="w-10 h-10 rounded-lg flex items-center justify-center bg-gradient-to-br from-amber-400 to-orange-500 hover:from-amber-500 hover:to-orange-600 text-white shadow-md hover:shadow-lg"
               title="Start Conversation"
             >
               <PlusIcon className="w-5 h-5" />
@@ -343,7 +344,7 @@ export function SessionsSidebar() {
               className="p-2 rounded-lg self-end hover:bg-beige-200/50"
               title="Collapse sidebar (Ctrl/Cmd+B)"
             >
-              <XMarkIcon className="w-5 h-5 text-beige-600" />
+              <PanelLeftClose className="w-4 h-4 text-beige-600" />
             </button>
 
             <div className="flex flex-col items-center gap-2 mb-2">
@@ -353,7 +354,7 @@ export function SessionsSidebar() {
                 </svg>
               </div>
               <div className="text-center">
-                <h1 className="text-lg font-bold text-gray-900">SWE-CLI</h1>
+                <h1 className="text-lg font-bold text-gray-900">OpenDev</h1>
                 <p className="text-xs text-beige-500">AI Coding Assistant</p>
               </div>
             </div>

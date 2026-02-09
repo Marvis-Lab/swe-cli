@@ -6,8 +6,8 @@ skills extend the current conversation's capabilities.
 
 ## Directory Structure
 Skills are loaded from:
-- ~/.swecli/skills/ (user global)
-- <project>/.swecli/skills/ (project local, takes priority)
+- ~/.opendev/skills/ (user global)
+- <project>/.opendev/skills/ (project local, takes priority)
 
 ## Skill File Format
 ```markdown

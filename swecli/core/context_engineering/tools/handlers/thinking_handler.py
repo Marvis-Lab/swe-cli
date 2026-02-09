@@ -2,7 +2,52 @@
 
 from dataclasses import dataclass, field
 from datetime import datetime
+from enum import Enum
 from typing import List, Optional
+
+
+class ThinkingLevel(Enum):
+    """Thinking mode levels controlling reasoning depth and self-critique.
+    
+    - OFF: No thinking phase
+    - LOW: Brief thinking (concise, ~50 words)
+    - MEDIUM: Standard thinking (balanced, ~100 words) - default
+    - HIGH: Detailed thinking (thorough, ~200 words)
+    - SELF_CRITIQUE: Thinking + critique + refined thinking
+    """
+    OFF = "Off"
+    LOW = "Low"
+    MEDIUM = "Medium"
+    HIGH = "High"
+    SELF_CRITIQUE = "Self-Critique"
+
+    def next(self) -> "ThinkingLevel":
+        """Get the next level in the cycle."""
+        levels = list(ThinkingLevel)
+        idx = levels.index(self)
+        return levels[(idx + 1) % len(levels)]
+
+    @property
+    def is_enabled(self) -> bool:
+        """Check if thinking is enabled at this level."""
+        return self != ThinkingLevel.OFF
+
+    @property
+    def includes_critique(self) -> bool:
+        """Check if this level includes self-critique."""
+        return self == ThinkingLevel.SELF_CRITIQUE
+
+    @property
+    def word_limit(self) -> int:
+        """Get the suggested word limit for this level."""
+        limits = {
+            ThinkingLevel.OFF: 0,
+            ThinkingLevel.LOW: 50,
+            ThinkingLevel.MEDIUM: 100,
+            ThinkingLevel.HIGH: 200,
+            ThinkingLevel.SELF_CRITIQUE: 100,  # Base thinking before critique
+        }
+        return limits.get(self, 100)
 
 
 @dataclass
@@ -20,14 +65,14 @@ class ThinkingHandler:
     This handler manages thinking content that the model produces
     when using the 'think' tool to reason through complex problems.
     The content can be displayed in the UI with dark gray styling
-    and visibility can be toggled via hotkey.
+    and the thinking level can be cycled via hotkey.
     """
 
     def __init__(self):
         """Initialize thinking handler with empty state."""
         self._blocks: List[ThinkingBlock] = []
         self._next_id = 1
-        self._visible = True  # Default ON - shows thinking content by default
+        self._level = ThinkingLevel.MEDIUM  # Default to medium thinking
 
     def add_thinking(self, thought: str) -> dict:
         """Add a thinking block.
@@ -83,23 +128,72 @@ class ThinkingHandler:
         self._blocks.clear()
         self._next_id = 1
 
-    def toggle_visibility(self) -> bool:
-        """Toggle global visibility of thinking content.
+    def cycle_level(self) -> ThinkingLevel:
+        """Cycle to the next thinking level.
 
         Returns:
-            New visibility state (True = visible)
+            New thinking level
         """
-        self._visible = not self._visible
-        return self._visible
+        self._level = self._level.next()
+        return self._level
+
+    def set_level(self, level: ThinkingLevel) -> None:
+        """Set the thinking level directly.
+
+        Args:
+            level: The thinking level to set
+        """
+        self._level = level
+
+    @property
+    def level(self) -> ThinkingLevel:
+        """Get the current thinking level.
+
+        Returns:
+            Current ThinkingLevel
+        """
+        return self._level
 
     @property
     def is_visible(self) -> bool:
         """Check if thinking content should be displayed.
 
         Returns:
-            True if thinking content should be shown
+            True if thinking is enabled (level != OFF)
         """
-        return self._visible
+        return self._level.is_enabled
+
+    @property
+    def includes_critique(self) -> bool:
+        """Check if current level includes self-critique.
+
+        Returns:
+            True if level is SELF_CRITIQUE
+        """
+        return self._level.includes_critique
+
+    # Legacy compatibility - maps to is_visible
+    @property
+    def _visible(self) -> bool:
+        return self.is_visible
+
+    @_visible.setter
+    def _visible(self, value: bool) -> None:
+        # Legacy setter - if setting to False, set OFF; if True, set MEDIUM
+        if value:
+            if self._level == ThinkingLevel.OFF:
+                self._level = ThinkingLevel.MEDIUM
+        else:
+            self._level = ThinkingLevel.OFF
+
+    def toggle_visibility(self) -> bool:
+        """Legacy method - cycles through levels.
+
+        Returns:
+            New visibility state (True = enabled)
+        """
+        self.cycle_level()
+        return self.is_visible
 
     @property
     def block_count(self) -> int:

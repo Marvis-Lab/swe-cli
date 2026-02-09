@@ -21,8 +21,8 @@ class SlashCommand:
 DEFAULT_SLASH_COMMANDS = [
     # Session management
     SlashCommand("help", "show available commands and help"),
-    SlashCommand("exit", "exit SWE-CLI"),
-    SlashCommand("quit", "exit SWE-CLI (alias for /exit)"),
+    SlashCommand("exit", "exit OpenDev"),
+    SlashCommand("quit", "exit OpenDev (alias for /exit)"),
     SlashCommand("clear", "clear current session and start fresh"),
     SlashCommand("models", "switch active AI model"),
     # Execution

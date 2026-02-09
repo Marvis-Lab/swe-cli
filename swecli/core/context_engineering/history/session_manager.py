@@ -16,7 +16,7 @@ class SessionManager:
     """Manages session persistence and retrieval.
 
     Sessions are stored in project-scoped directories under
-    ``~/.swecli/projects/{encoded-path}/``.
+    ``~/.opendev/projects/{encoded-path}/``.
 
     A lightweight ``sessions-index.json`` file caches session metadata so that
     ``list_sessions()`` is O(1) reads instead of O(N) full-file parses. The
@@ -33,12 +33,12 @@ class SessionManager:
         """Initialize session manager.
 
         Args:
-            session_dir: Explicit directory override (tests, ``SWECLI_SESSION_DIR``).
+            session_dir: Explicit directory override (tests, ``OPENDEV_SESSION_DIR``).
             working_dir: Working directory used to compute the project-scoped
                 session directory via :func:`paths.project_sessions_dir`.
 
         If neither argument is given, falls back to
-        ``~/.swecli/projects/-unknown-/``.
+        ``~/.opendev/projects/-unknown-/``.
         """
         if session_dir is not None:
             self.session_dir = Path(session_dir).expanduser()

@@ -1,1 +1,1 @@
-"""Textual-based UI for SWE-CLI."""
+"""Textual-based UI for OpenDev."""

@@ -16,10 +16,10 @@ from swecli.core.paths import (
     COMMANDS_DIR_NAME,
     MCP_CONFIG_NAME,
     MCP_PROJECT_CONFIG_NAME,
-    ENV_SWECLI_DIR,
-    ENV_SWECLI_SESSION_DIR,
-    ENV_SWECLI_LOG_DIR,
-    ENV_SWECLI_CACHE_DIR,
+    ENV_OPENDEV_DIR,
+    ENV_OPENDEV_SESSION_DIR,
+    ENV_OPENDEV_LOG_DIR,
+    ENV_OPENDEV_CACHE_DIR,
     Paths,
     get_paths,
     set_paths,
@@ -31,7 +31,7 @@ class TestPathsConstants:
     """Test path constants."""
 
     def test_app_dir_name(self):
-        assert APP_DIR_NAME == ".swecli"
+        assert APP_DIR_NAME == ".opendev"
 
     def test_settings_file_name(self):
         assert SETTINGS_FILE_NAME == "settings.json"
@@ -65,17 +65,17 @@ class TestPathsGlobal:
     """Test global paths."""
 
     def test_global_dir_default(self, tmp_path, monkeypatch):
-        """Test global dir defaults to ~/.swecli/."""
+        """Test global dir defaults to ~/.opendev/."""
         monkeypatch.setenv("HOME", str(tmp_path))
-        monkeypatch.delenv(ENV_SWECLI_DIR, raising=False)
+        monkeypatch.delenv(ENV_OPENDEV_DIR, raising=False)
         reset_paths()
         paths = Paths()
-        assert paths.global_dir == tmp_path / ".swecli"
+        assert paths.global_dir == tmp_path / ".opendev"
 
     def test_global_dir_env_override(self, tmp_path, monkeypatch):
-        """Test SWECLI_DIR environment variable overrides default."""
+        """Test OPENDEV_DIR environment variable overrides default."""
         custom_dir = tmp_path / "custom-swecli"
-        monkeypatch.setenv(ENV_SWECLI_DIR, str(custom_dir))
+        monkeypatch.setenv(ENV_OPENDEV_DIR, str(custom_dir))
         reset_paths()
         paths = Paths()
         assert paths.global_dir == custom_dir
@@ -83,58 +83,58 @@ class TestPathsGlobal:
     def test_global_settings(self, tmp_path, monkeypatch):
         """Test global settings path."""
         monkeypatch.setenv("HOME", str(tmp_path))
-        monkeypatch.delenv(ENV_SWECLI_DIR, raising=False)
+        monkeypatch.delenv(ENV_OPENDEV_DIR, raising=False)
         reset_paths()
         paths = Paths()
-        assert paths.global_settings == tmp_path / ".swecli" / "settings.json"
+        assert paths.global_settings == tmp_path / ".opendev" / "settings.json"
 
     def test_global_sessions_dir_default(self, tmp_path, monkeypatch):
-        """Test global sessions directory defaults to ~/.swecli/sessions/."""
+        """Test global sessions directory defaults to ~/.opendev/sessions/."""
         monkeypatch.setenv("HOME", str(tmp_path))
-        monkeypatch.delenv(ENV_SWECLI_DIR, raising=False)
-        monkeypatch.delenv(ENV_SWECLI_SESSION_DIR, raising=False)
+        monkeypatch.delenv(ENV_OPENDEV_DIR, raising=False)
+        monkeypatch.delenv(ENV_OPENDEV_SESSION_DIR, raising=False)
         reset_paths()
         paths = Paths()
-        assert paths.global_sessions_dir == tmp_path / ".swecli" / "sessions"
+        assert paths.global_sessions_dir == tmp_path / ".opendev" / "sessions"
 
     def test_global_sessions_dir_env_override(self, tmp_path, monkeypatch):
-        """Test SWECLI_SESSION_DIR environment variable overrides default."""
+        """Test OPENDEV_SESSION_DIR environment variable overrides default."""
         custom_sessions = tmp_path / "custom-sessions"
-        monkeypatch.setenv(ENV_SWECLI_SESSION_DIR, str(custom_sessions))
+        monkeypatch.setenv(ENV_OPENDEV_SESSION_DIR, str(custom_sessions))
         reset_paths()
         paths = Paths()
         assert paths.global_sessions_dir == custom_sessions
 
     def test_global_logs_dir_default(self, tmp_path, monkeypatch):
-        """Test global logs directory defaults to ~/.swecli/logs/."""
+        """Test global logs directory defaults to ~/.opendev/logs/."""
         monkeypatch.setenv("HOME", str(tmp_path))
-        monkeypatch.delenv(ENV_SWECLI_DIR, raising=False)
-        monkeypatch.delenv(ENV_SWECLI_LOG_DIR, raising=False)
+        monkeypatch.delenv(ENV_OPENDEV_DIR, raising=False)
+        monkeypatch.delenv(ENV_OPENDEV_LOG_DIR, raising=False)
         reset_paths()
         paths = Paths()
-        assert paths.global_logs_dir == tmp_path / ".swecli" / "logs"
+        assert paths.global_logs_dir == tmp_path / ".opendev" / "logs"
 
     def test_global_logs_dir_env_override(self, tmp_path, monkeypatch):
-        """Test SWECLI_LOG_DIR environment variable overrides default."""
+        """Test OPENDEV_LOG_DIR environment variable overrides default."""
         custom_logs = tmp_path / "custom-logs"
-        monkeypatch.setenv(ENV_SWECLI_LOG_DIR, str(custom_logs))
+        monkeypatch.setenv(ENV_OPENDEV_LOG_DIR, str(custom_logs))
         reset_paths()
         paths = Paths()
         assert paths.global_logs_dir == custom_logs
 
     def test_global_cache_dir_default(self, tmp_path, monkeypatch):
-        """Test global cache directory defaults to ~/.swecli/cache/."""
+        """Test global cache directory defaults to ~/.opendev/cache/."""
         monkeypatch.setenv("HOME", str(tmp_path))
-        monkeypatch.delenv(ENV_SWECLI_DIR, raising=False)
-        monkeypatch.delenv(ENV_SWECLI_CACHE_DIR, raising=False)
+        monkeypatch.delenv(ENV_OPENDEV_DIR, raising=False)
+        monkeypatch.delenv(ENV_OPENDEV_CACHE_DIR, raising=False)
         reset_paths()
         paths = Paths()
-        assert paths.global_cache_dir == tmp_path / ".swecli" / "cache"
+        assert paths.global_cache_dir == tmp_path / ".opendev" / "cache"
 
     def test_global_cache_dir_env_override(self, tmp_path, monkeypatch):
-        """Test SWECLI_CACHE_DIR environment variable overrides default."""
+        """Test OPENDEV_CACHE_DIR environment variable overrides default."""
         custom_cache = tmp_path / "custom-cache"
-        monkeypatch.setenv(ENV_SWECLI_CACHE_DIR, str(custom_cache))
+        monkeypatch.setenv(ENV_OPENDEV_CACHE_DIR, str(custom_cache))
         reset_paths()
         paths = Paths()
         assert paths.global_cache_dir == custom_cache
@@ -142,50 +142,50 @@ class TestPathsGlobal:
     def test_global_skills_dir(self, tmp_path, monkeypatch):
         """Test global skills directory."""
         monkeypatch.setenv("HOME", str(tmp_path))
-        monkeypatch.delenv(ENV_SWECLI_DIR, raising=False)
+        monkeypatch.delenv(ENV_OPENDEV_DIR, raising=False)
         reset_paths()
         paths = Paths()
-        assert paths.global_skills_dir == tmp_path / ".swecli" / "skills"
+        assert paths.global_skills_dir == tmp_path / ".opendev" / "skills"
 
     def test_global_agents_dir(self, tmp_path, monkeypatch):
         """Test global agents directory."""
         monkeypatch.setenv("HOME", str(tmp_path))
-        monkeypatch.delenv(ENV_SWECLI_DIR, raising=False)
+        monkeypatch.delenv(ENV_OPENDEV_DIR, raising=False)
         reset_paths()
         paths = Paths()
-        assert paths.global_agents_dir == tmp_path / ".swecli" / "agents"
+        assert paths.global_agents_dir == tmp_path / ".opendev" / "agents"
 
     def test_global_agents_file(self, tmp_path, monkeypatch):
         """Test global agents.json file path."""
         monkeypatch.setenv("HOME", str(tmp_path))
-        monkeypatch.delenv(ENV_SWECLI_DIR, raising=False)
+        monkeypatch.delenv(ENV_OPENDEV_DIR, raising=False)
         reset_paths()
         paths = Paths()
-        assert paths.global_agents_file == tmp_path / ".swecli" / "agents.json"
+        assert paths.global_agents_file == tmp_path / ".opendev" / "agents.json"
 
     def test_global_mcp_config(self, tmp_path, monkeypatch):
         """Test global MCP config path."""
         monkeypatch.setenv("HOME", str(tmp_path))
-        monkeypatch.delenv(ENV_SWECLI_DIR, raising=False)
+        monkeypatch.delenv(ENV_OPENDEV_DIR, raising=False)
         reset_paths()
         paths = Paths()
-        assert paths.global_mcp_config == tmp_path / ".swecli" / "mcp.json"
+        assert paths.global_mcp_config == tmp_path / ".opendev" / "mcp.json"
 
     def test_global_repos_dir(self, tmp_path, monkeypatch):
         """Test global repos directory."""
         monkeypatch.setenv("HOME", str(tmp_path))
-        monkeypatch.delenv(ENV_SWECLI_DIR, raising=False)
+        monkeypatch.delenv(ENV_OPENDEV_DIR, raising=False)
         reset_paths()
         paths = Paths()
-        assert paths.global_repos_dir == tmp_path / ".swecli" / "repos"
+        assert paths.global_repos_dir == tmp_path / ".opendev" / "repos"
 
     def test_global_history_file(self, tmp_path, monkeypatch):
         """Test global history file path."""
         monkeypatch.setenv("HOME", str(tmp_path))
-        monkeypatch.delenv(ENV_SWECLI_DIR, raising=False)
+        monkeypatch.delenv(ENV_OPENDEV_DIR, raising=False)
         reset_paths()
         paths = Paths()
-        assert paths.global_history_file == tmp_path / ".swecli" / "history.txt"
+        assert paths.global_history_file == tmp_path / ".opendev" / "history.txt"
 
 
 class TestPathsProject:
@@ -194,37 +194,37 @@ class TestPathsProject:
     def test_project_dir(self, tmp_path):
         """Test project directory path."""
         paths = Paths(working_dir=tmp_path)
-        assert paths.project_dir == tmp_path / ".swecli"
+        assert paths.project_dir == tmp_path / ".opendev"
 
     def test_project_settings(self, tmp_path):
         """Test project settings path."""
         paths = Paths(working_dir=tmp_path)
-        assert paths.project_settings == tmp_path / ".swecli" / "settings.json"
+        assert paths.project_settings == tmp_path / ".opendev" / "settings.json"
 
     def test_project_skills_dir(self, tmp_path):
         """Test project skills directory."""
         paths = Paths(working_dir=tmp_path)
-        assert paths.project_skills_dir == tmp_path / ".swecli" / "skills"
+        assert paths.project_skills_dir == tmp_path / ".opendev" / "skills"
 
     def test_project_agents_dir(self, tmp_path):
         """Test project agents directory."""
         paths = Paths(working_dir=tmp_path)
-        assert paths.project_agents_dir == tmp_path / ".swecli" / "agents"
+        assert paths.project_agents_dir == tmp_path / ".opendev" / "agents"
 
     def test_project_agents_file(self, tmp_path):
         """Test project agents.json file path."""
         paths = Paths(working_dir=tmp_path)
-        assert paths.project_agents_file == tmp_path / ".swecli" / "agents.json"
+        assert paths.project_agents_file == tmp_path / ".opendev" / "agents.json"
 
     def test_project_commands_dir(self, tmp_path):
         """Test project commands directory."""
         paths = Paths(working_dir=tmp_path)
-        assert paths.project_commands_dir == tmp_path / ".swecli" / "commands"
+        assert paths.project_commands_dir == tmp_path / ".opendev" / "commands"
 
     def test_project_context_file(self, tmp_path):
         """Test project context file (SWECLI.md) at project root."""
         paths = Paths(working_dir=tmp_path)
-        assert paths.project_context_file == tmp_path / "SWECLI.md"
+        assert paths.project_context_file == tmp_path / "OPENDEV.md"
 
     def test_project_mcp_config(self, tmp_path):
         """Test project MCP config uses .mcp.json at project root."""
@@ -238,10 +238,10 @@ class TestPathsDirectoryCreation:
     def test_ensure_global_dirs(self, tmp_path, monkeypatch):
         """Test ensure_global_dirs creates required directories."""
         monkeypatch.setenv("HOME", str(tmp_path))
-        monkeypatch.delenv(ENV_SWECLI_DIR, raising=False)
-        monkeypatch.delenv(ENV_SWECLI_SESSION_DIR, raising=False)
-        monkeypatch.delenv(ENV_SWECLI_LOG_DIR, raising=False)
-        monkeypatch.delenv(ENV_SWECLI_CACHE_DIR, raising=False)
+        monkeypatch.delenv(ENV_OPENDEV_DIR, raising=False)
+        monkeypatch.delenv(ENV_OPENDEV_SESSION_DIR, raising=False)
+        monkeypatch.delenv(ENV_OPENDEV_LOG_DIR, raising=False)
+        monkeypatch.delenv(ENV_OPENDEV_CACHE_DIR, raising=False)
         reset_paths()
         paths = Paths()
         paths.ensure_global_dirs()
@@ -276,7 +276,7 @@ class TestPathsHelpers:
     def test_get_skill_dirs_empty(self, tmp_path, monkeypatch):
         """Test get_skill_dirs returns empty list when no dirs exist."""
         monkeypatch.setenv("HOME", str(tmp_path))
-        monkeypatch.delenv(ENV_SWECLI_DIR, raising=False)
+        monkeypatch.delenv(ENV_OPENDEV_DIR, raising=False)
         reset_paths()
         paths = Paths(working_dir=tmp_path / "project")
         assert paths.get_skill_dirs() == []
@@ -284,11 +284,11 @@ class TestPathsHelpers:
     def test_get_skill_dirs_with_global(self, tmp_path, monkeypatch):
         """Test get_skill_dirs returns global dir when it exists."""
         monkeypatch.setenv("HOME", str(tmp_path))
-        monkeypatch.delenv(ENV_SWECLI_DIR, raising=False)
+        monkeypatch.delenv(ENV_OPENDEV_DIR, raising=False)
         reset_paths()
 
         # Create global skills dir
-        global_skills = tmp_path / ".swecli" / "skills"
+        global_skills = tmp_path / ".opendev" / "skills"
         global_skills.mkdir(parents=True)
 
         paths = Paths(working_dir=tmp_path / "project")
@@ -300,15 +300,15 @@ class TestPathsHelpers:
     def test_get_skill_dirs_project_priority(self, tmp_path, monkeypatch):
         """Test get_skill_dirs returns project dir first."""
         monkeypatch.setenv("HOME", str(tmp_path))
-        monkeypatch.delenv(ENV_SWECLI_DIR, raising=False)
+        monkeypatch.delenv(ENV_OPENDEV_DIR, raising=False)
         reset_paths()
 
         project_dir = tmp_path / "project"
 
         # Create both global and project skills dirs
-        global_skills = tmp_path / ".swecli" / "skills"
+        global_skills = tmp_path / ".opendev" / "skills"
         global_skills.mkdir(parents=True)
-        project_skills = project_dir / ".swecli" / "skills"
+        project_skills = project_dir / ".opendev" / "skills"
         project_skills.mkdir(parents=True)
 
         paths = Paths(working_dir=project_dir)
@@ -321,7 +321,7 @@ class TestPathsHelpers:
     def test_get_agents_dirs_empty(self, tmp_path, monkeypatch):
         """Test get_agents_dirs returns empty list when no dirs exist."""
         monkeypatch.setenv("HOME", str(tmp_path))
-        monkeypatch.delenv(ENV_SWECLI_DIR, raising=False)
+        monkeypatch.delenv(ENV_OPENDEV_DIR, raising=False)
         reset_paths()
         paths = Paths(working_dir=tmp_path / "project")
         assert paths.get_agents_dirs() == []
@@ -329,15 +329,15 @@ class TestPathsHelpers:
     def test_get_agents_dirs_project_priority(self, tmp_path, monkeypatch):
         """Test get_agents_dirs returns project dir first."""
         monkeypatch.setenv("HOME", str(tmp_path))
-        monkeypatch.delenv(ENV_SWECLI_DIR, raising=False)
+        monkeypatch.delenv(ENV_OPENDEV_DIR, raising=False)
         reset_paths()
 
         project_dir = tmp_path / "project"
 
         # Create both global and project agents dirs
-        global_agents = tmp_path / ".swecli" / "agents"
+        global_agents = tmp_path / ".opendev" / "agents"
         global_agents.mkdir(parents=True)
-        project_agents = project_dir / ".swecli" / "agents"
+        project_agents = project_dir / ".opendev" / "agents"
         project_agents.mkdir(parents=True)
 
         paths = Paths(working_dir=project_dir)
@@ -350,14 +350,14 @@ class TestPathsHelpers:
     def test_session_file(self, tmp_path, monkeypatch):
         """Test session_file returns correct path."""
         monkeypatch.setenv("HOME", str(tmp_path))
-        monkeypatch.delenv(ENV_SWECLI_DIR, raising=False)
-        monkeypatch.delenv(ENV_SWECLI_SESSION_DIR, raising=False)
+        monkeypatch.delenv(ENV_OPENDEV_DIR, raising=False)
+        monkeypatch.delenv(ENV_OPENDEV_SESSION_DIR, raising=False)
         reset_paths()
 
         paths = Paths()
         session_path = paths.session_file("abc12345")
 
-        assert session_path == tmp_path / ".swecli" / "sessions" / "abc12345.json"
+        assert session_path == tmp_path / ".opendev" / "sessions" / "abc12345.json"
 
 
 class TestPathsSingleton:

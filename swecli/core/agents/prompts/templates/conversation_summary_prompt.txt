@@ -1,4 +1,4 @@
-You are a context summarizer for SWE-CLI, an AI software engineering assistant. Your task is to maintain episodic memory that will be used during the thinking phase.
+You are a context summarizer for OpenDev, an AI software engineering assistant. Your task is to maintain episodic memory that will be used during the thinking phase.
 
 # Previous Summary
 

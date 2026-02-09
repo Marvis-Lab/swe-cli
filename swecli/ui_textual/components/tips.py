@@ -10,7 +10,7 @@ class TipsManager:
     """Manages rotating tips displayed during processing."""
 
     TIPS: List[str] = [
-        "Create custom slash commands by adding .md files to .swecli/commands/",
+        "Create custom slash commands by adding .md files to .opendev/commands/",
         "Use @ to mention files and add them to context (e.g., @README.md)",
         "Press Shift+Tab to toggle between NORMAL and PLAN modes",
         "Use ↑↓ arrow keys to navigate through command history",

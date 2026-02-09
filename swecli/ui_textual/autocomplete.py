@@ -16,7 +16,7 @@ from .autocomplete_internal.commands import (
 
 # Backward compatibility - use refactored implementations
 class SwecliCompleter(RefactoredSwecliCompleter):
-    """Custom completer for SWE-CLI that handles @ mentions and / commands."""
+    """Custom completer for OpenDev that handles @ mentions and / commands."""
 
     def __init__(self, working_dir: Path):
         """Initialize completer.

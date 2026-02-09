@@ -289,7 +289,7 @@ class EnvironmentCollector:
         visible: list[Path] = []
         for entry in entries:
             name = entry.name
-            if name.startswith(".") and name != ".swecli":
+            if name.startswith(".") and name != ".opendev":
                 continue
             if name in _TREE_SKIP_DIRS:
                 continue
@@ -386,12 +386,12 @@ def build_project_structure_block(ctx: EnvironmentContext) -> str:
 
 
 def build_project_instructions_block(ctx: EnvironmentContext) -> str:
-    """Wrap SWECLI.md content as project instructions block."""
+    """Wrap OPENDEV.md content as project instructions block."""
     if not ctx.project_instructions:
         return ""
     return (
-        "# Project Instructions (SWECLI.md)\n\n"
+        "# Project Instructions (OPENDEV.md)\n\n"
         "Codebase and user instructions are shown below. "
         "Be sure to adhere to these instructions.\n\n"
-        f"<swecli-md>\n{ctx.project_instructions}\n</swecli-md>"
+        f"<opendev-md>\n{ctx.project_instructions}\n</opendev-md>"
     )

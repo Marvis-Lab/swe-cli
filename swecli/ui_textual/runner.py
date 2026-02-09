@@ -172,7 +172,7 @@ class TextualRunner:
 
             import os
 
-            env_session_dir = os.environ.get("SWECLI_SESSION_DIR")
+            env_session_dir = os.environ.get("OPENDEV_SESSION_DIR")
             if session_manager is not None:
                 self.session_manager = session_manager
             elif env_session_dir:
@@ -794,7 +794,7 @@ def launch_textual_cli(
     """
 
     if "auto_connect_mcp" not in kwargs:
-        auto_env = os.getenv("SWECLI_MCP_AUTOCONNECT", "").strip().lower()
+        auto_env = os.getenv("OPENDEV_MCP_AUTOCONNECT", "").strip().lower()
         if auto_env in {"1", "true", "yes", "on"}:
             kwargs["auto_connect_mcp"] = True
 

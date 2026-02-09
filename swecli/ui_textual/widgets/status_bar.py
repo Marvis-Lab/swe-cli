@@ -1,4 +1,4 @@
-"""Status bar and footer widgets for the SWE-CLI Textual UI."""
+"""Status bar and footer widgets for the OpenDev Textual UI."""
 
 from __future__ import annotations
 
@@ -21,7 +21,6 @@ from swecli.ui_textual.style_tokens import (
     ORANGE_CAUTION,
     CYAN_VISION,
     GOLD,
-    THINKING,
 )
 
 
@@ -108,7 +107,7 @@ class StatusBar(Static):
         self.mode = "normal"
         self.model = model
         self.autonomy = "Manual"  # Autonomy level: Manual, Semi-Auto, Auto
-        self.thinking_enabled = True  # Thinking mode visibility (default ON, synced with chat_app)
+        self.thinking_level = "Medium"  # Thinking level: Off, Low, Medium, High, Self-Critique
         self.spinner_text: str | None = None
         self.spinner_tip: str | None = None
         self.working_dir = working_dir or ""
@@ -137,13 +136,25 @@ class StatusBar(Static):
         self.autonomy = level
         self.update_status()
 
-    def set_thinking_enabled(self, enabled: bool) -> None:
-        """Update thinking mode display.
+    def set_thinking_level(self, level: str) -> None:
+        """Update thinking level display.
 
         Args:
-            enabled: Whether thinking mode is enabled (visible)
+            level: One of "Off", "Low", "Medium", "High", "Self-Critique"
         """
-        self.thinking_enabled = enabled
+        self.thinking_level = level
+        self.update_status()
+
+    # Legacy compatibility
+    def set_thinking_enabled(self, enabled: bool) -> None:
+        """Legacy method - sets level to Medium if enabled, Off if disabled."""
+        self.thinking_level = "Medium" if enabled else "Off"
+        self.update_status()
+
+    def set_critique_enabled(self, enabled: bool) -> None:
+        """Legacy method - sets level to Self-Critique if enabled."""
+        if enabled:
+            self.thinking_level = "Self-Critique"
         self.update_status()
 
     def set_spinner(self, text: str, tip: str | None = None) -> None:
@@ -181,13 +192,18 @@ class StatusBar(Static):
         status.append(self.autonomy, style=f"bold {autonomy_color}")
         status.append(" (Ctrl+Shift+A)", style=GREY)
 
-        # Thinking mode status
+        # Thinking level status
         status.append("  │  ", style=GREY)
         status.append("Thinking: ", style=GREY)
-        if self.thinking_enabled:
-            status.append("ON", style=f"bold {GREEN_BRIGHT}")
-        else:
-            status.append("OFF", style=f"bold {GREY}")
+        thinking_colors = {
+            "Off": GREY,
+            "Low": CYAN,
+            "Medium": GREEN_BRIGHT,
+            "High": GOLD,
+            "Self-Critique": ORANGE,
+        }
+        thinking_color = thinking_colors.get(self.thinking_level, GREEN_BRIGHT)
+        status.append(self.thinking_level, style=f"bold {thinking_color}")
         status.append(" (Ctrl+Shift+T)", style=GREY)
 
         # Repo info
@@ -339,6 +355,7 @@ class ModelFooter(Footer):
         normal_style = GREEN_BRIGHT
         thinking_style = GOLD
         vision_style = CYAN_VISION
+        critique_style = ORANGE
 
         text = Text(no_wrap=True)
 
@@ -409,6 +426,18 @@ class ModelFooter(Footer):
             vision_model = ""
 
         format_model_display(vision_model, vision_style)
+
+        text.append("  │  ", style=base_style)
+        text.append("C: ", style=base_style)
+
+        critique_slot = self._model_slots.get("critique")
+        if critique_slot:
+            provider, model = critique_slot
+            critique_model = f"{provider}/{model}" if model else provider
+        else:
+            critique_model = ""
+
+        format_model_display(critique_model, critique_style)
 
         # Show background task indicator if any tasks are running
         if self._background_task_count > 0:

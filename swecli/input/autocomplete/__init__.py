@@ -1,4 +1,4 @@
-"""Autocomplete system for SWE-CLI."""
+"""Autocomplete system for OpenDev."""
 
 from .autocomplete_core import SwecliAutocompleteCore, FileMentionCompleter, SlashCommandCompleter
 from .commands import SlashCommand, SlashCommandManager, DEFAULT_SLASH_COMMANDS

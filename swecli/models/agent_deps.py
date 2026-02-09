@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict
 class AgentDependencies(BaseModel):
     """Dependencies passed to agent tools via RunContext.
 
-    These dependencies provide access to SWE-CLI managers and state
+    These dependencies provide access to OpenDev managers and state
     that tools need to execute operations properly.
     """
 

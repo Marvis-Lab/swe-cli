@@ -1,4 +1,4 @@
-"""API integration layer for SWE-CLI agents.
+"""API integration layer for OpenDev agents.
 
 This subpackage contains HTTP client wrappers, API configuration utilities,
 and provider-specific adapters (Anthropic, OpenAI, Fireworks).

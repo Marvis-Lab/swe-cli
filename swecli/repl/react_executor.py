@@ -304,6 +304,147 @@ class ReactExecutor:
 
         return None
 
+    def _critique_and_refine_thinking(
+        self,
+        thinking_trace: str,
+        messages: list,
+        agent,
+        ui_callback=None,
+    ) -> str:
+        """Critique thinking trace and optionally refine it.
+
+        When self-critique mode is enabled, this method:
+        1. Calls the critique LLM to analyze the thinking trace
+        2. Uses the critique to generate a refined thinking trace
+
+        Args:
+            thinking_trace: The original thinking trace to critique
+            messages: Current conversation messages (for context in refinement)
+            agent: The agent to use for critique/refinement calls
+            ui_callback: Optional UI callback for displaying critique
+
+        Returns:
+            Refined thinking trace (or original if critique fails)
+        """
+        from swecli.core.runtime.monitoring import TaskMonitor
+
+        try:
+            # Step 1: Get critique of the thinking trace
+            task_monitor = TaskMonitor()
+            self._current_task_monitor = task_monitor
+
+            try:
+                critique_response = agent.call_critique_llm(thinking_trace, task_monitor)
+
+                if not critique_response.get("success"):
+                    error = critique_response.get("error", "Unknown error")
+                    if ui_callback and hasattr(ui_callback, "on_debug"):
+                        ui_callback.on_debug(f"Critique phase error: {error}", "CRITIQUE")
+                    return thinking_trace  # Return original on failure
+
+                critique = critique_response.get("content", "")
+
+                if not critique or not critique.strip():
+                    return thinking_trace  # No critique generated
+
+                # Display critique in UI if callback available
+                if ui_callback and hasattr(ui_callback, "on_critique"):
+                    ui_callback.on_critique(critique)
+
+                # Step 2: Refine thinking trace using the critique
+                refined_trace = self._refine_thinking_with_critique(
+                    thinking_trace, critique, messages, agent, ui_callback
+                )
+
+                return refined_trace if refined_trace else thinking_trace
+
+            finally:
+                self._current_task_monitor = None
+
+        except Exception as e:
+            if ui_callback and hasattr(ui_callback, "on_debug"):
+                ui_callback.on_debug(f"Critique phase exception: {str(e)}", "CRITIQUE")
+            import logging
+            logging.getLogger(__name__).exception("Error in critique phase")
+            return thinking_trace  # Return original on exception
+
+    def _refine_thinking_with_critique(
+        self,
+        thinking_trace: str,
+        critique: str,
+        messages: list,
+        agent,
+        ui_callback=None,
+    ) -> Optional[str]:
+        """Generate a refined thinking trace incorporating critique feedback.
+
+        Args:
+            thinking_trace: Original thinking trace
+            critique: Critique feedback
+            messages: Current conversation messages
+            agent: Agent for LLM call
+            ui_callback: Optional UI callback
+
+        Returns:
+            Refined thinking trace, or None on failure
+        """
+        from swecli.core.runtime.monitoring import TaskMonitor
+
+        try:
+            # Build refinement prompt
+            refinement_system = agent.build_system_prompt(thinking_visible=True)
+
+            # Build context similar to thinking phase but with critique included
+            context_parts = []
+
+            # Add short-term memory
+            short_term = self._extract_short_term_memory(messages, SHORT_TERM_PAIRS)
+            if short_term:
+                context_parts.append(
+                    get_injection("short_term_memory_header", short_term=short_term)
+                )
+
+            formatted_context = "\n".join(context_parts)
+            refinement_system = refinement_system.replace("{context}", formatted_context)
+
+            refinement_messages = [
+                {"role": "system", "content": refinement_system},
+                {
+                    "role": "user",
+                    "content": f"""Your previous reasoning was:
+
+{thinking_trace}
+
+A critique identified these issues:
+
+{critique}
+
+Please provide refined reasoning that addresses these concerns. Keep it concise (under 100 words).""",
+                },
+            ]
+
+            task_monitor = TaskMonitor()
+            self._current_task_monitor = task_monitor
+
+            try:
+                response = agent.call_thinking_llm(refinement_messages, task_monitor)
+
+                if response.get("success"):
+                    refined = response.get("content", "")
+                    if refined and refined.strip():
+                        # Display refined thinking in UI
+                        if ui_callback and hasattr(ui_callback, "on_thinking"):
+                            ui_callback.on_thinking(f"[Refined]\n{refined}")
+                        return refined
+            finally:
+                self._current_task_monitor = None
+
+        except Exception as e:
+            if ui_callback and hasattr(ui_callback, "on_debug"):
+                ui_callback.on_debug(f"Refinement error: {str(e)}", "CRITIQUE")
+
+        return None
+
     def _extract_short_term_memory(self, messages: list, n_pairs: int) -> str:
         """Extract the last N message pairs (user->assistant->tools) in full detail.
 
@@ -419,6 +560,16 @@ class ReactExecutor:
                 if "interrupted" in error_text.lower():
                     # Use existing error handler - it calls on_interrupt() and returns BREAK
                     return self._handle_llm_error(error_response, ctx)
+
+            # SELF-CRITIQUE PHASE: Critique and refine thinking trace (when level is Self-Critique)
+            includes_critique = False
+            if ctx.tool_registry and hasattr(ctx.tool_registry, "thinking_handler"):
+                includes_critique = ctx.tool_registry.thinking_handler.includes_critique
+
+            if includes_critique and thinking_trace:
+                thinking_trace = self._critique_and_refine_thinking(
+                    thinking_trace, ctx.messages, ctx.agent, ctx.ui_callback
+                )
 
             self._current_thinking_trace = thinking_trace  # Track for persistence
             if thinking_trace:

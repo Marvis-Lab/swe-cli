@@ -86,6 +86,10 @@ class ModelConfigManager:
         if vision_entry:
             snapshot["vision"] = vision_entry
 
+        critique_entry = resolve(config.model_critique_provider, config.model_critique)
+        if critique_entry:
+            snapshot["critique"] = critique_entry
+
         return snapshot
 
     def refresh_ui_config(self) -> None:
@@ -165,5 +169,10 @@ class ModelConfigManager:
         vision = extract_slot("vision")
         if vision:
             slots["vision"] = vision
+
+        # Show critique slot if explicitly set
+        critique = extract_slot("critique")
+        if critique:
+            slots["critique"] = critique
 
         return slots

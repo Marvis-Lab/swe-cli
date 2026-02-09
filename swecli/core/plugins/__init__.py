@@ -1,4 +1,4 @@
-"""Plugin and marketplace system for SWE-CLI."""
+"""Plugin and marketplace system for OpenDev."""
 
 from swecli.core.plugins.models import (
     MarketplaceInfo,

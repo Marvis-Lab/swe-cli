@@ -6,7 +6,7 @@ from swecli.ui_textual.runner import launch_textual_cli
 
 if __name__ == "__main__":
     print("=" * 80)
-    print("SWE-CLI Textual UI Test")
+    print("OpenDev Textual UI Test")
     print("=" * 80)
     print()
     print("✅ Configuration Status:")

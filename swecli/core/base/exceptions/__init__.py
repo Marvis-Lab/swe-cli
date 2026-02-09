@@ -1,1 +1,1 @@
-"""Package for SWE-CLI core exceptions."""
+"""Package for OpenDev core exceptions."""

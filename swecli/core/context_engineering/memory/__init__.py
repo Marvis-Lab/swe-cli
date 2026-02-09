@@ -1,4 +1,4 @@
-"""Long-term memory and learning for SWE-CLI (ACE Pattern).
+"""Long-term memory and learning for OpenDev (ACE Pattern).
 
 This module provides a complete native re-implementation of the ACE framework
 within swecli, without external dependencies.

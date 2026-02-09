@@ -1,4 +1,4 @@
-"""Context Engineering subsystem for SWE-CLI.
+"""Context Engineering subsystem for OpenDev.
 
 This package manages all context-related systems:
 - tools/: Tool execution (implementations, handlers, LSP, symbol tools)

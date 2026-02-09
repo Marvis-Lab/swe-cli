@@ -1,4 +1,4 @@
-"""Tool implementations for SWE-CLI."""
+"""Tool implementations for OpenDev."""
 
 from swecli.core.context_engineering.tools.implementations.base import BaseTool
 from swecli.core.context_engineering.tools.implementations.bash_tool import BashTool

@@ -1,4 +1,4 @@
-"""Tool handlers for SWE-CLI."""
+"""Tool handlers for OpenDev."""
 
 from swecli.core.context_engineering.tools.handlers.file_handlers import FileToolHandler
 from swecli.core.context_engineering.tools.handlers.process_handlers import ProcessToolHandler

@@ -1,4 +1,4 @@
-"""Base/foundation layer for SWE-CLI.
+"""Base/foundation layer for OpenDev.
 
 This package provides foundational components:
 - abstract/: Base classes defining shared behavior

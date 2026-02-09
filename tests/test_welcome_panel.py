@@ -1,8 +1,7 @@
-"""Tests for AnimatedWelcomePanel widget and CubeRenderer."""
+"""Tests for AnimatedWelcomePanel widget."""
 
 from swecli.ui_textual.widgets.welcome_panel import (
     AnimatedWelcomePanel,
-    CubeRenderer,
     hsl_to_ansi256,
 )
 from swecli.core.runtime import OperationMode
@@ -72,7 +71,7 @@ class TestAnimatedWelcomePanel:
         assert isinstance(content, list)
         assert len(content) > 0
         content_text = "\n".join(content)
-        assert "S W E - C L I" in content_text  # ASCII art title with spaces
+        assert "O P E N D E V" in content_text  # ASCII art title with spaces
         assert "/help" in content_text
         assert "Shift+Tab" in content_text
 
@@ -134,230 +133,6 @@ class TestAnimatedWelcomePanel:
         assert version.startswith("v")
 
 
-class TestCubeRenderer:
-    """Test CubeRenderer spinning 3D wireframe cube."""
-
-    def test_creation_default(self):
-        """CubeRenderer can be created with defaults."""
-        cube = CubeRenderer()
-        assert cube.width == 35
-        assert cube.height == 18
-        assert cube.angle_x != 0.0  # Initial rotation for 3D view
-        assert cube.angle_y != 0.0
-
-    def test_creation_custom_size(self):
-        """CubeRenderer respects custom dimensions."""
-        cube = CubeRenderer(width=40, height=20)
-        assert cube.width == 40
-        assert cube.height == 20
-
-    def test_render_frame_dimensions(self):
-        """render_frame returns correct grid dimensions."""
-        cube = CubeRenderer(width=25, height=12)
-        frame = cube.render_frame()
-
-        assert len(frame) == 12  # height
-        assert all(len(row) == 25 for row in frame)  # width
-
-    def test_render_frame_produces_characters(self):
-        """render_frame produces cube characters (not all spaces)."""
-        cube = CubeRenderer()
-        frame = cube.render_frame()
-
-        # Count non-space characters
-        char_count = sum(1 for row in frame for char, _ in row if char != " ")
-        assert char_count > 20, "Cube should have visible characters"
-
-    def test_render_frame_uses_edge_char(self):
-        """render_frame uses the correct edge character."""
-        cube = CubeRenderer()
-        frame = cube.render_frame()
-
-        # All characters should be EDGE_CHAR or space
-        valid_chars = {cube.EDGE_CHAR, " "}
-        for row in frame:
-            for char, _ in row:
-                assert char in valid_chars, f"Invalid character: {char}"
-
-    def test_render_frame_includes_depth(self):
-        """render_frame returns depth values for each cell."""
-        cube = CubeRenderer()
-        frame = cube.render_frame()
-
-        # Check that visible characters have positive depth
-        for row in frame:
-            for char, depth in row:
-                if char != " ":
-                    assert depth > 0, "Visible characters should have positive depth"
-                else:
-                    assert depth == 0.0, "Empty cells should have zero depth"
-
-    def test_step_advances_rotation(self):
-        """step() advances the rotation angles."""
-        cube = CubeRenderer()
-        initial_x = cube.angle_x
-        initial_y = cube.angle_y
-        initial_z = cube.angle_z
-
-        cube.step()
-
-        assert cube.angle_x > initial_x
-        assert cube.angle_y > initial_y
-        assert cube.angle_z > initial_z
-
-    def test_step_rotation_increments(self):
-        """step() uses expected rotation increments."""
-        cube = CubeRenderer()
-        initial_x = cube.angle_x
-        initial_y = cube.angle_y
-        initial_z = cube.angle_z
-
-        cube.step()
-
-        assert cube.angle_x == initial_x + 0.03
-        assert cube.angle_y == initial_y + 0.04
-        assert cube.angle_z == initial_z + 0.01
-
-    def test_multiple_steps_produce_different_frames(self):
-        """Animation steps produce visually different frames."""
-        cube = CubeRenderer()
-
-        frame1 = cube.render_frame()
-        cube.step()
-        cube.step()
-        cube.step()
-        frame2 = cube.render_frame()
-
-        # Compare character positions - should be different
-        chars1 = [
-            (r, c, char)
-            for r, row in enumerate(frame1)
-            for c, (char, _) in enumerate(row)
-            if char != " "
-        ]
-        chars2 = [
-            (r, c, char)
-            for r, row in enumerate(frame2)
-            for c, (char, _) in enumerate(row)
-            if char != " "
-        ]
-
-        assert chars1 != chars2, "Frames after animation should differ"
-
-    def test_has_vertices_and_edges(self):
-        """CubeRenderer has 8 vertices and 12 edges."""
-        cube = CubeRenderer()
-        assert len(cube._vertices) == 8, "Cube should have 8 vertices"
-        assert len(cube._edges) == 12, "Cube should have 12 edges"
-
-
-class TestAnimatedWelcomePanelWithCube:
-    """Test AnimatedWelcomePanel cube integration."""
-
-    def test_panel_has_cube_renderer(self):
-        """Panel creates a CubeRenderer instance."""
-        panel = AnimatedWelcomePanel()
-        assert hasattr(panel, "_cube")
-        assert isinstance(panel._cube, CubeRenderer)
-
-    def test_calculate_cube_size_small_terminal(self):
-        """Shape size adapts to small terminal (3 shapes side by side)."""
-        panel = AnimatedWelcomePanel()
-
-        # Mock small terminal size
-        class MockSize:
-            width = 80
-            height = 24
-
-        panel._size = MockSize()
-        original_size = type(panel).size
-        type(panel).size = property(lambda self: self._size)
-
-        try:
-            width, height = panel._calculate_cube_size()
-            assert width >= 18  # Minimum per-shape width
-            assert width <= 35  # Maximum per-shape width
-            assert height >= 10  # Minimum height
-            assert height <= 16  # Maximum height
-        finally:
-            type(panel).size = original_size
-
-    def test_calculate_cube_size_large_terminal(self):
-        """Shape size grows with large terminal (3 shapes side by side)."""
-        panel = AnimatedWelcomePanel()
-
-        # Mock large terminal size
-        class MockSize:
-            width = 160
-            height = 50
-
-        panel._size = MockSize()
-        original_size = type(panel).size
-        type(panel).size = property(lambda self: self._size)
-
-        try:
-            width, height = panel._calculate_cube_size()
-            assert width >= 30  # Larger per-shape width for big terminal
-            assert width <= 35  # Still within max
-            assert height >= 14  # Taller for larger terminal
-            assert height <= 16  # Within max
-        finally:
-            type(panel).size = original_size
-
-    def test_update_cube_size_changes_renderer(self):
-        """_update_cube_size updates the renderer dimensions."""
-        panel = AnimatedWelcomePanel()
-
-        # Mock a specific terminal size
-        class MockSize:
-            width = 120
-            height = 40
-
-        panel._size = MockSize()
-        original_size = type(panel).size
-        type(panel).size = property(lambda self: self._size)
-
-        try:
-            panel._update_cube_size()
-            # Verify cube dimensions were updated
-            expected_size = panel._calculate_cube_size()
-            assert panel._cube.width == expected_size[0]
-            assert panel._cube.height == expected_size[1]
-        finally:
-            type(panel).size = original_size
-
-    def test_render_cube_method_exists(self):
-        """Panel has _render_cube method."""
-        panel = AnimatedWelcomePanel()
-        assert hasattr(panel, "_render_cube")
-        assert callable(panel._render_cube)
-
-    def test_render_cube_produces_text(self):
-        """_render_cube produces Rich Text with content."""
-        panel = AnimatedWelcomePanel()
-        cube_text = panel._render_cube()
-
-        from rich.text import Text
-
-        assert isinstance(cube_text, Text)
-        assert len(cube_text.plain) > 0
-
-    def test_render_welcome_text_method_exists(self):
-        """Panel has _render_welcome_text method."""
-        panel = AnimatedWelcomePanel()
-        assert hasattr(panel, "_render_welcome_text")
-        assert callable(panel._render_welcome_text)
-
-    def test_update_gradient_steps_cube(self):
-        """_update_gradient advances the cube animation."""
-        panel = AnimatedWelcomePanel()
-        initial_angle = panel._cube.angle_x
-
-        panel._update_gradient()
-
-        assert panel._cube.angle_x > initial_angle
-
-
 class TestWelcomePanelSessionResumption:
     """Test welcome panel behavior on session resumption."""
 
@@ -407,8 +182,3 @@ class TestAnimatedWelcomePanelIntegration:
         assert hasattr(panel, "DEFAULT_CSS")
         assert "AnimatedWelcomePanel" in panel.DEFAULT_CSS
 
-    def test_cube_renderer_exported(self):
-        """CubeRenderer is exported from module."""
-        from swecli.ui_textual.widgets.welcome_panel import CubeRenderer as Imported
-
-        assert Imported is CubeRenderer

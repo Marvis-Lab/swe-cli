@@ -1,4 +1,4 @@
-"""Command-line interface entry point for SWE-CLI."""
+"""Command-line interface entry point for OpenDev."""
 
 import argparse
 import sys
@@ -34,12 +34,12 @@ from swecli.core.context_engineering.tools.implementations.ask_user_tool import 
 
 
 def main() -> None:
-    """Main entry point for SWE-CLI CLI."""
+    """Main entry point for OpenDev CLI."""
     import sys
 
     parser = argparse.ArgumentParser(
         prog="swecli",
-        description="SWE-CLI - AI-powered command-line tool for accelerated development",
+        description="OpenDev - AI-powered command-line tool for accelerated development",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -56,7 +56,7 @@ Examples:
         "--version",
         "-V",
         action="version",
-        version="SWE-CLI 0.1.4",
+        version="OpenDev 0.1.7",
     )
 
     parser.add_argument(
@@ -108,7 +108,7 @@ Examples:
     # Config subcommand
     config_parser = subparsers.add_parser(
         "config",
-        help="Manage SWE-CLI configuration",
+        help="Manage OpenDev configuration",
         description="Configure AI providers, models, and other settings",
     )
     config_subparsers = config_parser.add_subparsers(
@@ -125,7 +125,7 @@ Examples:
     mcp_parser = subparsers.add_parser(
         "mcp",
         help="Configure and manage MCP (Model Context Protocol) servers",
-        description="Manage MCP servers for extending SWE-CLI with external tools and capabilities",
+        description="Manage MCP servers for extending OpenDev with external tools and capabilities",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -153,7 +153,7 @@ Examples:
     mcp_add = mcp_subparsers.add_parser(
         "add",
         help="Add a new MCP server to the configuration",
-        description="Register a new MCP server that will be available to SWE-CLI",
+        description="Register a new MCP server that will be available to OpenDev",
     )
     mcp_add.add_argument("name", help="Unique name for the server")
     mcp_add.add_argument(
@@ -169,7 +169,7 @@ Examples:
     mcp_add.add_argument(
         "--no-auto-start",
         action="store_true",
-        help="Don't automatically start this server when SWE-CLI launches",
+        help="Don't automatically start this server when OpenDev launches",
     )
 
     # mcp remove
@@ -312,7 +312,7 @@ Examples:
 
         # Initialize session manager (project-scoped)
         import os
-        env_session_dir = os.environ.get("SWECLI_SESSION_DIR")
+        env_session_dir = os.environ.get("OPENDEV_SESSION_DIR")
         if env_session_dir:
             session_manager = SessionManager(session_dir=Path(env_session_dir))
         else:

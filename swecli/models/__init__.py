@@ -1,4 +1,4 @@
-"""Pydantic models for SWE-CLI."""
+"""Pydantic models for OpenDev."""
 
 from swecli.models.message import ChatMessage, Role
 from swecli.models.session import Session, SessionMetadata

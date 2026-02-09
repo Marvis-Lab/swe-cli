@@ -116,6 +116,29 @@ class TextualUICallback:
             self._thinking_visible = not self._thinking_visible
             return self._thinking_visible
 
+    def on_critique(self, content: str) -> None:
+        """Called when the model produces critique content for a thinking trace.
+
+        Displays critique content in the conversation log with special styling.
+        Only shown when thinking level is Self-Critique.
+
+        Args:
+            content: The critique/feedback text from the critique phase
+        """
+        # Check if thinking is visible (critique only shows when thinking is visible)
+        if self.chat_app and hasattr(self.chat_app, "_thinking_visible"):
+            if not self.chat_app._thinking_visible:
+                return  # Skip display if thinking is hidden
+        elif not self._thinking_visible:
+            return  # Fallback to local state
+
+        if not content or not content.strip():
+            return
+
+        # Display critique block with special styling (reuse thinking block with prefix)
+        if hasattr(self.conversation, "add_thinking_block"):
+            self._run_on_ui(self.conversation.add_thinking_block, f"[Critique]\n{content}")
+
     def get_and_clear_nested_calls(self) -> list[ToolCall]:
         """Return collected nested calls and clear the buffer.
 

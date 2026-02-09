@@ -89,7 +89,7 @@ class TestSkillsCommandsList:
             config_manager.working_dir = tmpdir_path
 
             # Create a test skill
-            skill_dir = tmpdir_path / ".swecli" / "skills" / "test-skill"
+            skill_dir = tmpdir_path / ".opendev" / "skills" / "test-skill"
             skill_dir.mkdir(parents=True)
             skill_file = skill_dir / "SKILL.md"
             skill_file.write_text('''---
@@ -218,7 +218,7 @@ class TestSkillsCommandsDelete:
             config_manager.working_dir = tmpdir_path
 
             # Create a test skill
-            skill_dir = tmpdir_path / ".swecli" / "skills" / "delete-me"
+            skill_dir = tmpdir_path / ".opendev" / "skills" / "delete-me"
             skill_dir.mkdir(parents=True)
             (skill_dir / "SKILL.md").write_text("---\nname: delete-me\n---\n")
 
@@ -255,7 +255,7 @@ class TestSkillsCommandsFindSkill:
             config_manager.working_dir = tmpdir_path
 
             # Create project skill
-            skill_dir = tmpdir_path / ".swecli" / "skills" / "project-skill"
+            skill_dir = tmpdir_path / ".opendev" / "skills" / "project-skill"
             skill_dir.mkdir(parents=True)
             (skill_dir / "SKILL.md").write_text("---\nname: project-skill\n---\n")
 

@@ -138,6 +138,7 @@ class SwecliAgent(BaseAgent):
         """
         self.__http_client = None  # Lazy initialization - defer API key validation
         self.__thinking_http_client = None  # Lazy initialization for Thinking model
+        self.__critique_http_client = None  # Lazy initialization for Critique model
         self._compactor = None  # Lazy initialization for context compaction
         self._response_cleaner = ResponseCleaner()
         self._working_dir = working_dir
@@ -171,6 +172,31 @@ class SwecliAgent(BaseAgent):
                     # API key not set - fall back to normal client
                     return self._http_client
         return self.__thinking_http_client
+
+    @property
+    def _critique_http_client(self) -> Any:
+        """Lazily create HTTP client for Critique model provider.
+
+        Only created if Critique model is configured with a different provider.
+        Falls back to thinking client, then normal client.
+        """
+        if self.__critique_http_client is None:
+            critique_provider = self.config.model_critique_provider
+            if critique_provider and critique_provider != self.config.model_provider:
+                # Different provider than normal - create dedicated client
+                if critique_provider != self.config.model_thinking_provider:
+                    # Also different from thinking - create new client
+                    try:
+                        self.__critique_http_client = create_http_client_for_provider(
+                            critique_provider, self.config
+                        )
+                    except ValueError:
+                        # API key not set - fall back to thinking or normal client
+                        return self._thinking_http_client or self._http_client
+                else:
+                    # Same as thinking provider - reuse thinking client
+                    return self._thinking_http_client or self._http_client
+        return self.__critique_http_client
 
     def build_system_prompt(self, thinking_visible: bool = False) -> str:
         """Build the system prompt for the agent.
@@ -234,6 +260,84 @@ class SwecliAgent(BaseAgent):
             "messages": messages,
             **build_temperature_param(model_id, self.config.temperature),
             **build_max_tokens_param(model_id, self.config.max_tokens),
+        }
+
+        result = http_client.post_json(payload, task_monitor=task_monitor)
+        if not result.success or result.response is None:
+            return {
+                "success": False,
+                "error": result.error or "Unknown error",
+                "content": "",
+            }
+
+        response = result.response
+        if response.status_code != 200:
+            return {
+                "success": False,
+                "error": f"API Error {response.status_code}: {response.text}",
+                "content": "",
+            }
+
+        response_data = response.json()
+        choice = response_data["choices"][0]
+        message_data = choice["message"]
+
+        raw_content = message_data.get("content")
+        cleaned_content = self._response_cleaner.clean(raw_content) if raw_content else ""
+
+        return {
+            "success": True,
+            "content": cleaned_content,
+        }
+
+    def call_critique_llm(
+        self,
+        thinking_trace: str,
+        task_monitor: Optional[Any] = None,
+    ) -> dict:
+        """Call LLM to critique a thinking trace.
+
+        This makes a separate LLM call to analyze and critique the reasoning
+        in a thinking trace, providing feedback to improve it.
+
+        Args:
+            thinking_trace: The thinking trace to critique
+            task_monitor: Optional monitor for tracking progress
+
+        Returns:
+            Dict with success status and critique content
+        """
+        from swecli.core.agents.prompts import load_prompt
+
+        # Use critique model if configured, fallback to thinking, then normal
+        if self.config.model_critique:
+            model_id = self.config.model_critique
+            http_client = self._critique_http_client or self._thinking_http_client or self._http_client
+        elif self.config.model_thinking:
+            model_id = self.config.model_thinking
+            http_client = self._thinking_http_client or self._http_client
+        else:
+            model_id = self.config.model
+            http_client = self._http_client
+
+        # Load critique system prompt
+        critique_system_prompt = load_prompt("critique_system_prompt")
+
+        # Build messages for critique
+        critique_messages = [
+            {"role": "system", "content": critique_system_prompt},
+            {
+                "role": "user",
+                "content": f"Please critique the following thinking trace:\n\n{thinking_trace}",
+            },
+        ]
+
+        # NO tools - pure critique
+        payload = {
+            "model": model_id,
+            "messages": critique_messages,
+            **build_temperature_param(model_id, self.config.temperature),
+            **build_max_tokens_param(model_id, min(2048, self.config.max_tokens)),  # Limit critique length
         }
 
         result = http_client.post_json(payload, task_monitor=task_monitor)

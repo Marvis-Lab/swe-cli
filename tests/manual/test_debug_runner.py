@@ -67,7 +67,7 @@ class DebugApp(App):
 
     def on_mount(self):
         """Initialize the app on mount."""
-        self.title = "SWE-CLI Debug Test"
+        self.title = "OpenDev Debug Test"
         self.conversation = self.query_one("#conversation", ConversationLog)
         self.status = self.query_one("#status", Static)
 
@@ -143,7 +143,7 @@ class DebugApp(App):
         self.status.update("✅ Direct rendering test complete")
 
 if __name__ == "__main__":
-    print("🐛 Starting SWE-CLI debug test...")
+    print("🐛 Starting OpenDev debug test...")
     print("This will help identify if the issue is:")
     print("1. Backend integration (click 'Test Backend')")
     print("2. UI message rendering (click 'Test Direct Message')")

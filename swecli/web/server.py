@@ -1,4 +1,4 @@
-"""FastAPI web server for SWE-CLI UI."""
+"""FastAPI web server for OpenDev UI."""
 
 from __future__ import annotations
 
@@ -31,8 +31,8 @@ def create_app() -> FastAPI:
         Configured FastAPI app
     """
     app = FastAPI(
-        title="SWE-CLI Web UI",
-        description="Web interface for SWE-CLI AI coding assistant",
+        title="OpenDev Web UI",
+        description="Web interface for OpenDev AI coding assistant",
         version="0.1.0",
     )
 
@@ -58,7 +58,7 @@ def create_app() -> FastAPI:
     # Health check
     @app.get("/api/health")
     async def health_check():
-        return {"status": "ok", "service": "swecli-web-ui"}
+        return {"status": "ok", "service": "opendev-web-ui"}
 
     # Serve static files (frontend build)
     static_dir = Path(__file__).parent / "static"
@@ -85,7 +85,7 @@ def create_app() -> FastAPI:
 <!DOCTYPE html>
 <html>
 <head>
-    <title>SWE-CLI Web UI</title>
+    <title>OpenDev Web UI</title>
     <style>
         body {
             font-family: system-ui, -apple-system, sans-serif;
@@ -150,7 +150,7 @@ def create_app() -> FastAPI:
 </head>
 <body>
     <div class="container">
-        <h1>SWE-CLI Web UI</h1>
+        <h1>OpenDev Web UI</h1>
 
         <div class="status">
             ✅ Server is running

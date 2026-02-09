@@ -1,4 +1,4 @@
-"""Utility helpers for SWE-CLI core."""
+"""Utility helpers for OpenDev core."""
 
 from .action_summarizer import ActionSummarizer
 

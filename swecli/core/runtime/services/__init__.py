@@ -1,4 +1,4 @@
-"""Service layer for SWE-CLI core."""
+"""Service layer for OpenDev core."""
 
 from .runtime_service import RuntimeService, RuntimeSuite
 

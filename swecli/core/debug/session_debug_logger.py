@@ -1,6 +1,6 @@
 """Per-session structured debug logger.
 
-Writes JSONL events to ~/.swecli/sessions/{session_id}.debug when --verbose is enabled.
+Writes JSONL events to ~/.opendev/sessions/{session_id}.debug when --verbose is enabled.
 Each line is a JSON object: {"ts": "...", "elapsed_ms": ..., "event": "...", "component": "...", "data": {...}}
 """
 
@@ -26,7 +26,7 @@ def _truncate(value: Any, max_len: int = _MAX_PREVIEW_LEN) -> Any:
 class SessionDebugLogger:
     """Per-session structured debug logger.
 
-    Writes JSONL events to ~/.swecli/sessions/{session_id}.debug.
+    Writes JSONL events to ~/.opendev/sessions/{session_id}.debug.
     Thread-safe via threading.Lock() for background thread writes.
 
     When verbose is disabled, use the noop() classmethod to get a logger

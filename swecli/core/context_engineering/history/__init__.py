@@ -1,4 +1,4 @@
-"""History management for SWE-CLI.
+"""History management for OpenDev.
 
 Manages session state and undo/redo functionality.
 """

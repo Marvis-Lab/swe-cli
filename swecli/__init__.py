@@ -1,4 +1,4 @@
-"""SWE-CLI - AI-powered command-line tool for accelerated development workflows."""
+"""OpenDev - AI-powered command-line tool for accelerated development workflows."""
 
 import warnings
 

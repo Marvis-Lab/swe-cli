@@ -43,7 +43,7 @@ def _check_bash_syntax(command: str) -> None:
     Raises:
         BashSyntaxError: If the command has syntax errors.
     """
-    unique_eof = "SWECLI_SYNTAX_CHECK_EOF"
+    unique_eof = "OPENDEV_SYNTAX_CHECK_EOF"
     cmd = f"/usr/bin/env bash -n << '{unique_eof}'\n{command}\n{unique_eof}"
     result = subprocess.run(cmd, shell=True, capture_output=True)
     if result.returncode == 0:
@@ -59,7 +59,7 @@ class BashSession:
     and receive output from.
     """
 
-    _UNIQUE_STRING = "SWECLI_UNIQUE_29234"
+    _UNIQUE_STRING = "OPENDEV_UNIQUE_29234"
     _EXIT_CODE_PREFIX = "EXITCODE_START_"
     _EXIT_CODE_SUFFIX = "_EXITCODE_END"
 
@@ -76,7 +76,7 @@ class BashSession:
         """
         self.name = name
         self.startup_timeout = startup_timeout
-        self._ps1 = "SWECLI_PS1_PROMPT> "
+        self._ps1 = "OPENDEV_PS1_PROMPT> "
         self._shell: pexpect.spawn | None = None
 
     @property

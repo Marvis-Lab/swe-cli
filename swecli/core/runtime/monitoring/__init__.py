@@ -1,4 +1,4 @@
-"""Monitoring utilities for SWE-CLI runtime."""
+"""Monitoring utilities for OpenDev runtime."""
 
 from .error_handler import ErrorAction, ErrorHandler
 from .task_monitor import TaskMonitor

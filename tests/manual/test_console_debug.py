@@ -36,7 +36,7 @@ def simulate_message_rendering(messages):
 
 def main():
     """Main debug function."""
-    print_section("SWE-CLI Console Debug - Tracing Message Flow")
+    print_section("OpenDev Console Debug - Tracing Message Flow")
 
     try:
         # Step 1: Initialize the runner
@@ -131,7 +131,7 @@ def main():
         return False
 
 if __name__ == "__main__":
-    print("🐛 SWE-CLI Console Debug Tool")
+    print("🐛 OpenDev Console Debug Tool")
     print("This will trace the exact message flow to identify where the issue lies.")
 
     success = main()

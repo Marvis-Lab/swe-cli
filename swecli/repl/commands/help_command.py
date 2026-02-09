@@ -66,7 +66,7 @@ class HelpCommand(CommandHandler):
 
 ## General
 - `/help` - Show this help message
-- `/exit` - Exit SWE-CLI
+- `/exit` - Exit OpenDev
 
 **Current Mode:** {}
 {}

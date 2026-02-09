@@ -1,4 +1,4 @@
-"""Centralized path management for SWE-CLI.
+"""Centralized path management for OpenDev.
 
 This module provides a single source of truth for all path-related constants
 and helper functions. All paths in the application should be accessed through
@@ -28,7 +28,7 @@ from typing import Optional
 # ============================================================================
 
 # Directory and file names
-APP_DIR_NAME = ".swecli"
+APP_DIR_NAME = ".opendev"
 MCP_CONFIG_NAME = "mcp.json"
 MCP_PROJECT_CONFIG_NAME = ".mcp.json"  # Project-level uses dot prefix at root
 SESSIONS_DIR_NAME = "sessions"
@@ -50,14 +50,14 @@ BUNDLES_FILE_NAME = "bundles.json"
 SETTINGS_FILE_NAME = "settings.json"
 SESSIONS_INDEX_FILE_NAME = "sessions-index.json"
 AGENTS_FILE_NAME = "agents.json"
-CONTEXT_FILE_NAME = "SWECLI.md"
+CONTEXT_FILE_NAME = "OPENDEV.md"
 HISTORY_FILE_NAME = "history.txt"
 
 # Environment variable names for overrides
-ENV_SWECLI_DIR = "SWECLI_DIR"
-ENV_SWECLI_SESSION_DIR = "SWECLI_SESSION_DIR"
-ENV_SWECLI_LOG_DIR = "SWECLI_LOG_DIR"
-ENV_SWECLI_CACHE_DIR = "SWECLI_CACHE_DIR"
+ENV_OPENDEV_DIR = "OPENDEV_DIR"
+ENV_OPENDEV_SESSION_DIR = "OPENDEV_SESSION_DIR"
+ENV_OPENDEV_LOG_DIR = "OPENDEV_LOG_DIR"
+ENV_OPENDEV_CACHE_DIR = "OPENDEV_CACHE_DIR"
 
 
 # ============================================================================
@@ -91,8 +91,8 @@ class Paths:
     """Centralized path management.
 
     Provides access to all application paths with support for:
-    - Global paths (~/.swecli/...)
-    - Project paths (<working_dir>/.swecli/...)
+    - Global paths (~/.opendev/...)
+    - Project paths (<working_dir>/.opendev/...)
     - Environment variable overrides
     - Lazy directory creation
 
@@ -116,17 +116,17 @@ class Paths:
         return self._working_dir
 
     # ========================================================================
-    # Global Paths (User-level, in ~/.swecli/)
+    # Global Paths (User-level, in ~/.opendev/)
     # ========================================================================
 
     @cached_property
     def global_dir(self) -> Path:
-        """Get the global swecli directory.
+        """Get the global opendev directory.
 
-        Can be overridden with SWECLI_DIR environment variable.
-        Default: ~/.swecli/
+        Can be overridden with OPENDEV_DIR environment variable.
+        Default: ~/.opendev/
         """
-        env_override = os.environ.get(ENV_SWECLI_DIR)
+        env_override = os.environ.get(ENV_OPENDEV_DIR)
         if env_override:
             return Path(env_override)
         return Path.home() / APP_DIR_NAME
@@ -135,7 +135,7 @@ class Paths:
     def global_settings(self) -> Path:
         """Get global settings file path.
 
-        Default: ~/.swecli/settings.json
+        Default: ~/.opendev/settings.json
         """
         return self.global_dir / SETTINGS_FILE_NAME
 
@@ -143,10 +143,10 @@ class Paths:
     def global_sessions_dir(self) -> Path:
         """Get global sessions directory.
 
-        Can be overridden with SWECLI_SESSION_DIR environment variable.
-        Default: ~/.swecli/sessions/
+        Can be overridden with OPENDEV_SESSION_DIR environment variable.
+        Default: ~/.opendev/sessions/
         """
-        env_override = os.environ.get(ENV_SWECLI_SESSION_DIR)
+        env_override = os.environ.get(ENV_OPENDEV_SESSION_DIR)
         if env_override:
             return Path(env_override)
         return self.global_dir / SESSIONS_DIR_NAME
@@ -155,7 +155,7 @@ class Paths:
     def global_projects_dir(self) -> Path:
         """Get global projects directory for project-scoped sessions.
 
-        Default: ~/.swecli/projects/
+        Default: ~/.opendev/projects/
         """
         return self.global_dir / PROJECTS_DIR_NAME
 
@@ -166,7 +166,7 @@ class Paths:
             working_dir: The project working directory.
 
         Returns:
-            Path like ``~/.swecli/projects/-Users-foo-bar/``
+            Path like ``~/.opendev/projects/-Users-foo-bar/``
         """
         encoded = encode_project_path(working_dir)
         return self.global_projects_dir / encoded
@@ -175,10 +175,10 @@ class Paths:
     def global_logs_dir(self) -> Path:
         """Get global logs directory.
 
-        Can be overridden with SWECLI_LOG_DIR environment variable.
-        Default: ~/.swecli/logs/
+        Can be overridden with OPENDEV_LOG_DIR environment variable.
+        Default: ~/.opendev/logs/
         """
-        env_override = os.environ.get(ENV_SWECLI_LOG_DIR)
+        env_override = os.environ.get(ENV_OPENDEV_LOG_DIR)
         if env_override:
             return Path(env_override)
         return self.global_dir / LOGS_DIR_NAME
@@ -187,10 +187,10 @@ class Paths:
     def global_cache_dir(self) -> Path:
         """Get global cache directory.
 
-        Can be overridden with SWECLI_CACHE_DIR environment variable.
-        Default: ~/.swecli/cache/
+        Can be overridden with OPENDEV_CACHE_DIR environment variable.
+        Default: ~/.opendev/cache/
         """
-        env_override = os.environ.get(ENV_SWECLI_CACHE_DIR)
+        env_override = os.environ.get(ENV_OPENDEV_CACHE_DIR)
         if env_override:
             return Path(env_override)
         return self.global_dir / CACHE_DIR_NAME
@@ -199,7 +199,7 @@ class Paths:
     def global_skills_dir(self) -> Path:
         """Get global skills directory.
 
-        Default: ~/.swecli/skills/
+        Default: ~/.opendev/skills/
         """
         return self.global_dir / SKILLS_DIR_NAME
 
@@ -207,7 +207,7 @@ class Paths:
     def global_agents_dir(self) -> Path:
         """Get global agents directory.
 
-        Default: ~/.swecli/agents/
+        Default: ~/.opendev/agents/
         """
         return self.global_dir / AGENTS_DIR_NAME
 
@@ -215,15 +215,15 @@ class Paths:
     def global_agents_file(self) -> Path:
         """Get global agents.json file path.
 
-        Default: ~/.swecli/agents.json
+        Default: ~/.opendev/agents.json
         """
         return self.global_dir / AGENTS_FILE_NAME
 
     @cached_property
     def global_context_file(self) -> Path:
-        """Get global context file (SWECLI.md) path.
+        """Get global context file (OPENDEV.md) path.
 
-        Default: ~/.swecli/SWECLI.md
+        Default: ~/.opendev/OPENDEV.md
         """
         return self.global_dir / CONTEXT_FILE_NAME
 
@@ -231,7 +231,7 @@ class Paths:
     def global_mcp_config(self) -> Path:
         """Get global MCP configuration file path.
 
-        Default: ~/.swecli/mcp.json
+        Default: ~/.opendev/mcp.json
         """
         return self.global_dir / MCP_CONFIG_NAME
 
@@ -239,7 +239,7 @@ class Paths:
     def global_repos_dir(self) -> Path:
         """Get global repos directory for cloned repositories.
 
-        Default: ~/.swecli/repos/
+        Default: ~/.opendev/repos/
         """
         return self.global_dir / REPOS_DIR_NAME
 
@@ -247,19 +247,19 @@ class Paths:
     def global_history_file(self) -> Path:
         """Get global command history file path.
 
-        Default: ~/.swecli/history.txt
+        Default: ~/.opendev/history.txt
         """
         return self.global_dir / HISTORY_FILE_NAME
 
     # ========================================================================
-    # Plugin Paths (User-level, in ~/.swecli/plugins/)
+    # Plugin Paths (User-level, in ~/.opendev/plugins/)
     # ========================================================================
 
     @cached_property
     def global_plugins_dir(self) -> Path:
         """Get global plugins directory.
 
-        Default: ~/.swecli/plugins/
+        Default: ~/.opendev/plugins/
         """
         return self.global_dir / PLUGINS_DIR_NAME
 
@@ -267,7 +267,7 @@ class Paths:
     def global_marketplaces_dir(self) -> Path:
         """Get global marketplaces directory where marketplace repos are cloned.
 
-        Default: ~/.swecli/plugins/marketplaces/
+        Default: ~/.opendev/plugins/marketplaces/
         """
         return self.global_plugins_dir / MARKETPLACES_DIR_NAME
 
@@ -275,7 +275,7 @@ class Paths:
     def global_plugin_cache_dir(self) -> Path:
         """Get global plugin cache directory for installed plugins.
 
-        Default: ~/.swecli/plugins/cache/
+        Default: ~/.opendev/plugins/cache/
         """
         return self.global_plugins_dir / PLUGIN_CACHE_DIR_NAME
 
@@ -283,7 +283,7 @@ class Paths:
     def known_marketplaces_file(self) -> Path:
         """Get known marketplaces registry file.
 
-        Default: ~/.swecli/plugins/known_marketplaces.json
+        Default: ~/.opendev/plugins/known_marketplaces.json
         """
         return self.global_plugins_dir / KNOWN_MARKETPLACES_FILE_NAME
 
@@ -291,7 +291,7 @@ class Paths:
     def global_installed_plugins_file(self) -> Path:
         """Get global installed plugins registry file.
 
-        Default: ~/.swecli/plugins/installed_plugins.json
+        Default: ~/.opendev/plugins/installed_plugins.json
         """
         return self.global_plugins_dir / INSTALLED_PLUGINS_FILE_NAME
 
@@ -299,7 +299,7 @@ class Paths:
     def global_bundles_dir(self) -> Path:
         """Get global bundles directory for directly-installed plugin bundles.
 
-        Default: ~/.swecli/plugins/bundles/
+        Default: ~/.opendev/plugins/bundles/
         """
         return self.global_plugins_dir / BUNDLES_DIR_NAME
 
@@ -307,19 +307,19 @@ class Paths:
     def global_bundles_file(self) -> Path:
         """Get global bundles registry file.
 
-        Default: ~/.swecli/plugins/bundles.json
+        Default: ~/.opendev/plugins/bundles.json
         """
         return self.global_plugins_dir / BUNDLES_FILE_NAME
 
     # ========================================================================
-    # Project Paths (Project-level, in <working_dir>/.swecli/)
+    # Project Paths (Project-level, in <working_dir>/.opendev/)
     # ========================================================================
 
     @cached_property
     def project_dir(self) -> Path:
-        """Get project-level swecli directory.
+        """Get project-level opendev directory.
 
-        Default: <working_dir>/.swecli/
+        Default: <working_dir>/.opendev/
         """
         return self._working_dir / APP_DIR_NAME
 
@@ -327,7 +327,7 @@ class Paths:
     def project_settings(self) -> Path:
         """Get project settings file path.
 
-        Default: <working_dir>/.swecli/settings.json
+        Default: <working_dir>/.opendev/settings.json
         """
         return self.project_dir / SETTINGS_FILE_NAME
 
@@ -335,7 +335,7 @@ class Paths:
     def project_skills_dir(self) -> Path:
         """Get project skills directory.
 
-        Default: <working_dir>/.swecli/skills/
+        Default: <working_dir>/.opendev/skills/
         """
         return self.project_dir / SKILLS_DIR_NAME
 
@@ -343,7 +343,7 @@ class Paths:
     def project_agents_dir(self) -> Path:
         """Get project agents directory.
 
-        Default: <working_dir>/.swecli/agents/
+        Default: <working_dir>/.opendev/agents/
         """
         return self.project_dir / AGENTS_DIR_NAME
 
@@ -351,7 +351,7 @@ class Paths:
     def project_agents_file(self) -> Path:
         """Get project agents.json file path.
 
-        Default: <working_dir>/.swecli/agents.json
+        Default: <working_dir>/.opendev/agents.json
         """
         return self.project_dir / AGENTS_FILE_NAME
 
@@ -359,15 +359,15 @@ class Paths:
     def project_commands_dir(self) -> Path:
         """Get project commands directory.
 
-        Default: <working_dir>/.swecli/commands/
+        Default: <working_dir>/.opendev/commands/
         """
         return self.project_dir / COMMANDS_DIR_NAME
 
     @cached_property
     def project_context_file(self) -> Path:
-        """Get project context file (SWECLI.md) path.
+        """Get project context file (OPENDEV.md) path.
 
-        Default: <working_dir>/SWECLI.md (at project root, not in .swecli)
+        Default: <working_dir>/OPENDEV.md (at project root, not in .opendev)
         """
         return self._working_dir / CONTEXT_FILE_NAME
 
@@ -375,7 +375,7 @@ class Paths:
     def project_mcp_config(self) -> Path:
         """Get project MCP configuration file path.
 
-        Note: Project MCP config uses .mcp.json at project root (not in .swecli/)
+        Note: Project MCP config uses .mcp.json at project root (not in .opendev/)
         Default: <working_dir>/.mcp.json
         """
         return self._working_dir / MCP_PROJECT_CONFIG_NAME
@@ -384,7 +384,7 @@ class Paths:
     def project_plugins_dir(self) -> Path:
         """Get project plugins directory.
 
-        Default: <working_dir>/.swecli/plugins/
+        Default: <working_dir>/.opendev/plugins/
         """
         return self.project_dir / PLUGINS_DIR_NAME
 
@@ -392,7 +392,7 @@ class Paths:
     def project_installed_plugins_file(self) -> Path:
         """Get project installed plugins registry file.
 
-        Default: <working_dir>/.swecli/plugins/installed_plugins.json
+        Default: <working_dir>/.opendev/plugins/installed_plugins.json
         """
         return self.project_plugins_dir / INSTALLED_PLUGINS_FILE_NAME
 
@@ -400,7 +400,7 @@ class Paths:
     def project_bundles_dir(self) -> Path:
         """Get project bundles directory for directly-installed plugin bundles.
 
-        Default: <working_dir>/.swecli/plugins/bundles/
+        Default: <working_dir>/.opendev/plugins/bundles/
         """
         return self.project_plugins_dir / BUNDLES_DIR_NAME
 
@@ -408,7 +408,7 @@ class Paths:
     def project_bundles_file(self) -> Path:
         """Get project bundles registry file.
 
-        Default: <working_dir>/.swecli/plugins/bundles.json
+        Default: <working_dir>/.opendev/plugins/bundles.json
         """
         return self.project_plugins_dir / BUNDLES_FILE_NAME
 
@@ -420,16 +420,16 @@ class Paths:
         """Create all required global directories.
 
         Creates:
-        - ~/.swecli/
-        - ~/.swecli/sessions/
-        - ~/.swecli/logs/
-        - ~/.swecli/cache/
-        - ~/.swecli/skills/
-        - ~/.swecli/agents/
-        - ~/.swecli/plugins/
-        - ~/.swecli/plugins/marketplaces/
-        - ~/.swecli/plugins/cache/
-        - ~/.swecli/plugins/bundles/
+        - ~/.opendev/
+        - ~/.opendev/sessions/
+        - ~/.opendev/logs/
+        - ~/.opendev/cache/
+        - ~/.opendev/skills/
+        - ~/.opendev/agents/
+        - ~/.opendev/plugins/
+        - ~/.opendev/plugins/marketplaces/
+        - ~/.opendev/plugins/cache/
+        - ~/.opendev/plugins/bundles/
         """
         self.global_dir.mkdir(parents=True, exist_ok=True)
         self.global_sessions_dir.mkdir(parents=True, exist_ok=True)
@@ -448,7 +448,7 @@ class Paths:
 
         Only creates directories if .git exists in working directory.
         Creates:
-        - <working_dir>/.swecli/commands/ (if .git exists)
+        - <working_dir>/.opendev/commands/ (if .git exists)
         """
         if (self._working_dir / ".git").exists():
             self.project_commands_dir.mkdir(parents=True, exist_ok=True)
@@ -457,10 +457,10 @@ class Paths:
         """Get all skill directories in priority order.
 
         Returns directories in order:
-        1. Project skills (.swecli/skills/) - highest priority
-        2. User global skills (~/.swecli/skills/)
-        3. Project bundle skills (.swecli/plugins/bundles/*/skills/)
-        4. User bundle skills (~/.swecli/plugins/bundles/*/skills/)
+        1. Project skills (.opendev/skills/) - highest priority
+        2. User global skills (~/.opendev/skills/)
+        3. Project bundle skills (.opendev/plugins/bundles/*/skills/)
+        4. User bundle skills (~/.opendev/plugins/bundles/*/skills/)
 
         Only returns directories that exist.
 

@@ -47,14 +47,14 @@ interface DocumentationViewerProps {
 const mockWikiPages: WikiPage[] = [
   {
     id: 'overview',
-    title: 'SWE-CLI Architecture Overview',
+    title: 'OpenDev Architecture Overview',
     type: 'overview',
-    description: 'High-level architecture and design principles of SWE-CLI',
+    description: 'High-level architecture and design principles of OpenDev',
     lastModified: '2 hours ago',
     importance: 10,
-    content: `# SWE-CLI Architecture Overview
+    content: `# OpenDev Architecture Overview
 
-SWE-CLI (Software Engineering CLI) is an AI-powered command-line tool designed to enhance developer productivity through intelligent code assistance and automation.
+OpenDev (Software Engineering CLI) is an AI-powered command-line tool designed to enhance developer productivity through intelligent code assistance and automation.
 
 ## Core Components
 
@@ -94,7 +94,7 @@ SWE-CLI (Software Engineering CLI) is an AI-powered command-line tool designed t
     parent: 'overview',
     content: `# Agent System Architecture
 
-The agent system is the core intelligence layer of SWE-CLI, responsible for understanding user intent and executing complex coding tasks through coordinated tool usage.
+The agent system is the core intelligence layer of OpenDev, responsible for understanding user intent and executing complex coding tasks through coordinated tool usage.
 
 ## Agent Types
 
@@ -138,7 +138,7 @@ The agent system is the core intelligence layer of SWE-CLI, responsible for unde
     parent: 'overview',
     content: `# Web Interface Architecture
 
-The web interface provides a modern, responsive UI for SWE-CLI with real-time communication capabilities and session management.
+The web interface provides a modern, responsive UI for OpenDev with real-time communication capabilities and session management.
 
 ## Frontend Components
 
@@ -180,12 +180,12 @@ The web interface provides a modern, responsive UI for SWE-CLI with real-time co
     id: 'api-reference',
     title: 'API Reference',
     type: 'reference',
-    description: 'Complete API documentation for SWE-CLI components',
+    description: 'Complete API documentation for OpenDev components',
     lastModified: '6 hours ago',
     importance: 7,
     content: `# API Reference
 
-Complete API documentation for SWE-CLI components, including REST endpoints, WebSocket messages, and internal APIs.
+Complete API documentation for OpenDev components, including REST endpoints, WebSocket messages, and internal APIs.
 
 ## REST API Endpoints
 
@@ -254,7 +254,7 @@ const mockDocumentation: DocumentationItem[] = [
     type: 'readme',
     path: '/README.md',
     lastModified: '2 hours ago',
-    content: `# SWE-CLI
+    content: `# OpenDev
 
 Software Engineering CLI with AI-powered coding assistance.
 

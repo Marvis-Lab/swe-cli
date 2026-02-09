@@ -1,4 +1,4 @@
-"""Response processing utilities for SWE-CLI agents.
+"""Response processing utilities for OpenDev agents.
 
 This subpackage contains utilities for cleaning and parsing LLM responses,
 including plan extraction and response sanitization.

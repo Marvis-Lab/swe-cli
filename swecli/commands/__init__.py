@@ -1,4 +1,4 @@
-"""Commands for SWE-CLI."""
+"""Commands for OpenDev."""
 
 from swecli.commands.init_command import InitCommandHandler, InitCommandArgs
 from swecli.commands.init_analyzer import CodebaseAnalyzer

@@ -1,4 +1,4 @@
-"""Model Context Protocol integration for SWE-CLI."""
+"""Model Context Protocol integration for OpenDev."""
 
 from swecli.core.context_engineering.mcp.manager import MCPManager
 from swecli.core.context_engineering.mcp.models import MCPServerConfig, MCPConfig

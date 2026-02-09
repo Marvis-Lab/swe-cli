@@ -120,7 +120,7 @@ class PluginManager:
             shutil.rmtree(target_dir)
             raise PluginManagerError(
                 "Invalid marketplace: no marketplace.json found. "
-                "Expected one of: .swecli/marketplace.json, marketplace.json"
+                "Expected one of: .opendev/marketplace.json, marketplace.json"
             )
 
         # Register marketplace
@@ -759,9 +759,10 @@ class PluginManager:
             return "marketplace"
 
         marketplace_paths = [
-            directory / ".swecli" / "marketplace.json",
+            directory / ".opendev" / "marketplace.json",
             directory / "marketplace.json",
-            directory / ".swecli-marketplace" / "marketplace.json",
+            directory / ".swecli" / "marketplace.json",  # legacy fallback
+            directory / ".swecli-marketplace" / "marketplace.json",  # legacy fallback
         ]
         if any(p.exists() for p in marketplace_paths):
             return "marketplace"
@@ -972,9 +973,10 @@ class PluginManager:
         """Validate marketplace directory structure.
 
         Checks multiple possible locations for marketplace.json:
-        1. .swecli/marketplace.json (consistent with app)
+        1. .opendev/marketplace.json (consistent with app)
         2. marketplace.json (at root)
-        3. .swecli-marketplace/marketplace.json (legacy)
+        3. .swecli/marketplace.json (legacy fallback)
+        4. .swecli-marketplace/marketplace.json (legacy fallback)
 
         Also accepts repos with plugins/ or skills/ directories (auto-discovery mode).
 
@@ -986,9 +988,10 @@ class PluginManager:
         """
         # Check for marketplace.json
         possible_paths = [
-            directory / ".swecli" / "marketplace.json",
+            directory / ".opendev" / "marketplace.json",
             directory / "marketplace.json",
-            directory / ".swecli-marketplace" / "marketplace.json",
+            directory / ".swecli" / "marketplace.json",  # legacy fallback
+            directory / ".swecli-marketplace" / "marketplace.json",  # legacy fallback
         ]
         if any(p.exists() for p in possible_paths):
             return True
@@ -1013,9 +1016,10 @@ class PluginManager:
             Path to marketplace.json or None if not found
         """
         possible_paths = [
-            directory / ".swecli" / "marketplace.json",
+            directory / ".opendev" / "marketplace.json",
             directory / "marketplace.json",
-            directory / ".swecli-marketplace" / "marketplace.json",
+            directory / ".swecli" / "marketplace.json",  # legacy fallback
+            directory / ".swecli-marketplace" / "marketplace.json",  # legacy fallback
         ]
         for p in possible_paths:
             if p.exists():
@@ -1026,9 +1030,10 @@ class PluginManager:
         """Load plugin metadata from plugin.json.
 
         Checks multiple possible locations:
-        1. .swecli/plugin.json (consistent with app)
+        1. .opendev/plugin.json (consistent with app)
         2. plugin.json (at root)
-        3. .swecli-plugin/plugin.json (legacy)
+        3. .swecli/plugin.json (legacy fallback)
+        4. .swecli-plugin/plugin.json (legacy fallback)
 
         Args:
             plugin_dir: Plugin directory
@@ -1037,9 +1042,10 @@ class PluginManager:
             PluginMetadata or None if invalid
         """
         possible_paths = [
-            plugin_dir / ".swecli" / "plugin.json",
+            plugin_dir / ".opendev" / "plugin.json",
             plugin_dir / "plugin.json",
-            plugin_dir / ".swecli-plugin" / "plugin.json",
+            plugin_dir / ".swecli" / "plugin.json",  # legacy fallback
+            plugin_dir / ".swecli-plugin" / "plugin.json",  # legacy fallback
         ]
 
         metadata_file = None

@@ -50,7 +50,7 @@ def create_app(auth_token: str | None = None) -> FastAPI:
         Configured FastAPI app
     """
     app = FastAPI(
-        title="SWE-CLI Docker Runtime",
+        title="OpenDev Docker Runtime",
         description="HTTP API for Docker container runtime",
         version="1.0.0",
     )
@@ -183,7 +183,7 @@ def run_server(host: str = "0.0.0.0", port: int = 8000, auth_token: str | None =
 
 def main() -> None:
     """CLI entry point for running the server."""
-    parser = argparse.ArgumentParser(description="SWE-CLI Docker Runtime Server")
+    parser = argparse.ArgumentParser(description="OpenDev Docker Runtime Server")
     parser.add_argument("--host", default="0.0.0.0", help="Host to bind to")
     parser.add_argument("--port", type=int, default=8000, help="Port to listen on")
     parser.add_argument("--auth-token", help="Authentication token for API access")

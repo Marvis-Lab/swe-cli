@@ -117,7 +117,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
             {/* Sidebar Footer */}
             <div className="p-4 mt-4 border-t border-gray-200">
               <p className="text-xs text-gray-500">
-                SWE-CLI v0.1.0
+                OpenDev v0.1.7
               </p>
             </div>
           </div>

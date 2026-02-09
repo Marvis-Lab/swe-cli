@@ -28,7 +28,7 @@ class InitCommandHandler:
         """Initialize init command handler.
 
         Args:
-            agent: SWE-CLI Pydantic AI Agent
+            agent: OpenDev Pydantic AI Agent
             console: Rich console for output
         """
         self.agent = agent

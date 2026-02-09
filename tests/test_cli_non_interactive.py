@@ -34,9 +34,9 @@ def _setup_config(tmp_path, monkeypatch):
     config_manager = ConfigManager(tmp_path)
     config = config_manager.get_config()
     config.api_key = "dummy"
-    config.swecli_dir = str(tmp_path / ".swecli")
-    config.session_dir = str(tmp_path / ".swecli" / "sessions")
-    config.log_dir = str(tmp_path / ".swecli" / "logs")
+    config.swecli_dir = str(tmp_path / ".opendev")
+    config.session_dir = str(tmp_path / ".opendev" / "sessions")
+    config.log_dir = str(tmp_path / ".opendev" / "logs")
     config.permissions.bash.enabled = True
     config_manager._config = config  # Reassign cached config
 

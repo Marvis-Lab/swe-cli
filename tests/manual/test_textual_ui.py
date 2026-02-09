@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Test launcher for Textual UI POC.
 
-This script demonstrates the new Textual-based full-screen UI for SWE-CLI.
+This script demonstrates the new Textual-based full-screen UI for OpenDev.
 
 Usage:
     python test_textual_ui.py

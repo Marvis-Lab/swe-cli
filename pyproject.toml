@@ -3,17 +3,17 @@ requires = ["setuptools>=68.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "swe-cli"
+name = "opendev"
 version = "0.1.7"
 description = "AI-powered command-line tool for accelerated development workflows"
 readme = {file = "README.md", content-type = "text/markdown"}
 requires-python = ">=3.10"
 license = {text = "MIT"}
 authors = [
-    {name = "SWE-CLI Team", email = "bdqnghi@gmail.com"}
+    {name = "OpenDev Team", email = "bdqnghi@gmail.com"}
 ]
 maintainers = [
-    {name = "SWE-CLI Team", email = "bdqnghi@gmail.com"}
+    {name = "OpenDev Team", email = "bdqnghi@gmail.com"}
 ]
 keywords = [
     "ai",
@@ -89,7 +89,7 @@ Repository = "https://github.com/swe-cli/swe-cli"
 Changelog = "https://github.com/swe-cli/swe-cli/releases"
 
 [project.scripts]
-swecli = "swecli.cli:main"
+opendev = "swecli.cli:main"
 
 [tool.setuptools]
 include-package-data = true

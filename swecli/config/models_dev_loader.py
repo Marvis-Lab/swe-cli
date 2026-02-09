@@ -28,7 +28,7 @@ def _fetch_models_dev(url: str = MODELS_DEV_URL, timeout: int = 10) -> Optional[
     request = urllib.request.Request(
         url,
         headers={
-            "User-Agent": os.getenv("SWECLI_HTTP_USER_AGENT", "swecli/unknown"),
+            "User-Agent": os.getenv("OPENDEV_HTTP_USER_AGENT", "swecli/unknown"),
         },
     )
     try:
@@ -51,8 +51,8 @@ def load_models_dev_catalog(
     """Load the Models.dev provider catalog, respecting cache and overrides.
 
     Precedence:
-        1. SWECLI_MODELS_DEV_PATH environment variable (JSON file path)
-        2. Cached response under ~/.swecli/cache/models.dev.json (if fresh)
+        1. OPENDEV_MODELS_DEV_PATH environment variable (JSON file path)
+        2. Cached response under ~/.opendev/cache/models.dev.json (if fresh)
         3. Live fetch from https://models.dev/api.json (unless disabled)
 
     Args:
@@ -64,7 +64,7 @@ def load_models_dev_catalog(
         Parsed JSON structure from Models.dev or None if unavailable.
     """
 
-    override_path = os.getenv("SWECLI_MODELS_DEV_PATH")
+    override_path = os.getenv("OPENDEV_MODELS_DEV_PATH")
     if override_path:
         override = Path(override_path).expanduser()
         if override.exists():
@@ -73,7 +73,7 @@ def load_models_dev_catalog(
             except Exception as exc:
                 _LOG.warning("Failed to load Models.dev catalog override from %s: %s", override, exc)
         else:
-            _LOG.warning("SWECLI_MODELS_DEV_PATH %s does not exist", override)
+            _LOG.warning("OPENDEV_MODELS_DEV_PATH %s does not exist", override)
 
     if cache_dir is None:
         cache_dir = get_paths().global_cache_dir
@@ -86,7 +86,7 @@ def load_models_dev_catalog(
 
     disable_fetch = disable_network
     if disable_fetch is None:
-        disable_fetch = os.getenv("SWECLI_DISABLE_REMOTE_MODELS", "").lower() in {"1", "true", "yes"}
+        disable_fetch = os.getenv("OPENDEV_DISABLE_REMOTE_MODELS", "").lower() in {"1", "true", "yes"}
 
     now = time.time()
     if cache_path and cache_path.exists():

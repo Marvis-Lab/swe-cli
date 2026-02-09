@@ -1,4 +1,4 @@
-"""Configuration package for SWE-CLI."""
+"""Configuration package for OpenDev."""
 
 from .models import (
     ModelInfo,

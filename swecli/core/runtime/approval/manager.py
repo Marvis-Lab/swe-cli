@@ -1,4 +1,4 @@
-"""Interactive approval workflows for SWE-CLI."""
+"""Interactive approval workflows for OpenDev."""
 
 from __future__ import annotations
 
@@ -87,13 +87,13 @@ class ApprovalManager:
             options = [
                 ("1", "Yes"),
                 ("2", f"Yes, and don't ask again for {cmd_name} commands in {working_dir}"),
-                ("3", "No, and tell SWE-CLI what to do differently", "esc"),
+                ("3", "No, and tell OpenDev what to do differently", "esc"),
             ]
         else:
             options = [
                 ("1", "Yes"),
                 ("2", "Yes, allow all operations during this session", "shift+tab"),
-                ("3", "No, and tell SWE-CLI what to do differently", "esc"),
+                ("3", "No, and tell OpenDev what to do differently", "esc"),
             ]
 
         def get_formatted_text() -> FormattedText:

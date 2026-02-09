@@ -1,4 +1,4 @@
-"""Core functionality for SWE-CLI."""
+"""Core functionality for OpenDev."""
 
 import os
 import warnings
@@ -6,7 +6,7 @@ from importlib import import_module
 from typing import Dict, Tuple
 
 # Suppress transformers warning about missing ML frameworks
-# SWE-CLI uses LLM APIs directly and doesn't need local models
+# OpenDev uses LLM APIs directly and doesn't need local models
 os.environ["TRANSFORMERS_VERBOSITY"] = "error"  # Only show errors, not warnings
 warnings.filterwarnings("ignore", message=".*None of PyTorch, TensorFlow.*found.*")
 warnings.filterwarnings("ignore", message=".*Models won't be available.*")

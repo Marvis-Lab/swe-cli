@@ -230,6 +230,10 @@ class ConfigCommands(CommandHandler):
             config.model_vlm_provider = provider_id
             config.model_vlm = model_info.id
 
+        elif mode == "critique":
+            config.model_critique_provider = provider_id
+            config.model_critique = model_info.id
+
         # Save configuration
         try:
             self.config_manager.save_config(config, global_config=True)
@@ -279,6 +283,14 @@ class ConfigCommands(CommandHandler):
             lines.append(f"  ⎿  Vision: {vlm_provider}/{vlm_name}")
         else:
             lines.append(f"  ⎿  Vision: Not set (vision tasks unavailable)")
+
+        # Critique model (if configured)
+        if config.model_critique:
+            critique_name = config.model_critique.split('/')[-1]
+            critique_provider = config.model_critique_provider.capitalize() if config.model_critique_provider else "Unknown"
+            lines.append(f"  ⎿  Critique: {critique_provider}/{critique_name}")
+        else:
+            lines.append(f"  ⎿  Critique: Not set (falls back to Thinking)")
 
         # Create the message in tool result format
         full_message = "\n".join(lines)

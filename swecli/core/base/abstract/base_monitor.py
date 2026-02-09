@@ -1,4 +1,4 @@
-"""Base types for monitoring utilities in SWE-CLI."""
+"""Base types for monitoring utilities in OpenDev."""
 
 from __future__ import annotations
 

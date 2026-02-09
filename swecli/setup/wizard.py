@@ -29,7 +29,7 @@ def run_setup_wizard() -> bool:
     console.print()
     console.print(
         Panel(
-            "[bold cyan]Welcome to SWE-CLI! [/bold cyan]\n\n"
+            "[bold cyan]Welcome to OpenDev! [/bold cyan]\n\n"
             "First-time setup detected.\n"
             "Let's configure your AI provider.",
             title="Setup Wizard",
@@ -86,7 +86,7 @@ def run_setup_wizard() -> bool:
     if save_config(config):
         console.print()
         console.print(f"[bold {SUCCESS}]✓[/bold {SUCCESS}] Configuration saved to ~/{APP_DIR_NAME}/settings.json")
-        console.print(f"[bold {SUCCESS}]✓[/bold {SUCCESS}] All set! Starting SWE-CLI...")
+        console.print(f"[bold {SUCCESS}]✓[/bold {SUCCESS}] All set! Starting OpenDev...")
         console.print()
         return True
 

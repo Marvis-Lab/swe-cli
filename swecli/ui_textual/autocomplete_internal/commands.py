@@ -58,8 +58,8 @@ BUILTIN_COMMANDS = CommandRegistry()
 
 # Session management commands
 BUILTIN_COMMANDS.register(SlashCommand("help", "show available commands and help"))
-BUILTIN_COMMANDS.register(SlashCommand("exit", "exit SWE-CLI"))
-BUILTIN_COMMANDS.register(SlashCommand("quit", "exit SWE-CLI (alias for /exit)"))
+BUILTIN_COMMANDS.register(SlashCommand("exit", "exit OpenDev"))
+BUILTIN_COMMANDS.register(SlashCommand("quit", "exit OpenDev (alias for /exit)"))
 BUILTIN_COMMANDS.register(SlashCommand("clear", "clear current session and start fresh"))
 BUILTIN_COMMANDS.register(SlashCommand("models", "interactive model/provider selector"))
 

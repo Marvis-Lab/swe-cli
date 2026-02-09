@@ -1,9 +1,9 @@
-"""Setup script for SWE-CLI."""
+"""Setup script for OpenDev."""
 
 from setuptools import setup, find_packages
 
 setup(
-    name="swe-cli",
+    name="opendev",
     version="0.1.0",
     packages=find_packages(),
     install_requires=[
@@ -17,7 +17,7 @@ setup(
     ],
     entry_points={
         "console_scripts": [
-            "swecli=swecli.cli:main",
+            "opendev=swecli.cli:main",
         ],
     },
     python_requires=">=3.9",

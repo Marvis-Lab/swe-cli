@@ -28,7 +28,7 @@ from swecli.core.plugins.manager import (
     MarketplaceNotFoundError,
     PluginNotFoundError,
 )
-from swecli.core.paths import reset_paths, ENV_SWECLI_DIR
+from swecli.core.paths import reset_paths, ENV_OPENDEV_DIR
 
 
 class TestModels:
@@ -148,7 +148,7 @@ class TestConfig:
 
     def test_load_known_marketplaces_empty(self, tmp_path, monkeypatch):
         """Test loading when no file exists."""
-        monkeypatch.setenv(ENV_SWECLI_DIR, str(tmp_path / ".swecli"))
+        monkeypatch.setenv(ENV_OPENDEV_DIR, str(tmp_path / ".opendev"))
         reset_paths()
 
         result = load_known_marketplaces()
@@ -157,8 +157,8 @@ class TestConfig:
 
     def test_save_and_load_known_marketplaces(self, tmp_path, monkeypatch):
         """Test saving and loading marketplaces."""
-        swecli_dir = tmp_path / ".swecli"
-        monkeypatch.setenv(ENV_SWECLI_DIR, str(swecli_dir))
+        swecli_dir = tmp_path / ".opendev"
+        monkeypatch.setenv(ENV_OPENDEV_DIR, str(swecli_dir))
         reset_paths()
 
         # Create and save
@@ -176,7 +176,7 @@ class TestConfig:
 
     def test_load_installed_plugins_empty(self, tmp_path, monkeypatch):
         """Test loading when no file exists."""
-        monkeypatch.setenv(ENV_SWECLI_DIR, str(tmp_path / ".swecli"))
+        monkeypatch.setenv(ENV_OPENDEV_DIR, str(tmp_path / ".opendev"))
         reset_paths()
 
         result = load_installed_plugins()
@@ -185,8 +185,8 @@ class TestConfig:
 
     def test_save_and_load_installed_plugins(self, tmp_path, monkeypatch):
         """Test saving and loading installed plugins."""
-        swecli_dir = tmp_path / ".swecli"
-        monkeypatch.setenv(ENV_SWECLI_DIR, str(swecli_dir))
+        swecli_dir = tmp_path / ".opendev"
+        monkeypatch.setenv(ENV_OPENDEV_DIR, str(swecli_dir))
         reset_paths()
 
         # Create and save
@@ -207,11 +207,11 @@ class TestConfig:
 
     def test_get_all_installed_plugins(self, tmp_path, monkeypatch):
         """Test getting all installed plugins from both scopes."""
-        swecli_dir = tmp_path / ".swecli"
+        swecli_dir = tmp_path / ".opendev"
         project_dir = tmp_path / "project"
         project_dir.mkdir()
 
-        monkeypatch.setenv(ENV_SWECLI_DIR, str(swecli_dir))
+        monkeypatch.setenv(ENV_OPENDEV_DIR, str(swecli_dir))
         reset_paths()
 
         # Save user plugin
@@ -274,12 +274,12 @@ class TestPluginManager:
         assert name == "my-plugins"
 
     def test_validate_marketplace_valid_swecli_dir(self, tmp_path):
-        """Test validating marketplace with .swecli/marketplace.json."""
+        """Test validating marketplace with .opendev/marketplace.json."""
         manager = PluginManager()
 
         marketplace_dir = tmp_path / "test-mp"
-        (marketplace_dir / ".swecli").mkdir(parents=True)
-        (marketplace_dir / ".swecli" / "marketplace.json").write_text(
+        (marketplace_dir / ".opendev").mkdir(parents=True)
+        (marketplace_dir / ".opendev" / "marketplace.json").write_text(
             '{"name": "test", "plugins": []}'
         )
 
@@ -404,7 +404,7 @@ Content here.
 
     def test_list_marketplaces_empty(self, tmp_path, monkeypatch):
         """Test listing marketplaces when none exist."""
-        monkeypatch.setenv(ENV_SWECLI_DIR, str(tmp_path / ".swecli"))
+        monkeypatch.setenv(ENV_OPENDEV_DIR, str(tmp_path / ".opendev"))
         reset_paths()
 
         manager = PluginManager()
@@ -414,8 +414,8 @@ Content here.
     @patch("swecli.core.plugins.manager.subprocess.run")
     def test_add_marketplace_success(self, mock_run, tmp_path, monkeypatch):
         """Test adding a marketplace successfully."""
-        swecli_dir = tmp_path / ".swecli"
-        monkeypatch.setenv(ENV_SWECLI_DIR, str(swecli_dir))
+        swecli_dir = tmp_path / ".opendev"
+        monkeypatch.setenv(ENV_OPENDEV_DIR, str(swecli_dir))
         reset_paths()
 
         # Pre-create the marketplace structure that git clone would create
@@ -438,8 +438,8 @@ Content here.
 
     def test_add_marketplace_duplicate(self, tmp_path, monkeypatch):
         """Test adding a marketplace that already exists."""
-        swecli_dir = tmp_path / ".swecli"
-        monkeypatch.setenv(ENV_SWECLI_DIR, str(swecli_dir))
+        swecli_dir = tmp_path / ".opendev"
+        monkeypatch.setenv(ENV_OPENDEV_DIR, str(swecli_dir))
         reset_paths()
 
         # Pre-register a marketplace
@@ -456,7 +456,7 @@ Content here.
 
     def test_remove_marketplace_not_found(self, tmp_path, monkeypatch):
         """Test removing a marketplace that doesn't exist."""
-        monkeypatch.setenv(ENV_SWECLI_DIR, str(tmp_path / ".swecli"))
+        monkeypatch.setenv(ENV_OPENDEV_DIR, str(tmp_path / ".opendev"))
         reset_paths()
 
         manager = PluginManager()
@@ -465,7 +465,7 @@ Content here.
 
     def test_sync_marketplace_not_found(self, tmp_path, monkeypatch):
         """Test syncing a marketplace that doesn't exist."""
-        monkeypatch.setenv(ENV_SWECLI_DIR, str(tmp_path / ".swecli"))
+        monkeypatch.setenv(ENV_OPENDEV_DIR, str(tmp_path / ".opendev"))
         reset_paths()
 
         manager = PluginManager()
@@ -474,7 +474,7 @@ Content here.
 
     def test_list_installed_empty(self, tmp_path, monkeypatch):
         """Test listing installed plugins when none exist."""
-        monkeypatch.setenv(ENV_SWECLI_DIR, str(tmp_path / ".swecli"))
+        monkeypatch.setenv(ENV_OPENDEV_DIR, str(tmp_path / ".opendev"))
         reset_paths()
 
         manager = PluginManager()
@@ -483,7 +483,7 @@ Content here.
 
     def test_install_plugin_marketplace_not_found(self, tmp_path, monkeypatch):
         """Test installing from non-existent marketplace."""
-        monkeypatch.setenv(ENV_SWECLI_DIR, str(tmp_path / ".swecli"))
+        monkeypatch.setenv(ENV_OPENDEV_DIR, str(tmp_path / ".opendev"))
         reset_paths()
 
         manager = PluginManager()
@@ -492,7 +492,7 @@ Content here.
 
     def test_uninstall_plugin_not_found(self, tmp_path, monkeypatch):
         """Test uninstalling a plugin that isn't installed."""
-        monkeypatch.setenv(ENV_SWECLI_DIR, str(tmp_path / ".swecli"))
+        monkeypatch.setenv(ENV_OPENDEV_DIR, str(tmp_path / ".opendev"))
         reset_paths()
 
         manager = PluginManager()
@@ -501,7 +501,7 @@ Content here.
 
     def test_get_plugin_skills_empty(self, tmp_path, monkeypatch):
         """Test getting skills when no plugins are installed."""
-        monkeypatch.setenv(ENV_SWECLI_DIR, str(tmp_path / ".swecli"))
+        monkeypatch.setenv(ENV_OPENDEV_DIR, str(tmp_path / ".opendev"))
         reset_paths()
 
         manager = PluginManager()
@@ -514,7 +514,7 @@ class TestPluginManagerIntegration:
 
     def setup_marketplace(self, tmp_path, name="test-mp"):
         """Helper to set up a mock marketplace."""
-        swecli_dir = tmp_path / ".swecli"
+        swecli_dir = tmp_path / ".opendev"
         marketplace_dir = swecli_dir / "plugins" / "marketplaces" / name
 
         # Create marketplace structure
@@ -554,8 +554,8 @@ description: "Test skill"
 
     def test_install_and_list_plugin(self, tmp_path, monkeypatch):
         """Test installing a plugin and listing installed plugins."""
-        swecli_dir = tmp_path / ".swecli"
-        monkeypatch.setenv(ENV_SWECLI_DIR, str(swecli_dir))
+        swecli_dir = tmp_path / ".opendev"
+        monkeypatch.setenv(ENV_OPENDEV_DIR, str(swecli_dir))
         reset_paths()
 
         # Setup marketplace
@@ -584,8 +584,8 @@ description: "Test skill"
 
     def test_get_plugin_skills_with_installed_plugin(self, tmp_path, monkeypatch):
         """Test getting skills from an installed plugin."""
-        swecli_dir = tmp_path / ".swecli"
-        monkeypatch.setenv(ENV_SWECLI_DIR, str(swecli_dir))
+        swecli_dir = tmp_path / ".opendev"
+        monkeypatch.setenv(ENV_OPENDEV_DIR, str(swecli_dir))
         reset_paths()
 
         # Setup marketplace
@@ -612,8 +612,8 @@ description: "Test skill"
 
     def test_enable_disable_plugin(self, tmp_path, monkeypatch):
         """Test enabling and disabling a plugin."""
-        swecli_dir = tmp_path / ".swecli"
-        monkeypatch.setenv(ENV_SWECLI_DIR, str(swecli_dir))
+        swecli_dir = tmp_path / ".opendev"
+        monkeypatch.setenv(ENV_OPENDEV_DIR, str(swecli_dir))
         reset_paths()
 
         # Setup marketplace
@@ -647,8 +647,8 @@ description: "Test skill"
 
     def test_uninstall_plugin(self, tmp_path, monkeypatch):
         """Test uninstalling a plugin."""
-        swecli_dir = tmp_path / ".swecli"
-        monkeypatch.setenv(ENV_SWECLI_DIR, str(swecli_dir))
+        swecli_dir = tmp_path / ".opendev"
+        monkeypatch.setenv(ENV_OPENDEV_DIR, str(swecli_dir))
         reset_paths()
 
         # Setup marketplace

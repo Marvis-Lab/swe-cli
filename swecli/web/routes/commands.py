@@ -69,7 +69,7 @@ def get_command_list() -> List[Dict[str, Any]]:
             "category": "General",
             "commands": [
                 {"name": "/help", "args": "", "description": "Show help message"},
-                {"name": "/exit", "args": "", "description": "Exit SWE-CLI"},
+                {"name": "/exit", "args": "", "description": "Exit OpenDev"},
             ],
         },
     ]

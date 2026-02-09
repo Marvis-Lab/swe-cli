@@ -1,4 +1,4 @@
-"""Status line component for SWE-CLI."""
+"""Status line component for OpenDev."""
 
 import subprocess
 from concurrent.futures import ThreadPoolExecutor

@@ -27,24 +27,28 @@ export function ChatInterface() {
 
       {/* Session Required Overlay */}
       {!hasActiveSession && (
-        <div className="absolute inset-0 bg-white/95 backdrop-blur-sm flex items-center justify-center z-40">
-          <div className="text-center max-w-md px-6">
-            <div className="w-20 h-20 mx-auto mb-6 rounded-2xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center shadow-xl">
-              <svg className="w-10 h-10 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+        <div className="absolute inset-0 flex items-center justify-center z-40 bg-gradient-to-b from-white to-beige-50/80">
+          <div className="text-center max-w-sm px-6">
+            {/* Logo mark */}
+            <div className="w-14 h-14 mx-auto mb-5 rounded-xl bg-gradient-to-br from-amber-400 via-orange-500 to-rose-500 flex items-center justify-center shadow-lg">
+              <svg className="w-7 h-7 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
               </svg>
             </div>
-            <h2 className="text-2xl font-bold text-gray-900 mb-3">
-              No Session Selected
+
+            <h2 className="text-xl font-semibold text-gray-900 mb-2">
+              OpenDev
             </h2>
-            <p className="text-gray-600 mb-6 leading-relaxed">
-              To start chatting, please select an existing session from the sidebar or start a new conversation.
+            <p className="text-sm text-beige-500 leading-relaxed">
+              Select a session from the sidebar or start a new conversation to begin.
             </p>
-            <div className="flex items-center justify-center gap-2 text-sm text-gray-500">
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-              <span>Click a session or "Start Conversation" to get started</span>
+
+            {/* Keyboard shortcut hint */}
+            <div className="mt-6 inline-flex items-center gap-2 text-xs text-beige-400">
+              <kbd className="px-1.5 py-0.5 rounded border border-beige-200 bg-white text-beige-500 font-mono text-[10px]">Ctrl</kbd>
+              <span>+</span>
+              <kbd className="px-1.5 py-0.5 rounded border border-beige-200 bg-white text-beige-500 font-mono text-[10px]">B</kbd>
+              <span className="ml-1">toggle sidebar</span>
             </div>
           </div>
         </div>

@@ -1,4 +1,4 @@
-"""Protocols and interface abstractions for SWE-CLI core components."""
+"""Protocols and interface abstractions for OpenDev core components."""
 
 from .agent_interface import AgentInterface
 from .approval_interface import ApprovalManagerInterface

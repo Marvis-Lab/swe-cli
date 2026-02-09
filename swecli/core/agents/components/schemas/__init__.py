@@ -1,4 +1,4 @@
-"""Tool schema management for SWE-CLI agents.
+"""Tool schema management for OpenDev agents.
 
 This subpackage contains tool definitions and schema builders for
 NORMAL and PLAN mode agents.

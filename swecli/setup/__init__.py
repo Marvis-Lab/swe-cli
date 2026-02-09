@@ -1,4 +1,4 @@
-"""Setup wizard and configuration management for SWE-CLI."""
+"""Setup wizard and configuration management for OpenDev."""
 
 from .wizard import run_setup_wizard
 from .providers import PROVIDERS, get_provider_config

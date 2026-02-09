@@ -1,4 +1,4 @@
-"""Textual screens for SWE-CLI."""
+"""Textual screens for OpenDev."""
 
 from .command_approval_modal import CommandApprovalModal
 

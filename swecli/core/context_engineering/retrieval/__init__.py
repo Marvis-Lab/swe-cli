@@ -1,4 +1,4 @@
-"""Information retrieval for SWE-CLI.
+"""Information retrieval for OpenDev.
 
 Provides codebase indexing, context retrieval, and token monitoring.
 """

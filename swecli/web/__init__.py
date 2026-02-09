@@ -1,4 +1,4 @@
-"""Web UI module for SWE-CLI."""
+"""Web UI module for OpenDev."""
 
 from pathlib import Path
 from swecli.web.server import create_app, start_server

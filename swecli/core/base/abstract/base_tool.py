@@ -1,4 +1,4 @@
-"""Abstract foundation for executable tools in SWE-CLI."""
+"""Abstract foundation for executable tools in OpenDev."""
 
 from __future__ import annotations
 

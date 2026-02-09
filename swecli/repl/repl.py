@@ -1,4 +1,4 @@
-"""Interactive REPL for SWE-CLI."""
+"""Interactive REPL for OpenDev."""
 
 from typing import Optional
 

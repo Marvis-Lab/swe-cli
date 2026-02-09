@@ -1,4 +1,4 @@
-"""System prompt builders for SWE-CLI agents."""
+"""System prompt builders for OpenDev agents."""
 
 from __future__ import annotations
 

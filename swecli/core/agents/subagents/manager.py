@@ -264,8 +264,8 @@ class SubAgentManager:
         """Register custom agents from config files.
 
         Custom agents can be defined in:
-        - ~/.swecli/agents.json or <project>/.swecli/agents.json (JSON format)
-        - ~/.swecli/agents/*.md or <project>/.swecli/agents/*.md (Claude Code markdown format)
+        - ~/.opendev/agents.json or <project>/.opendev/agents.json (JSON format)
+        - ~/.opendev/agents/*.md or <project>/.opendev/agents/*.md (Claude Code markdown format)
 
         Each agent definition can specify:
         - name: Unique agent name (required)

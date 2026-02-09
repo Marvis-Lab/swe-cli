@@ -20,14 +20,14 @@ def create_scope_selection_panel(selected_index: int, working_dir: str = "") -> 
     """
     # Build project path label - show actual path if available
     if working_dir:
-        project_label = f"Project ({working_dir}/.swecli/plugins/)"
+        project_label = f"Project ({working_dir}/.opendev/plugins/)"
     else:
-        project_label = "Project (.swecli/plugins/)"
+        project_label = "Project (.opendev/plugins/)"
 
     items = [
         {
             "option": "1",
-            "label": "User (~/.swecli/plugins/)",
+            "label": "User (~/.opendev/plugins/)",
             "summary": "Available in all projects",
         },
         {

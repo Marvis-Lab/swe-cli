@@ -1,4 +1,4 @@
-"""Reusable Textual widgets for the SWE-CLI UI."""
+"""Reusable Textual widgets for the OpenDev UI."""
 
 from .conversation_log import ConversationLog
 from .chat_text_area import ChatTextArea

@@ -1,4 +1,4 @@
-"""System prompts for SWE-CLI agents."""
+"""System prompts for OpenDev agents."""
 
 from .loader import load_prompt, get_prompt_path
 from .injections import get_injection
