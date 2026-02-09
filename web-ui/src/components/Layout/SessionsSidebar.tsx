@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { ChevronDownIcon, Cog6ToothIcon, Bars3Icon, XMarkIcon, FolderIcon, PlusIcon, ChatBubbleLeftRightIcon } from '@heroicons/react/24/outline';
 import { useChatStore } from '../../stores/chat';
 import { SettingsModal } from '../Settings/SettingsModal';
@@ -41,6 +41,8 @@ export function SessionsSidebar() {
   const [deleteWorkspace, setDeleteWorkspace] = useState<WorkspaceGroup | null>(null);
   const [deleteSessionId, setDeleteSessionId] = useState<string | null>(null);
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const [showCollapsedContent, setShowCollapsedContent] = useState(false);
+  const swapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Get loadSession from chat store
   const loadSession = useChatStore(state => state.loadSession);
@@ -62,6 +64,32 @@ export function SessionsSidebar() {
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, []);
+
+  // Delayed content swap: clips naturally via overflow-hidden
+  useEffect(() => {
+    if (swapTimerRef.current !== null) {
+      clearTimeout(swapTimerRef.current);
+      swapTimerRef.current = null;
+    }
+
+    if (isCollapsed) {
+      // COLLAPSING: keep expanded content while width shrinks, swap at ~250ms
+      swapTimerRef.current = setTimeout(() => {
+        setShowCollapsedContent(true);
+        swapTimerRef.current = null;
+      }, 250);
+    } else {
+      // EXPANDING: swap to expanded content immediately, revealed as width grows
+      setShowCollapsedContent(false);
+    }
+
+    return () => {
+      if (swapTimerRef.current !== null) {
+        clearTimeout(swapTimerRef.current);
+        swapTimerRef.current = null;
+      }
+    };
+  }, [isCollapsed]);
 
   const fetchSessions = async () => {
     try {
@@ -229,8 +257,83 @@ export function SessionsSidebar() {
         transition: 'width 300ms cubic-bezier(0.25, 0.46, 0.45, 0.94)',
       }}
     >
-      {/* Content: conditional rendering with min-width to prevent reflow during transition */}
-      {!isCollapsed ? (
+      {showCollapsedContent ? (
+        <div className="min-w-[64px] flex flex-col h-full">
+          {/* Toggle Button */}
+          <div className="border-b border-beige-200 p-3 flex flex-col items-center">
+            <button
+              onClick={() => setIsCollapsed(false)}
+              className="p-2 rounded-lg hover:bg-beige-200/50 bg-white shadow-sm"
+              title="Expand sidebar (Ctrl/Cmd+B)"
+            >
+              <Bars3Icon className="w-5 h-5 text-beige-600" />
+            </button>
+          </div>
+
+          {/* Collapsed Workspace Icons */}
+          <div className="flex-1 overflow-y-auto px-2 py-3 space-y-2">
+            {workspaces.slice(0, 5).map((workspace) => {
+              const hasActiveSession = workspace.sessions.some(s => s.id === currentSessionId);
+              const projectName = getProjectName(workspace.path);
+
+              return (
+                <div
+                  key={workspace.path}
+                  className="relative group"
+                  title={`${projectName} (${workspace.sessions.length} sessions)`}
+                >
+                  <button
+                    onClick={() => {
+                      setIsCollapsed(false);
+                      setTimeout(() => {
+                        setExpandedWorkspaces(prev => new Set([...prev, workspace.path]));
+                      }, 100);
+                    }}
+                    className={`w-full aspect-square rounded-xl flex items-center justify-center ${
+                      hasActiveSession
+                        ? 'bg-amber-100 border-2 border-amber-400 shadow-sm'
+                        : 'bg-white hover:bg-beige-100 border border-beige-200 hover:shadow-md'
+                    }`}
+                  >
+                    <FolderIcon className={`w-5 h-5 ${hasActiveSession ? 'text-amber-600' : 'text-beige-500'}`} />
+                  </button>
+
+                  {/* Tooltip */}
+                  <div className="absolute left-full ml-2 top-1/2 transform -translate-y-1/2 bg-gray-900 text-white text-xs rounded-lg px-3 py-2 whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none z-50 shadow-lg">
+                    <div className="font-medium text-sm mb-1">{projectName}</div>
+                    <div className="text-gray-300 text-xs">{workspace.sessions.length} session{workspace.sessions.length !== 1 ? 's' : ''}</div>
+                    {hasActiveSession && <div className="text-amber-300 text-xs mt-1">Active</div>}
+                    <div className="absolute right-full top-1/2 transform -translate-y-1/2 border-4 border-transparent border-r-gray-900"></div>
+                  </div>
+                </div>
+              );
+            })}
+
+            {/* New Workspace Button (Collapsed) */}
+            <button
+              onClick={() => {
+                setIsCollapsed(false);
+                setTimeout(() => setIsNewSessionOpen(true), 100);
+              }}
+              className="w-full aspect-square rounded-xl flex items-center justify-center bg-gradient-to-br from-amber-400 to-orange-500 hover:from-amber-500 hover:to-orange-600 text-white shadow-md hover:shadow-lg"
+              title="Start Conversation"
+            >
+              <PlusIcon className="w-5 h-5" />
+            </button>
+          </div>
+
+          {/* Collapsed Footer */}
+          <div className="p-2 border-t border-beige-200 bg-beige-50">
+            <button
+              onClick={() => setIsSettingsOpen(true)}
+              className="w-full p-2 text-gray-700 hover:text-gray-900 bg-white hover:bg-amber-50/30 border border-beige-200 hover:border-amber-300 rounded-xl flex items-center justify-center"
+              title="Settings"
+            >
+              <Cog6ToothIcon className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
+      ) : (
         <div className="min-w-[320px] flex flex-col h-full">
           {/* Logo and Brand */}
           <div className="border-b border-beige-200 flex flex-col items-center p-6">
@@ -435,82 +538,6 @@ export function SessionsSidebar() {
             >
               <Cog6ToothIcon className="w-4 h-4" />
               <span>Settings</span>
-            </button>
-          </div>
-        </div>
-      ) : (
-        <div className="min-w-[64px] flex flex-col h-full">
-          {/* Toggle Button */}
-          <div className="border-b border-beige-200 p-3 flex flex-col items-center">
-            <button
-              onClick={() => setIsCollapsed(false)}
-              className="p-2 rounded-lg hover:bg-beige-200/50 bg-white shadow-sm"
-              title="Expand sidebar (Ctrl/Cmd+B)"
-            >
-              <Bars3Icon className="w-5 h-5 text-beige-600" />
-            </button>
-          </div>
-
-          {/* Collapsed Workspace Icons */}
-          <div className="flex-1 overflow-y-auto px-2 py-3 space-y-2">
-            {workspaces.slice(0, 5).map((workspace) => {
-              const hasActiveSession = workspace.sessions.some(s => s.id === currentSessionId);
-              const projectName = getProjectName(workspace.path);
-
-              return (
-                <div
-                  key={workspace.path}
-                  className="relative group"
-                  title={`${projectName} (${workspace.sessions.length} sessions)`}
-                >
-                  <button
-                    onClick={() => {
-                      setIsCollapsed(false);
-                      setTimeout(() => {
-                        setExpandedWorkspaces(prev => new Set([...prev, workspace.path]));
-                      }, 100);
-                    }}
-                    className={`w-full aspect-square rounded-xl flex items-center justify-center ${
-                      hasActiveSession
-                        ? 'bg-amber-100 border-2 border-amber-400 shadow-sm'
-                        : 'bg-white hover:bg-beige-100 border border-beige-200 hover:shadow-md'
-                    }`}
-                  >
-                    <FolderIcon className={`w-5 h-5 ${hasActiveSession ? 'text-amber-600' : 'text-beige-500'}`} />
-                  </button>
-
-                  {/* Tooltip */}
-                  <div className="absolute left-full ml-2 top-1/2 transform -translate-y-1/2 bg-gray-900 text-white text-xs rounded-lg px-3 py-2 whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none z-50 shadow-lg">
-                    <div className="font-medium text-sm mb-1">{projectName}</div>
-                    <div className="text-gray-300 text-xs">{workspace.sessions.length} session{workspace.sessions.length !== 1 ? 's' : ''}</div>
-                    {hasActiveSession && <div className="text-amber-300 text-xs mt-1">Active</div>}
-                    <div className="absolute right-full top-1/2 transform -translate-y-1/2 border-4 border-transparent border-r-gray-900"></div>
-                  </div>
-                </div>
-              );
-            })}
-
-            {/* New Workspace Button (Collapsed) */}
-            <button
-              onClick={() => {
-                setIsCollapsed(false);
-                setTimeout(() => setIsNewSessionOpen(true), 100);
-              }}
-              className="w-full aspect-square rounded-xl flex items-center justify-center bg-gradient-to-br from-amber-400 to-orange-500 hover:from-amber-500 hover:to-orange-600 text-white shadow-md hover:shadow-lg"
-              title="Start Conversation"
-            >
-              <PlusIcon className="w-5 h-5" />
-            </button>
-          </div>
-
-          {/* Collapsed Footer */}
-          <div className="p-2 border-t border-beige-200 bg-beige-50">
-            <button
-              onClick={() => setIsSettingsOpen(true)}
-              className="w-full p-2 text-gray-700 hover:text-gray-900 bg-white hover:bg-amber-50/30 border border-beige-200 hover:border-amber-300 rounded-xl flex items-center justify-center"
-              title="Settings"
-            >
-              <Cog6ToothIcon className="w-5 h-5" />
             </button>
           </div>
         </div>
