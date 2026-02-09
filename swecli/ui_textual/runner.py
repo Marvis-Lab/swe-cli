@@ -350,6 +350,14 @@ class TextualRunner:
             # Sync status bar to Auto if --dangerously-skip-permissions (after mount)
             if self._dangerously_skip_permissions and hasattr(self.app, "status_bar"):
                 self.app.status_bar.set_autonomy("Auto")
+            # Wire up background task status provider
+            from swecli.ui_textual.managers.background_task_status import (
+                BackgroundTaskStatusProvider,
+            )
+
+            if hasattr(self.app, "footer"):
+                BackgroundTaskStatusProvider(self.app, self.repl.task_manager)
+
             if downstream_on_ready:
                 downstream_on_ready()
             # Post initial message as a Submitted event so it flows through
@@ -380,6 +388,9 @@ class TextualRunner:
 
         # Store approval manager reference on the app for action_cycle_autonomy
         self.app._approval_manager = self.repl.approval_manager
+
+        # Store task manager reference on the app for /tasks, /task, /kill commands
+        self.app._task_manager = self.repl.task_manager
 
         # Lock autonomy if --dangerously-skip-permissions was used
         # (status bar sync happens in _on_ready_with_hydration, after mount)

@@ -57,6 +57,8 @@ export default {
       animation: {
         'slide-up': 'slide-up 0.3s ease-out',
         'fade-in': 'fade-in 0.2s ease-out',
+        'breathe': 'breathe 4s ease-in-out infinite',
+        'spin-slow': 'spin-slow 40s linear infinite',
       },
       keyframes: {
         'slide-up': {
@@ -66,6 +68,14 @@ export default {
         'fade-in': {
           '0%': { opacity: '0' },
           '100%': { opacity: '1' },
+        },
+        'breathe': {
+          '0%, 100%': { opacity: '0.04' },
+          '50%': { opacity: '0.10' },
+        },
+        'spin-slow': {
+          '0%': { transform: 'rotate(0deg)' },
+          '100%': { transform: 'rotate(360deg)' },
         },
       },
     },

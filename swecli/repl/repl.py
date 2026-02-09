@@ -122,11 +122,17 @@ class REPL:
         )
         from swecli.core.context_engineering.tools.implementations.ask_user_tool import AskUserTool
         from swecli.core.context_engineering.mcp.manager import MCPManager
+        from swecli.core.context_engineering.tools.background_task_manager import (
+            BackgroundTaskManager,
+        )
 
+        self.task_manager = BackgroundTaskManager(self.config_manager.working_dir)
         self.file_ops = FileOperations(self.config, self.config_manager.working_dir)
         self.write_tool = WriteTool(self.config, self.config_manager.working_dir)
         self.edit_tool = EditTool(self.config, self.config_manager.working_dir)
-        self.bash_tool = BashTool(self.config, self.config_manager.working_dir)
+        self.bash_tool = BashTool(
+            self.config, self.config_manager.working_dir, task_manager=self.task_manager
+        )
         self.web_fetch_tool = WebFetchTool(self.config, self.config_manager.working_dir)
         self.web_search_tool = WebSearchTool(self.config, self.config_manager.working_dir)
         self.notebook_edit_tool = NotebookEditTool(self.config_manager.working_dir)

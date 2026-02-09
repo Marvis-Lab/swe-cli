@@ -652,7 +652,19 @@ class ReactExecutor:
         # Reset no-tool-call counter
         ctx.consecutive_no_tool_calls = 0
 
-        # Display thinking
+        # Check for task completion FIRST (before displaying content)
+        # This prevents duplicate ⏺ bullets (one for content, one for summary)
+        task_complete_call = next(
+            (tc for tc in tool_calls if tc["function"]["name"] == "task_complete"), None
+        )
+        if task_complete_call:
+            args = json.loads(task_complete_call["function"]["arguments"])
+            summary = args.get("summary", "Task completed")
+            self._display_message(summary, ctx.ui_callback, dim=True)
+            self._add_assistant_message(summary, raw_content)
+            return LoopAction.BREAK
+
+        # Display thinking (only when NOT task_complete)
         if content:
             self._display_message(content, ctx.ui_callback)
 
@@ -668,17 +680,6 @@ class ReactExecutor:
         # Track reads for nudging
         all_reads = all(tc["function"]["name"] in self.READ_OPERATIONS for tc in tool_calls)
         ctx.consecutive_reads = ctx.consecutive_reads + 1 if all_reads else 0
-
-        # Check for task completion
-        task_complete_call = next(
-            (tc for tc in tool_calls if tc["function"]["name"] == "task_complete"), None
-        )
-        if task_complete_call:
-            args = json.loads(task_complete_call["function"]["arguments"])
-            summary = args.get("summary", "Task completed")
-            self._display_message(summary, ctx.ui_callback, dim=True)
-            self._add_assistant_message(summary, raw_content)
-            return LoopAction.BREAK
 
         # Execute tools (parallel ONLY for spawn_subagent, sequential for others)
         spawn_calls = [tc for tc in tool_calls if tc["function"]["name"] == "spawn_subagent"]

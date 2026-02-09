@@ -63,7 +63,20 @@ def create_app() -> FastAPI:
     # Serve static files (frontend build)
     static_dir = Path(__file__).parent / "static"
     if static_dir.exists():
-        app.mount("/", StaticFiles(directory=str(static_dir), html=True), name="static")
+        # Mount /assets for built JS/CSS bundles
+        assets_dir = static_dir / "assets"
+        if assets_dir.exists():
+            app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="static-assets")
+
+        # SPA catch-all: serve index.html for all non-API paths
+        # Registered AFTER API routes so they take priority in Starlette's route matching
+        index_file = static_dir / "index.html"
+        if index_file.exists():
+            spa_html = index_file.read_text()
+
+            @app.get("/{full_path:path}")
+            async def serve_spa(full_path: str):
+                return HTMLResponse(spa_html)
     else:
         # Development: Return placeholder HTML
         @app.get("/")

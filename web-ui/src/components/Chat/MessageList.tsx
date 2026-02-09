@@ -17,6 +17,9 @@ export function MessageList() {
   const [verbIndex, setVerbIndex] = useState(0);
   const [colorIndex, setColorIndex] = useState(0);
 
+  // Braille halo animation for welcome screen
+  const [brailleOffset, setBrailleOffset] = useState(0);
+
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
@@ -39,6 +42,15 @@ export function MessageList() {
       clearInterval(verbInterval);
     };
   }, [isLoading]);
+
+  // Animate braille halo when welcome screen is visible
+  useEffect(() => {
+    if (messages.length > 0) return;
+    const interval = setInterval(() => {
+      setBrailleOffset(prev => (prev + 1) % SPINNER_FRAMES.length);
+    }, 100);
+    return () => clearInterval(interval);
+  }, [messages.length]);
 
   // Custom Page Up/Page Down handling with shorter scroll distance
   useEffect(() => {
@@ -68,8 +80,36 @@ export function MessageList() {
 
   if (messages.length === 0) {
     return (
-      <div className="flex items-center justify-center h-full px-6 bg-cream">
-        <div className="text-center">
+      <div className="relative flex items-center justify-center h-full px-6 bg-cream overflow-hidden">
+        {/* Background watermark layer */}
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+          {/* "OpenDev" breathing text */}
+          <span className="text-5xl md:text-7xl font-mono font-bold tracking-wider text-beige-300 animate-breathe select-none">
+            OpenDev
+          </span>
+          {/* Orbiting braille halo ring */}
+          <div className="absolute animate-spin-slow" style={{ width: 360, height: 360 }}>
+            {Array.from({ length: 24 }).map((_, i) => {
+              const angle = (i / 24) * 360;
+              const char = SPINNER_FRAMES[(i + brailleOffset) % SPINNER_FRAMES.length];
+              return (
+                <span
+                  key={i}
+                  className="absolute text-lg font-mono text-beige-300"
+                  style={{
+                    left: '50%',
+                    top: '50%',
+                    transform: `rotate(${angle}deg) translateX(180px) rotate(-${angle}deg)`,
+                  }}
+                >
+                  {char}
+                </span>
+              );
+            })}
+          </div>
+        </div>
+        {/* Foreground welcome content */}
+        <div className="relative z-10 text-center">
           <div className="w-16 h-16 mx-auto mb-6 rounded-full bg-beige-200 flex items-center justify-center">
             <svg className="w-8 h-8 text-beige-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />

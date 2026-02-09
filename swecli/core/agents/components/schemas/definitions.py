@@ -881,7 +881,12 @@ _BUILTIN_TOOL_SCHEMAS: list[dict[str, Any]] = [
                 "properties": {
                     "summary": {
                         "type": "string",
-                        "description": "Summary of what was accomplished. Be concise but complete.",
+                        "description": (
+                            "Summary of what was accomplished. Include key details: "
+                            "file paths created/modified, URLs, ports, commands to run, "
+                            "or test results. "
+                            "Be specific enough that the user can act on this summary alone."
+                        ),
                     },
                     "status": {
                         "type": "string",
