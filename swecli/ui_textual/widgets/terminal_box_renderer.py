@@ -48,10 +48,10 @@ class TerminalBoxRenderer:
     BORDER_ERROR = ERROR
 
     # Truncation settings by depth (head + tail lines shown)
-    MAIN_AGENT_HEAD_LINES = 5
-    MAIN_AGENT_TAIL_LINES = 5
-    SUBAGENT_HEAD_LINES = 3
-    SUBAGENT_TAIL_LINES = 3
+    MAIN_AGENT_HEAD_LINES = 3
+    MAIN_AGENT_TAIL_LINES = 2
+    SUBAGENT_HEAD_LINES = 2
+    SUBAGENT_TAIL_LINES = 1
 
     def __init__(self, width_provider: Callable[[], int]):
         """Initialize renderer.
