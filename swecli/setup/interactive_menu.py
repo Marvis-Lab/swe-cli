@@ -5,10 +5,8 @@ import tty
 import termios
 from typing import List, Tuple, Optional
 from rich.console import Console
-from rich.table import Table
-from rich import box
 
-from swecli.ui_textual.style_tokens import BLUE_BG_ACTIVE, MENU_HINT
+from swecli.ui_textual.style_tokens import BLUE_BG_ACTIVE, MENU_HINT, RAIL_BAR, ACCENT
 
 console = Console()
 
@@ -74,109 +72,76 @@ class InteractiveMenu:
             self.selected_index = max(0, len(self.filtered_items) - 1)
 
     def _render(self) -> str:
-        """Render the current menu state using Rich components."""
-        # Create table for layout
-        table = Table(
-            show_header=False,
-            show_edge=True,
-            box=box.ROUNDED,
-            border_style="bright_cyan",
-            padding=(0, 1),
-            width=80,
-            expand=False,
-        )
-        table.add_column("Content", style="white", no_wrap=False)
-
-        # Title and instructions
-        if self.search_mode:
-            instructions = (
-                f"[{MENU_HINT}]Type to search • Esc to exit search • Enter to select[/{MENU_HINT}]"
-            )
-            search_display = (
-                f"[bright_yellow]Search:[/bright_yellow] [yellow]{self.search_query}_[/yellow]"
-            )
-            table.add_row(f"[bold bright_cyan]{self.title}[/bold bright_cyan]")
-            table.add_row(search_display)
-            table.add_row(instructions)
-        else:
-            instructions = f"[{MENU_HINT}]↑/↓ to navigate • / to search • Enter to select • Esc to cancel[/{MENU_HINT}]"
-            table.add_row(f"[bold bright_cyan]{self.title}[/bold bright_cyan]")
-            table.add_row(instructions)
-
-        # Separator
-        table.add_row("[bright_cyan]" + "─" * 76 + "[/bright_cyan]")
-
-        # Calculate window bounds
-        total = len(self.filtered_items)
-        if total == 0:
-            table.add_row("[dim]No matches found[/dim]")
-
-            # Render to string
-            from io import StringIO
-
-            string_buffer = StringIO()
-            temp_console = Console(file=string_buffer, force_terminal=True, width=80)
-            temp_console.print(table)
-
-            # Add count at bottom
-            count_msg = "[dim cyan]0 providers[/dim cyan]"
-            temp_console.print(count_msg)
-
-            return string_buffer.getvalue().rstrip()
-
-        half_window = self.window_size // 2
-        start = max(0, self.selected_index - half_window)
-        end = min(total, start + self.window_size)
-
-        # Adjust start if we're near the end
-        if end - start < self.window_size and total >= self.window_size:
-            start = max(0, end - self.window_size)
-
-        # Show "..." if there are items above
-        if start > 0:
-            table.add_row(f"[dim]... ({start} more above)[/dim]")
-
-        # Render visible items
-        for i in range(start, end):
-            item_id, name, description = self.filtered_items[i]
-            is_selected = i == self.selected_index
-
-            # Truncate description if too long
-            max_desc_len = 42
-            if len(description) > max_desc_len:
-                description = description[: max_desc_len - 3] + "..."
-
-            if is_selected:
-                # Selected item with pointer and background
-                pointer = "[bold bright_cyan]❯[/bold bright_cyan]"
-                name_style = (
-                    f"[bold white on {BLUE_BG_ACTIVE}]{name:<24}[/bold white on {BLUE_BG_ACTIVE}]"
-                )
-                desc_style = f"[{MENU_HINT} on {BLUE_BG_ACTIVE}]{description}[/{MENU_HINT} on {BLUE_BG_ACTIVE}]"
-                table.add_row(f"{pointer} {name_style} {desc_style}")
-            else:
-                # Unselected item
-                pointer = "[dim] [/dim]"
-                name_style = f"[white]{name:<24}[/white]"
-                desc_style = f"[{MENU_HINT}]{description}[/{MENU_HINT}]"
-                table.add_row(f"{pointer} {name_style} {desc_style}")
-
-        # Show "..." if there are items below
-        if end < total:
-            table.add_row(f"[dim]... ({total - end} more below)[/dim]")
-
-        # Render to string using Rich Console
+        """Render the current menu state with rail-prefixed lines."""
         from io import StringIO
 
-        string_buffer = StringIO()
-        temp_console = Console(file=string_buffer, force_terminal=True, width=80)
-        temp_console.print(table)
+        B = f"[{ACCENT}]{RAIL_BAR}[/{ACCENT}]"  # styled rail bar
+        lines: list[str] = []
 
-        # Add count at bottom
-        count_msg = f"[dim cyan]{total} provider{'s' if total != 1 else ''}[/dim cyan]"
-        if self.search_query:
-            count_msg += f" [dim](filtered from {len(self.all_items)})[/dim]"
-        temp_console.print(count_msg)
+        # Search header (only in search mode)
+        if self.search_mode:
+            lines.append(
+                f"  {B}  [bright_yellow]Search:[/bright_yellow] "
+                f"[yellow]{self.search_query}_[/yellow]"
+            )
+
+        # Items
+        total = len(self.filtered_items)
+        if total == 0:
+            lines.append(f"  {B}  [dim]No matches found[/dim]")
+        else:
+            half_window = self.window_size // 2
+            start = max(0, self.selected_index - half_window)
+            end = min(total, start + self.window_size)
+
+            if end - start < self.window_size and total >= self.window_size:
+                start = max(0, end - self.window_size)
+
+            if start > 0:
+                lines.append(f"  {B}  [dim]... ({start} more above)[/dim]")
+
+            for i in range(start, end):
+                item_id, name, description = self.filtered_items[i]
+                is_selected = i == self.selected_index
+
+                max_desc_len = 42
+                if len(description) > max_desc_len:
+                    description = description[: max_desc_len - 3] + "..."
+
+                if is_selected:
+                    pointer = "[bold bright_cyan]❯[/bold bright_cyan]"
+                    name_s = f"[bold white on {BLUE_BG_ACTIVE}]{name:<24}[/bold white on {BLUE_BG_ACTIVE}]"
+                    desc_s = f"[{MENU_HINT} on {BLUE_BG_ACTIVE}]{description}[/{MENU_HINT} on {BLUE_BG_ACTIVE}]"
+                    lines.append(f"  {B}  {pointer} {name_s} {desc_s}")
+                else:
+                    name_s = f"[white]{name:<24}[/white]"
+                    desc_s = f"[{MENU_HINT}]{description}[/{MENU_HINT}]"
+                    lines.append(f"  {B}    {name_s} {desc_s}")
+
+            if end < total:
+                lines.append(f"  {B}  [dim]... ({total - end} more below)[/dim]")
+
+        # Footer: only for large menus or search mode
+        is_large = len(self.all_items) > self.window_size
+        if is_large or self.search_mode:
+            lines.append(f"  {B}")
+            if self.search_mode:
+                count_msg = (
+                    f"  {B}  [dim]{total} result{'s' if total != 1 else ''}"
+                    f" (filtered from {len(self.all_items)})[/dim]"
+                )
+            else:
+                count_msg = (
+                    f"  {B}  [dim]{total} provider{'s' if total != 1 else ''}"
+                    f" · ↑/↓ · / search[/dim]"
+                )
+            lines.append(count_msg)
+
+        # Render through Rich for markup processing
+        string_buffer = StringIO()
+        temp_console = Console(file=string_buffer, force_terminal=True, width=100)
+        for line in lines:
+            temp_console.print(line)
 
         return string_buffer.getvalue().rstrip()
 
