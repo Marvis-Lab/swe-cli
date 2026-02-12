@@ -31,6 +31,8 @@ interface ChatState {
   cycleThinkingLevel: () => void;
   setPendingAskUser: (request: AskUserRequest | null) => void;
   respondToAskUser: (requestId: string, answers: Record<string, any> | null) => void;
+  sessionListVersion: number;
+  bumpSessionList: () => void;
 }
 
 const AUTONOMY_CYCLE: Array<'Manual' | 'Semi-Auto' | 'Auto'> = ['Manual', 'Semi-Auto', 'Auto'];
@@ -47,6 +49,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
   status: null,
   thinkingLevel: 'Medium',
   pendingAskUser: null,
+  sessionListVersion: 0,
+
+  bumpSessionList: () => set(state => ({ sessionListVersion: state.sessionListVersion + 1 })),
 
   loadMessages: async () => {
     set({ isLoading: true, error: null });

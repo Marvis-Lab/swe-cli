@@ -48,10 +48,11 @@ export function SessionsSidebar() {
   // Get loadSession from chat store
   const loadSession = useChatStore(state => state.loadSession);
   const currentSessionId = useChatStore(state => state.currentSessionId);
+  const sessionListVersion = useChatStore(state => state.sessionListVersion);
 
   useEffect(() => {
     fetchSessions();
-  }, []);
+  }, [sessionListVersion]);
 
   // Keyboard shortcut to toggle sidebar (Ctrl/Cmd + B)
   useEffect(() => {
