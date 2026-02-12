@@ -5,12 +5,12 @@ import { AskUserDialog } from '../components/Chat/AskUserDialog';
 
 export function ChatPage() {
   return (
-    <div className="h-[calc(100vh-3.5rem)] flex bg-cream">
+    <div className="h-screen flex bg-bg-100">
       {/* Left Sidebar - Sessions */}
       <SessionsSidebar />
 
       {/* Main Content Area */}
-      <main className="flex-1 flex flex-col overflow-hidden bg-white">
+      <main className="flex-1 flex flex-col overflow-hidden bg-bg-000">
         <ChatInterface />
       </main>
 

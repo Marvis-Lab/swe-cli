@@ -12,7 +12,7 @@ interface ChatState {
   currentSessionId: string | null;
   hasWorkspace: boolean;
   status: StatusInfo | null;
-  showThinking: boolean;
+  thinkingLevel: 'Off' | 'Low' | 'Medium' | 'High' | 'Self-Critique';
   pendingAskUser: AskUserRequest | null;
 
   // Actions
@@ -28,12 +28,13 @@ interface ChatState {
   setStatus: (status: StatusInfo) => void;
   toggleMode: () => void;
   cycleAutonomy: () => void;
-  toggleThinking: () => void;
+  cycleThinkingLevel: () => void;
   setPendingAskUser: (request: AskUserRequest | null) => void;
   respondToAskUser: (requestId: string, answers: Record<string, any> | null) => void;
 }
 
 const AUTONOMY_CYCLE: Array<'Manual' | 'Semi-Auto' | 'Auto'> = ['Manual', 'Semi-Auto', 'Auto'];
+const THINKING_CYCLE: Array<'Off' | 'Low' | 'Medium' | 'High' | 'Self-Critique'> = ['Off', 'Low', 'Medium', 'High', 'Self-Critique'];
 
 export const useChatStore = create<ChatState>((set, get) => ({
   messages: [],
@@ -44,7 +45,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   currentSessionId: null,
   hasWorkspace: false,
   status: null,
-  showThinking: true,
+  thinkingLevel: 'Medium',
   pendingAskUser: null,
 
   loadMessages: async () => {
@@ -131,9 +132,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
       try {
         const configData = await apiClient.getConfig();
         set({
+          thinkingLevel: configData.thinking_level || 'Medium',
           status: {
             mode: configData.mode || 'normal',
             autonomy_level: configData.autonomy_level || 'Manual',
+            thinking_level: configData.thinking_level || 'Medium',
             model: configData.model,
             model_provider: configData.model_provider,
             working_dir: configData.working_dir || '',
@@ -244,8 +247,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set({ status: { ...status, autonomy_level: nextLevel } });
   },
 
-  toggleThinking: () => {
-    set(state => ({ showThinking: !state.showThinking }));
+  cycleThinkingLevel: () => {
+    const { status } = get();
+    const currentLevel = status?.thinking_level || get().thinkingLevel;
+    const currentIdx = THINKING_CYCLE.indexOf(currentLevel as any);
+    const nextLevel = THINKING_CYCLE[(currentIdx + 1) % THINKING_CYCLE.length];
+    apiClient.setThinkingLevel(nextLevel).catch(console.error);
+    set({
+      thinkingLevel: nextLevel,
+      status: status ? { ...status, thinking_level: nextLevel } : status,
+    });
   },
 
   setPendingAskUser: (request: AskUserRequest | null) => {
@@ -382,10 +393,14 @@ wsClient.on('thinking_block', (message) => {
 
 wsClient.on('status_update', (message) => {
   const { status } = useChatStore.getState();
-  useChatStore.getState().setStatus({
+  const newStatus = {
     ...status,
     ...message.data,
-  } as StatusInfo);
+  } as StatusInfo;
+  useChatStore.setState({
+    status: newStatus,
+    thinkingLevel: newStatus.thinking_level || useChatStore.getState().thinkingLevel,
+  });
 });
 
 wsClient.on('ask_user_required', (message) => {

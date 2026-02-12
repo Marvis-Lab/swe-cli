@@ -185,6 +185,15 @@ class AgentExecutor:
             mcp_manager=self.state.mcp_manager,
         )
 
+        # Set thinking level from web state
+        from swecli.core.context_engineering.tools.handlers.thinking_handler import ThinkingLevel
+        thinking_level_str = self.state.get_thinking_level()
+        try:
+            thinking_level = ThinkingLevel(thinking_level_str)
+        except ValueError:
+            thinking_level = ThinkingLevel.MEDIUM
+        runtime_suite.tool_registry.thinking_handler.set_level(thinking_level)
+
         # Wrap tool registry with WebSocket broadcaster
         wrapped_registry = WebSocketToolBroadcaster(
             runtime_suite.tool_registry,
@@ -229,11 +238,11 @@ class AgentExecutor:
             # (Streaming at character level will be added later)
             logger.info(f"Agent run_sync completed: success={result.get('success')}")
             if result.get("success"):
-                # Broadcast thinking block if present
+                # Broadcast thinking block if present and thinking is enabled
                 thinking_content = result.get("thinking_trace") or result.get(
                     "reasoning_content"
                 )
-                if thinking_content:
+                if thinking_content and self.state.get_thinking_level() != "Off":
                     try:
                         future = asyncio.run_coroutine_threadsafe(
                             ws_manager.broadcast(

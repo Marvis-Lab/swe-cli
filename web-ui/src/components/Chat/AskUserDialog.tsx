@@ -161,18 +161,18 @@ export function AskUserDialog() {
 
   return (
     <div className="fixed inset-0 bg-black/20 backdrop-blur-sm flex items-center justify-center z-50 animate-fade-in">
-      <div className="bg-white rounded-xl shadow-2xl border border-gray-200 max-w-lg w-full mx-4 animate-slide-up">
+      <div className="bg-bg-000 rounded-xl shadow-2xl border border-border-300/15 max-w-lg w-full mx-4 animate-slide-up">
         {/* Header */}
-        <div className="border-b border-gray-200 px-6 py-4">
+        <div className="border-b border-border-300/15 px-6 py-4">
           <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-gray-900">Question</h2>
+            <h2 className="text-lg font-semibold text-text-000">Question</h2>
             {questions.length > 1 && (
               <div className="flex items-center gap-1.5">
                 {questions.map((_, i) => (
                   <div
                     key={i}
                     className={`w-2 h-2 rounded-full transition-colors ${
-                      i === currentIdx ? 'bg-blue-500' : i < currentIdx ? 'bg-blue-300' : 'bg-gray-300'
+                      i === currentIdx ? 'bg-accent-secondary-100' : i < currentIdx ? 'bg-accent-secondary-100/50' : 'bg-bg-400'
                     }`}
                   />
                 ))}
@@ -180,7 +180,7 @@ export function AskUserDialog() {
             )}
           </div>
           {currentQuestion.header && (
-            <span className="inline-block mt-2 px-2 py-0.5 bg-blue-100 text-blue-700 text-xs font-medium rounded">
+            <span className="inline-block mt-2 px-2 py-0.5 bg-accent-secondary-900 text-accent-secondary-100 text-xs font-medium rounded">
               {currentQuestion.header}
             </span>
           )}
@@ -188,7 +188,7 @@ export function AskUserDialog() {
 
         {/* Question */}
         <div className="px-6 py-5 space-y-4">
-          <p className="text-sm text-gray-800 font-medium leading-relaxed">
+          <p className="text-sm text-text-100 font-medium leading-relaxed">
             {currentQuestion.question}
           </p>
 
@@ -202,13 +202,13 @@ export function AskUserDialog() {
                   onClick={() => handleOptionClick(i)}
                   className={`w-full px-4 py-3 text-sm text-left rounded-lg border-2 transition-all flex items-center gap-3 group ${
                     isSelected
-                      ? 'border-blue-400 bg-blue-50'
-                      : 'border-gray-200 hover:border-blue-300 hover:bg-gray-50'
+                      ? 'border-accent-secondary-100/50 bg-accent-secondary-900/50'
+                      : 'border-border-300/15 hover:border-accent-secondary-100/30 hover:bg-bg-100'
                   }`}
                 >
                   {/* Selection indicator */}
                   <div className={`w-5 h-5 rounded${currentQuestion.multi_select ? '' : '-full'} border-2 flex items-center justify-center flex-shrink-0 ${
-                    isSelected ? 'border-blue-500 bg-blue-500' : 'border-gray-300'
+                    isSelected ? 'border-accent-secondary-100 bg-accent-secondary-100' : 'border-border-300/30'
                   }`}>
                     {isSelected && (
                       <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -219,15 +219,15 @@ export function AskUserDialog() {
 
                   <div className="flex-1">
                     <div className="flex items-center gap-2">
-                      <span className="text-xs font-mono text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">
+                      <span className="text-xs font-mono text-text-500 bg-bg-200 px-1.5 py-0.5 rounded">
                         {i + 1}
                       </span>
-                      <span className={`font-medium ${isSelected ? 'text-blue-900' : 'text-gray-800'}`}>
+                      <span className={`font-medium ${isSelected ? 'text-text-000' : 'text-text-100'}`}>
                         {opt.label}
                       </span>
                     </div>
                     {opt.description && (
-                      <p className="text-xs text-gray-500 mt-1 ml-7">{opt.description}</p>
+                      <p className="text-xs text-text-400 mt-1 ml-7">{opt.description}</p>
                     )}
                   </div>
                 </button>
@@ -239,11 +239,11 @@ export function AskUserDialog() {
               onClick={handleOtherClick}
               className={`w-full px-4 py-3 text-sm text-left rounded-lg border-2 border-dashed transition-all ${
                 showOther
-                  ? 'border-blue-400 bg-blue-50'
-                  : 'border-gray-300 hover:border-blue-300 hover:bg-gray-50'
+                  ? 'border-accent-secondary-100/50 bg-accent-secondary-900/50'
+                  : 'border-border-300/20 hover:border-accent-secondary-100/30 hover:bg-bg-100'
               }`}
             >
-              <span className={`font-medium ${showOther ? 'text-blue-900' : 'text-gray-600'}`}>
+              <span className={`font-medium ${showOther ? 'text-text-000' : 'text-text-300'}`}>
                 Other...
               </span>
             </button>
@@ -255,7 +255,7 @@ export function AskUserDialog() {
                 value={otherText}
                 onChange={e => setOtherText(e.target.value)}
                 placeholder="Type your answer..."
-                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                className="w-full px-4 py-2.5 border border-border-300/20 rounded-lg text-sm text-text-000 bg-bg-000 focus:outline-none focus:ring-2 focus:ring-accent-secondary-100 focus:border-accent-secondary-100 placeholder-text-500"
                 autoFocus
               />
             )}
@@ -263,10 +263,10 @@ export function AskUserDialog() {
         </div>
 
         {/* Footer */}
-        <div className="border-t border-gray-200 px-6 py-4 bg-gray-50 flex items-center justify-between">
+        <div className="border-t border-border-300/15 px-6 py-4 bg-bg-100 flex items-center justify-between">
           <button
             onClick={handleCancel}
-            className="px-3 py-1.5 text-sm text-gray-600 hover:text-gray-800 transition-colors"
+            className="px-3 py-1.5 text-sm text-text-400 hover:text-text-200 transition-colors"
           >
             Cancel
           </button>
@@ -275,7 +275,7 @@ export function AskUserDialog() {
             {currentIdx > 0 && (
               <button
                 onClick={handleBack}
-                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                className="px-4 py-2 text-sm font-medium text-text-200 bg-bg-000 border border-border-300/20 rounded-lg hover:bg-bg-200 transition-colors"
               >
                 Back
               </button>
@@ -283,7 +283,7 @@ export function AskUserDialog() {
             <button
               onClick={handleNext}
               disabled={selectedOptions.size === 0 && !(showOther && otherText.trim())}
-              className="px-4 py-2 text-sm font-medium text-white bg-blue-500 rounded-lg hover:bg-blue-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-4 py-2 text-sm font-medium text-white bg-accent-secondary-100 rounded-lg hover:bg-accent-secondary-100/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isLastQuestion ? 'Submit' : 'Next'}
             </button>
@@ -292,8 +292,8 @@ export function AskUserDialog() {
 
         {/* Keyboard hints */}
         <div className="text-center pb-3">
-          <p className="text-xs text-gray-400">
-            Press <kbd className="px-1 py-0.5 bg-gray-100 border border-gray-200 rounded text-xs font-mono">1</kbd>-<kbd className="px-1 py-0.5 bg-gray-100 border border-gray-200 rounded text-xs font-mono">{currentQuestion.options.length}</kbd> to select, <kbd className="px-1 py-0.5 bg-gray-100 border border-gray-200 rounded text-xs font-mono">Enter</kbd> to confirm, <kbd className="px-1 py-0.5 bg-gray-100 border border-gray-200 rounded text-xs font-mono">Esc</kbd> to cancel
+          <p className="text-xs text-text-500">
+            Press <kbd className="px-1 py-0.5 bg-bg-200 border border-border-300/20 rounded text-xs font-mono">1</kbd>-<kbd className="px-1 py-0.5 bg-bg-200 border border-border-300/20 rounded text-xs font-mono">{currentQuestion.options.length}</kbd> to select, <kbd className="px-1 py-0.5 bg-bg-200 border border-border-300/20 rounded text-xs font-mono">Enter</kbd> to confirm, <kbd className="px-1 py-0.5 bg-bg-200 border border-border-300/20 rounded text-xs font-mono">Esc</kbd> to cancel
           </p>
         </div>
       </div>

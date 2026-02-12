@@ -8,28 +8,51 @@ export default {
   theme: {
     extend: {
       colors: {
-        // Claude-inspired warm monochrome palette
-        cream: '#F5F3EF',        // Main background
-        beige: {
-          50: '#FAF9F7',
-          100: '#F5F3EF',
-          200: '#EAE7E1',
-          300: '#DBD7CF',
-          400: '#C7C3BB',
-          500: '#A8A39A',
-          600: '#8A857C',
+        // Claude-style semantic tokens
+        bg: {
+          '000': 'hsl(var(--bg-000) / <alpha-value>)',
+          '100': 'hsl(var(--bg-100) / <alpha-value>)',
+          '200': 'hsl(var(--bg-200) / <alpha-value>)',
+          '300': 'hsl(var(--bg-300) / <alpha-value>)',
+          '400': 'hsl(var(--bg-400) / <alpha-value>)',
+          '500': 'hsl(var(--bg-500) / <alpha-value>)',
         },
-        background: '#FFFFFF',
-        surface: '#F9FAFB',
-        border: '#E5E7EB',
-        'border-light': '#F3F4F6',
-        primary: {
-          50: '#EFF6FF',
-          100: '#DBEAFE',
-          500: '#3B82F6',
-          600: '#2563EB',
-          700: '#1D4ED8',
+        text: {
+          '000': 'hsl(var(--text-000) / <alpha-value>)',
+          '100': 'hsl(var(--text-100) / <alpha-value>)',
+          '200': 'hsl(var(--text-200) / <alpha-value>)',
+          '300': 'hsl(var(--text-300) / <alpha-value>)',
+          '400': 'hsl(var(--text-400) / <alpha-value>)',
+          '500': 'hsl(var(--text-500) / <alpha-value>)',
         },
+        border: {
+          '100': 'hsl(var(--border-100) / <alpha-value>)',
+          '200': 'hsl(var(--border-200) / <alpha-value>)',
+          '300': 'hsl(var(--border-300) / <alpha-value>)',
+          '400': 'hsl(var(--border-400) / <alpha-value>)',
+        },
+        accent: {
+          main: {
+            '100': 'hsl(var(--accent-main-100) / <alpha-value>)',
+            '200': 'hsl(var(--accent-main-200) / <alpha-value>)',
+          },
+          secondary: {
+            '100': 'hsl(var(--accent-secondary-100) / <alpha-value>)',
+            '900': 'hsl(var(--accent-secondary-900) / <alpha-value>)',
+          },
+        },
+        danger: {
+          '000': 'hsl(var(--danger-000) / <alpha-value>)',
+          '100': 'hsl(var(--danger-100) / <alpha-value>)',
+        },
+        success: {
+          '000': 'hsl(var(--success-000) / <alpha-value>)',
+          '100': 'hsl(var(--success-100) / <alpha-value>)',
+        },
+        warning: {
+          '100': 'hsl(var(--warning-100) / <alpha-value>)',
+        },
+        // Keep gray palette for backward compatibility
         gray: {
           50: '#F9FAFB',
           100: '#F3F4F6',
@@ -41,7 +64,10 @@ export default {
           700: '#374151',
           800: '#1F2937',
           900: '#111827',
-        }
+        },
+      },
+      borderWidth: {
+        '0.5': '0.5px',
       },
       fontFamily: {
         sans: ['-apple-system', 'BlinkMacSystemFont', 'Inter', 'Segoe UI', 'Helvetica Neue', 'Arial', 'sans-serif'],

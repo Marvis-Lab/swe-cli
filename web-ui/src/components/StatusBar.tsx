@@ -3,31 +3,43 @@ import { useChatStore } from '../stores/chat';
 import { apiClient } from '../api/client';
 
 const MODE_STYLES = {
-  normal: 'bg-blue-100 text-blue-700 hover:bg-blue-200',
-  plan: 'bg-purple-100 text-purple-700 hover:bg-purple-200',
+  normal: 'bg-bg-400/40 text-text-200 hover:bg-bg-400/60',
+  plan: 'bg-accent-secondary-900 text-accent-secondary-100 hover:bg-accent-secondary-900/80',
 } as const;
 
 const AUTONOMY_STYLES = {
-  'Manual': 'bg-orange-100 text-orange-700 hover:bg-orange-200',
-  'Semi-Auto': 'bg-cyan-100 text-cyan-700 hover:bg-cyan-200',
-  'Auto': 'bg-green-100 text-green-700 hover:bg-green-200',
+  'Manual': 'bg-bg-400/40 text-text-200 hover:bg-bg-400/60',
+  'Semi-Auto': 'bg-accent-secondary-900 text-accent-secondary-100 hover:bg-accent-secondary-900/80',
+  'Auto': 'bg-success-100/10 text-success-100 hover:bg-success-100/15',
+} as const;
+
+const THINKING_STYLES: Record<string, string> = {
+  'Off':           'bg-bg-200 text-text-500 hover:bg-bg-300',
+  'Low':           'bg-cyan-500/10 text-cyan-600 hover:bg-cyan-500/15',
+  'Medium':        'bg-success-100/10 text-success-100 hover:bg-success-100/15',
+  'High':          'bg-yellow-500/10 text-yellow-600 hover:bg-yellow-500/15',
+  'Self-Critique': 'bg-accent-main-100/10 text-accent-main-100 hover:bg-accent-main-100/15',
 } as const;
 
 export function StatusBar() {
   const status = useChatStore(state => state.status);
-  const showThinking = useChatStore(state => state.showThinking);
+  const thinkingLevel = useChatStore(state => state.thinkingLevel);
   const toggleMode = useChatStore(state => state.toggleMode);
   const cycleAutonomy = useChatStore(state => state.cycleAutonomy);
-  const toggleThinking = useChatStore(state => state.toggleThinking);
+  const cycleThinkingLevel = useChatStore(state => state.cycleThinkingLevel);
 
   // Load initial status on mount
   useEffect(() => {
     const loadStatus = async () => {
       try {
         const configData = await apiClient.getConfig();
+        useChatStore.setState({
+          thinkingLevel: configData.thinking_level || 'Medium',
+        });
         useChatStore.getState().setStatus({
           mode: configData.mode || 'normal',
           autonomy_level: configData.autonomy_level || 'Manual',
+          thinking_level: configData.thinking_level || 'Medium',
           model: configData.model,
           model_provider: configData.model_provider,
           working_dir: configData.working_dir || '',
@@ -43,7 +55,7 @@ export function StatusBar() {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.ctrlKey && e.shiftKey && e.key === 'T') {
         e.preventDefault();
-        toggleThinking();
+        cycleThinkingLevel();
       }
       if (e.ctrlKey && e.shiftKey && e.key === 'A') {
         e.preventDefault();
@@ -53,7 +65,7 @@ export function StatusBar() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [toggleThinking, cycleAutonomy]);
+  }, [cycleThinkingLevel, cycleAutonomy]);
 
   if (!status) return null;
 
@@ -64,38 +76,36 @@ export function StatusBar() {
   };
 
   return (
-    <div className="flex items-center gap-1.5 px-4 py-1.5 bg-gray-50 border-t border-gray-200 text-xs select-none">
+    <div className="flex items-center gap-1.5 px-4 py-1.5 bg-bg-000 border-t border-border-300/10 text-xs select-none">
       {/* Mode */}
       <button
         onClick={toggleMode}
-        className={`px-2 py-0.5 rounded font-semibold uppercase tracking-wide cursor-pointer transition-colors ${MODE_STYLES[status.mode]}`}
+        className={`px-1.5 h-5 rounded-md font-semibold uppercase tracking-wide cursor-pointer transition-colors text-[0.625rem] ${MODE_STYLES[status.mode]}`}
         title="Click to toggle mode"
       >
         {status.mode}
       </button>
 
-      <span className="text-gray-300">|</span>
+      <span className="text-text-500">|</span>
 
       {/* Autonomy */}
       <button
         onClick={cycleAutonomy}
-        className={`px-2 py-0.5 rounded font-medium cursor-pointer transition-colors ${AUTONOMY_STYLES[status.autonomy_level]}`}
+        className={`px-1.5 h-5 rounded-md font-medium cursor-pointer transition-colors text-[0.625rem] ${AUTONOMY_STYLES[status.autonomy_level]}`}
         title="Click to cycle autonomy (Ctrl+Shift+A)"
       >
         {status.autonomy_level}
       </button>
 
-      <span className="text-gray-300">|</span>
+      <span className="text-text-500">|</span>
 
-      {/* Thinking toggle */}
+      {/* Thinking level */}
       <button
-        onClick={toggleThinking}
-        className={`px-2 py-0.5 rounded font-medium cursor-pointer transition-colors ${
-          showThinking ? 'bg-gray-200 text-gray-700 hover:bg-gray-300' : 'bg-gray-100 text-gray-400 hover:bg-gray-200'
-        }`}
-        title="Toggle thinking visibility (Ctrl+Shift+T)"
+        onClick={cycleThinkingLevel}
+        className={`px-1.5 h-5 rounded-md font-medium cursor-pointer transition-colors text-[0.625rem] ${THINKING_STYLES[thinkingLevel] || THINKING_STYLES['Medium']}`}
+        title="Cycle thinking level (Ctrl+Shift+T)"
       >
-        Thinking {showThinking ? 'ON' : 'OFF'}
+        Think: {thinkingLevel}
       </button>
 
       {/* Spacer */}
@@ -103,21 +113,21 @@ export function StatusBar() {
 
       {/* Working dir + git branch */}
       {status.working_dir && (
-        <span className="text-gray-400 truncate max-w-[200px]" title={status.working_dir}>
+        <span className="text-text-500 truncate max-w-[200px]" title={status.working_dir}>
           {getProjectName(status.working_dir)}
           {status.git_branch && (
-            <span className="ml-1 text-gray-500">
-              <span className="text-gray-300">/</span> {status.git_branch}
+            <span className="ml-1 text-text-400">
+              <span className="text-text-500">/</span> {status.git_branch}
             </span>
           )}
         </span>
       )}
 
-      {status.working_dir && status.model && <span className="text-gray-300">|</span>}
+      {status.working_dir && status.model && <span className="text-text-500">|</span>}
 
       {/* Model */}
       {status.model && (
-        <span className="text-gray-500 font-mono truncate max-w-[180px]" title={`${status.model_provider}/${status.model}`}>
+        <span className="text-text-400 font-mono truncate max-w-[180px]" title={`${status.model_provider}/${status.model}`}>
           {status.model}
         </span>
       )}

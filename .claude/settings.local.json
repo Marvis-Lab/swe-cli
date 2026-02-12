@@ -83,7 +83,20 @@
       "Bash(timeout 60 bash -c 'uv run python -m swecli &\nsleep 5\ntail -f /tmp/swecli-interrupt-debug.log')",
       "Bash(git mv:*)",
       "Bash(xargs:*)",
-      "Bash(git status:*)"
+      "Bash(git status:*)",
+      "Bash(npm run build:*)",
+      "Bash(git stash:*)",
+      "Bash(git checkout:*)",
+      "Bash(git -C /Users/nghibui/codes/swe-cli diff web-ui/src/components/Chat/MessageList.tsx)",
+      "Bash(git -C /Users/nghibui/codes/swe-cli diff web-ui/tailwind.config.ts)",
+      "Bash(git -C /Users/nghibui/codes/swe-cli diff web-ui/src/index.css)",
+      "Bash(git -C /Users/nghibui/codes/swe-cli diff web-ui/src/components/Layout/SessionsSidebar.tsx)",
+      "Bash(git -C /Users/nghibui/codes/swe-cli show HEAD:web-ui/src/components/Chat/MessageList.tsx)",
+      "Bash(git -C /Users/nghibui/codes/swe-cli show HEAD:web-ui/tailwind.config.ts)",
+      "Bash(for f in swecli/repl/repl.py swecli/core/agents/components/prompts/builders.py swecli/ui_textual/components/notifications.py swecli/ui_textual/components/status_line.py swecli/core/base/interfaces/tool_interface.py swecli/core/base/interfaces/agent_interface.py swecli/core/base/abstract/base_monitor.py swecli/core/base/abstract/base_tool.py swecli/web/logging_config.py swecli/ui_textual/autocomplete_internal/completers.py swecli/ui_textual/autocomplete.py swecli/models/agent_deps.py)",
+      "Bash(do sed -i '' 's/SWE-CLI/OpenDev/g' \"$f\")",
+      "WebFetch(domain:platform.openai.com)",
+      "WebFetch(domain:developers.openai.com)"
     ],
     "deny": [],
     "ask": []

@@ -184,8 +184,8 @@ def configure_slot_model(
     menu_items = [
         (
             "use_normal",
-            f"Use {model_name} (Recommended)",
-            "Same as normal model",
+            f"Use {model_name}",
+            "Same model, no extra setup needed",
         ),
         (
             "choose_manually",

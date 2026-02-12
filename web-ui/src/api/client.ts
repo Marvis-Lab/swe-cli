@@ -133,6 +133,16 @@ class APIClient {
     return response.json();
   }
 
+  async setThinkingLevel(level: string): Promise<{ status: string; message: string }> {
+    const response = await fetch(`${API_BASE}/config/thinking`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ level }),
+    });
+    if (!response.ok) throw new Error(`API error: ${response.statusText}`);
+    return response.json();
+  }
+
   // File listing
   async listFiles(query?: string): Promise<{ files: Array<{ path: string; name: string; is_file: boolean }> }> {
     const url = query ? `${API_BASE}/sessions/files?query=${encodeURIComponent(query)}` : `${API_BASE}/sessions/files`;

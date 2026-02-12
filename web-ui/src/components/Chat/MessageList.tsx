@@ -8,7 +8,7 @@ import { SPINNER_FRAMES, THINKING_VERBS, SPINNER_COLORS } from '../../constants/
 export function MessageList() {
   const messages = useChatStore(state => state.messages);
   const isLoading = useChatStore(state => state.isLoading);
-  const showThinking = useChatStore(state => state.showThinking);
+  const thinkingLevel = useChatStore(state => state.thinkingLevel);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
@@ -80,11 +80,11 @@ export function MessageList() {
 
   if (messages.length === 0) {
     return (
-      <div className="relative flex items-center justify-center h-full px-6 bg-cream overflow-hidden">
+      <div className="relative flex items-center justify-center h-full px-6 bg-bg-100 overflow-hidden">
         {/* Background watermark layer */}
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
           {/* "OpenDev" breathing text */}
-          <span className="text-5xl md:text-7xl font-mono font-bold tracking-wider text-beige-300 animate-breathe select-none">
+          <span className="text-5xl md:text-7xl font-mono font-bold tracking-wider text-bg-300 animate-breathe select-none">
             OpenDev
           </span>
           {/* Orbiting braille halo ring */}
@@ -95,7 +95,7 @@ export function MessageList() {
               return (
                 <span
                   key={i}
-                  className="absolute text-lg font-mono text-beige-300"
+                  className="absolute text-lg font-mono text-bg-300"
                   style={{
                     left: '50%',
                     top: '50%',
@@ -110,20 +110,20 @@ export function MessageList() {
         </div>
         {/* Foreground welcome content */}
         <div className="relative z-10 text-center">
-          <div className="w-16 h-16 mx-auto mb-6 rounded-full bg-beige-200 flex items-center justify-center">
-            <svg className="w-8 h-8 text-beige-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <div className="w-16 h-16 mx-auto mb-6 rounded-full bg-bg-200 flex items-center justify-center">
+            <svg className="w-8 h-8 text-text-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
             </svg>
           </div>
-          <h2 className="text-xl font-semibold text-gray-900 mb-2">Welcome to OpenDev</h2>
-          <p className="text-sm text-gray-600">Start a conversation with your AI coding assistant</p>
+          <h2 className="text-xl font-semibold text-text-000 mb-2">Welcome to OpenDev</h2>
+          <p className="text-sm text-text-300">Start a conversation with your AI coding assistant</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div ref={scrollContainerRef} className="flex-1 overflow-y-auto bg-gray-50">
+    <div ref={scrollContainerRef} className="flex-1 overflow-y-auto bg-bg-100">
       <div className="max-w-5xl mx-auto py-6 px-4 md:px-8 space-y-4">
         {messages.map((message, index) => {
           // Render tool calls with special component
@@ -131,9 +131,9 @@ export function MessageList() {
             return <ToolCallMessage key={index} message={message} />;
           }
 
-          // Render thinking blocks (only when showThinking is on)
+          // Render thinking blocks (only when thinking level is not Off)
           if (message.role === 'thinking') {
-            if (!showThinking) return null;
+            if (thinkingLevel === 'Off') return null;
             return <ThinkingBlock key={index} content={message.content} />;
           }
 
@@ -142,18 +142,18 @@ export function MessageList() {
           return (
             <div key={index} className="animate-slide-up">
               {isUser ? (
-                <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 shadow-sm">
+                <div className="bg-bg-200 border border-border-300/15 rounded-lg px-4 py-3">
                   <div className="flex items-start gap-3">
-                    <span className="text-blue-600 font-mono text-sm font-bold flex-shrink-0">#</span>
-                    <div className="flex-1 text-gray-800 font-mono text-sm">
+                    <span className="text-accent-main-100 font-mono text-sm font-bold flex-shrink-0">#</span>
+                    <div className="flex-1 text-text-000 font-mono text-sm">
                       {message.content}
                     </div>
                   </div>
                 </div>
               ) : (
-                <div className="bg-white border border-gray-200 rounded-lg px-4 py-3 shadow-sm">
+                <div className="bg-bg-000 border border-border-300/15 rounded-lg px-4 py-3">
                   <div className="flex items-start gap-3">
-                    <span className="text-gray-500 font-mono text-sm font-medium flex-shrink-0">❯</span>
+                    <span className="text-text-400 font-mono text-sm font-medium flex-shrink-0">&#10095;</span>
                     <div className="flex-1 prose prose-sm max-w-none">
                       <ReactMarkdown
                         components={{
@@ -162,34 +162,34 @@ export function MessageList() {
                             const languageMatch = /language-(\w+)/.exec(className || '');
                             const language = languageMatch ? languageMatch[1] : null;
                             return isInline ? (
-                              <code className="text-sm px-1.5 py-0.5 rounded font-mono bg-gray-100 text-gray-800 border border-gray-300" {...props}>
+                              <code className="text-sm px-1.5 py-0.5 rounded font-mono bg-bg-200 text-text-100 border border-border-300/20" {...props}>
                                 {children}
                               </code>
                             ) : (
-                              <pre className="rounded-lg p-3 overflow-x-auto my-2 bg-gray-900 border border-gray-600">
-                                <code className="text-gray-100 text-sm" data-language={language} {...props}>
+                              <pre className="rounded-lg p-3 overflow-x-auto my-2 bg-bg-300 border border-border-300/15">
+                                <code className="text-text-000 text-sm" data-language={language} {...props}>
                                   {children}
                                 </code>
                               </pre>
                             );
                           },
                           p({ children }) {
-                            return <p className="mb-2 last:mb-0 text-gray-700 text-sm">{children}</p>;
+                            return <p className="mb-2 last:mb-0 text-text-200 text-sm">{children}</p>;
                           },
                           ul({ children }) {
-                            return <ul className="list-disc pl-5 space-y-1 mb-2 text-gray-700 text-sm">{children}</ul>;
+                            return <ul className="list-disc pl-5 space-y-1 mb-2 text-text-200 text-sm">{children}</ul>;
                           },
                           ol({ children }) {
-                            return <ol className="list-decimal pl-5 space-y-1 mb-2 text-gray-700 text-sm">{children}</ol>;
+                            return <ol className="list-decimal pl-5 space-y-1 mb-2 text-text-200 text-sm">{children}</ol>;
                           },
                           li({ children }) {
-                            return <li className="text-gray-700 text-sm">{children}</li>;
+                            return <li className="text-text-200 text-sm">{children}</li>;
                           },
                           strong({ children }) {
-                            return <strong className="font-semibold text-gray-900 text-sm">{children}</strong>;
+                            return <strong className="font-semibold text-text-000 text-sm">{children}</strong>;
                           },
                           a({ children, href }) {
-                            return <a href={href} className="underline text-blue-600 hover:text-blue-800 text-sm" target="_blank" rel="noopener noreferrer">{children}</a>;
+                            return <a href={href} className="underline text-accent-secondary-100 hover:text-accent-secondary-100/80 text-sm" target="_blank" rel="noopener noreferrer">{children}</a>;
                           },
                         }}
                       >
@@ -204,12 +204,12 @@ export function MessageList() {
         })}
 
         {isLoading && (
-          <div className="bg-white border border-gray-200 rounded-lg px-4 py-3 shadow-sm animate-fade-in">
+          <div className="bg-bg-000 border border-border-300/15 rounded-lg px-4 py-3 animate-fade-in">
             <div className="flex items-center gap-3">
               <span className={`text-base font-medium ${SPINNER_COLORS[colorIndex]} transition-colors duration-100`}>
                 {SPINNER_FRAMES[spinnerIndex]}
               </span>
-              <span className="text-sm text-gray-600 font-medium">
+              <span className="text-sm text-text-300 font-medium">
                 {THINKING_VERBS[verbIndex]}...
               </span>
             </div>

@@ -86,6 +86,7 @@ export interface ApprovalRequest {
 export interface StatusInfo {
   mode: 'normal' | 'plan';
   autonomy_level: 'Manual' | 'Semi-Auto' | 'Auto';
+  thinking_level?: 'Off' | 'Low' | 'Medium' | 'High' | 'Self-Critique';
   model?: string;
   model_provider?: string;
   working_dir?: string;

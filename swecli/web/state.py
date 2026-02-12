@@ -63,6 +63,9 @@ class WebState:
         # Pending ask-user requests
         self._pending_ask_users: Dict[str, Dict[str, Any]] = {}
 
+        # Thinking level (matches TUI: Off, Low, Medium, High, Self-Critique)
+        self._thinking_level: str = "Medium"
+
     def add_ws_client(self, client: Any) -> None:
         """Add a WebSocket client."""
         with self._lock:
@@ -184,6 +187,18 @@ class WebState:
         """Set autonomy level."""
         with self._lock:
             self._autonomy_level = level
+
+    # --- Thinking level ---
+
+    def get_thinking_level(self) -> str:
+        """Get current thinking level."""
+        with self._lock:
+            return self._thinking_level
+
+    def set_thinking_level(self, level: str) -> None:
+        """Set thinking level."""
+        with self._lock:
+            self._thinking_level = level
 
     # --- Ask-user state ---
 

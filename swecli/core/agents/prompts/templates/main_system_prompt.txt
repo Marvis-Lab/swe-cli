@@ -178,5 +178,3 @@ assistant: Clients are marked as failed in `connectToServer` in src/services/pro
 # System Reminders
 
 Tool results and user messages may include `<system-reminder>` tags containing useful information automatically added by the system.
-
-The conversation has unlimited context through automatic summarization. Sessions persist in ~/.swecli/sessions/.

@@ -68,6 +68,7 @@ async def get_config() -> Dict[str, Any]:
             "enable_bash": config.enable_bash,
             "mode": mode,
             "autonomy_level": autonomy_level,
+            "thinking_level": state.get_thinking_level(),
             "working_dir": working_dir or "",
             "git_branch": git_branch,
         }
@@ -157,6 +158,7 @@ async def set_mode(update: ModeUpdate) -> Dict[str, str]:
             "data": {
                 "mode": mode.value,
                 "autonomy_level": state.get_autonomy_level(),
+                "thinking_level": state.get_thinking_level(),
                 "working_dir": session.working_directory if session else "",
                 "git_branch": state.get_git_branch(),
             },
@@ -197,12 +199,59 @@ async def set_autonomy(update: AutonomyUpdate) -> Dict[str, str]:
             "data": {
                 "mode": state.mode_manager.current_mode.value,
                 "autonomy_level": update.level,
+                "thinking_level": state.get_thinking_level(),
                 "working_dir": session.working_directory if session else "",
                 "git_branch": state.get_git_branch(),
             },
         })
 
         return {"status": "success", "message": f"Autonomy set to {update.level}"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class ThinkingUpdate(BaseModel):
+    """Thinking level update model."""
+    level: str
+
+
+@router.post("/thinking")
+async def set_thinking(update: ThinkingUpdate) -> Dict[str, str]:
+    """Set thinking level (Off/Low/Medium/High/Self-Critique).
+
+    Args:
+        update: Thinking level update
+
+    Returns:
+        Status response
+    """
+    try:
+        valid_levels = {"Off", "Low", "Medium", "High", "Self-Critique"}
+        if update.level not in valid_levels:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid thinking level: {update.level}. Must be one of {valid_levels}",
+            )
+
+        state = get_state()
+        state.set_thinking_level(update.level)
+
+        # Broadcast status update to all clients
+        session = state.session_manager.get_current_session()
+        await broadcast_to_all_clients({
+            "type": "status_update",
+            "data": {
+                "mode": state.mode_manager.current_mode.value,
+                "autonomy_level": state.get_autonomy_level(),
+                "thinking_level": update.level,
+                "working_dir": session.working_directory if session else "",
+                "git_branch": state.get_git_branch(),
+            },
+        })
+
+        return {"status": "success", "message": f"Thinking level set to {update.level}"}
     except HTTPException:
         raise
     except Exception as e:

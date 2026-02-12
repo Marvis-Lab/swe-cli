@@ -320,15 +320,15 @@ export function ToolCallMessage({ message }: ToolCallMessageProps) {
     const hasExpandableContent = !!fullOutput && fullOutput.length > 200;
 
     return (
-      <div className="bg-slate-100 border border-slate-300 rounded-lg px-4 py-3 shadow-sm">
+      <div className="bg-bg-100 border border-border-300/15 rounded-lg px-4 py-3">
         {/* Tool action header */}
         <div className="flex items-center gap-2 mb-2">
-          <span className="text-slate-600 font-mono text-sm leading-6 flex-shrink-0">▶</span>
-          <span className="font-medium text-slate-900 text-sm leading-6">
+          <span className="text-text-400 font-mono text-sm leading-6 flex-shrink-0">▶</span>
+          <span className="font-medium text-text-000 text-sm leading-6">
             {verb}
           </span>
           {summary && (
-            <span className="text-slate-700 text-sm bg-white px-2 py-1 rounded border border-slate-400 font-mono leading-6">
+            <span className="text-text-200 text-sm bg-bg-000 px-2 py-1 rounded border border-border-300/20 font-mono leading-6">
               {summary}
             </span>
           )}
@@ -336,7 +336,7 @@ export function ToolCallMessage({ message }: ToolCallMessageProps) {
 
         {/* Tool result summary with proper colors */}
         {summaryLines.length > 0 && (
-          <div className="ml-4 pl-3 border-l-2 border-slate-300">
+          <div className="ml-4 pl-3 border-l-2 border-border-300/30">
             {summaryLines.map((line: string, index: number) => {
               // Check if this line indicates success or failure
               const isSuccess = successOverride ?? (
@@ -349,9 +349,9 @@ export function ToolCallMessage({ message }: ToolCallMessageProps) {
 
               return (
                 <div key={index} className={`font-mono text-sm mb-1 leading-6 ${
-                  isError ? 'text-red-600' :
-                  isSuccess ? 'text-green-600' :
-                  'text-slate-600'
+                  isError ? 'text-danger-100' :
+                  isSuccess ? 'text-success-100' :
+                  'text-text-300'
                 }`}>
                   {line}
                 </div>
@@ -364,7 +364,7 @@ export function ToolCallMessage({ message }: ToolCallMessageProps) {
         {hasExpandableContent && (
           <button
             onClick={() => setIsExpanded(!isExpanded)}
-            className="ml-4 text-sm text-slate-500 hover:text-slate-700 font-medium mt-2 leading-6"
+            className="ml-4 text-sm text-text-400 hover:text-text-200 font-medium mt-2 leading-6"
           >
             {isExpanded ? 'Hide details' : 'Show details'}
           </button>
@@ -372,9 +372,9 @@ export function ToolCallMessage({ message }: ToolCallMessageProps) {
 
         {/* Expanded content */}
         {hasExpandableContent && isExpanded && (
-          <div className="ml-4 mt-3 pl-3 border-t border-slate-300 pt-3">
+          <div className="ml-4 mt-3 pl-3 border-t border-border-300/15 pt-3">
             {fullOutput && (
-              <pre className="text-sm text-slate-600 font-mono bg-white border border-slate-300 rounded p-3 overflow-x-auto max-h-96 leading-6">
+              <pre className="text-sm text-text-300 font-mono bg-bg-000 border border-border-300/15 rounded p-3 overflow-x-auto max-h-96 leading-6">
                 {fullOutput}
               </pre>
             )}
