@@ -18,6 +18,8 @@ class MockConfig:
         self.model_thinking = "claude-3"
         self.model_vlm_provider = "openai"
         self.model_vlm = "gpt-4-vision"
+        self.model_critique_provider = "anthropic"
+        self.model_critique = "claude-3-critique"
 
 
 class MockConfigManager:
@@ -130,19 +132,23 @@ class TestBuildModelSlots:
         slots = manager._build_model_slots()
 
         assert "normal" in slots
-        assert slots["normal"] == ("Openai", "gpt-4")
+        assert slots["normal"] == ("OpenAI", "GPT-4")
 
         assert "thinking" in slots
         assert slots["thinking"] == ("Anthropic", "claude-3")
 
         assert "vision" in slots
-        assert slots["vision"] == ("Openai", "gpt-4-vision")
+        assert slots["vision"] == ("OpenAI", "gpt-4-vision")
+
+        assert "critique" in slots
+        assert slots["critique"] == ("Anthropic", "claude-3-critique")
 
     def test_build_model_slots_normal_only(self, mock_repl):
         """Test building slots with only normal model."""
         config = MockConfig()
         config.model_thinking = None
         config.model_vlm = None
+        config.model_critique = None
         config_manager = MockConfigManager(config)
 
         manager = ModelConfigManager(config_manager, mock_repl)
@@ -153,18 +159,21 @@ class TestBuildModelSlots:
         assert "vision" not in slots
 
     def test_build_model_slots_same_as_normal(self, mock_repl):
-        """Test that models same as normal are not duplicated."""
+        """Test that specialized slots are shown even if same model as normal."""
         config = MockConfig()
         config.model_thinking = "gpt-4"  # Same as normal
         config.model_vlm = "gpt-4"  # Same as normal
+        config.model_critique = "gpt-4"  # Same as normal
         config_manager = MockConfigManager(config)
 
         manager = ModelConfigManager(config_manager, mock_repl)
         slots = manager._build_model_slots()
 
+        # All slots should be present even if they use the same model
         assert "normal" in slots
-        assert "thinking" not in slots
-        assert "vision" not in slots
+        assert "thinking" in slots
+        assert "vision" in slots
+        assert "critique" in slots
 
 
 class TestApplySelection:
@@ -214,7 +223,7 @@ class TestRefreshUIConfig:
         manager.refresh_ui_config()
 
         assert mock_app.update_primary_model_called is True
-        assert mock_app._primary_model == "openai/gpt-4"
+        assert mock_app._primary_model == "OpenAI/GPT-4"
         assert mock_app.update_model_slots_called is True
         assert "normal" in mock_app._model_slots
 

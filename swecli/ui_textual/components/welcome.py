@@ -184,7 +184,7 @@ class WelcomeMessage:
             (f" • {CYAN}/models{RESET}         Configure AI models", "left"),
             (f" • {CYAN}/mode normal{RESET}    Run with approvals", "left"),
             (f" • {CYAN}/mode plan{RESET}      Plan without execution", "left"),
-            (f" • {CYAN}/init{RESET}           Analyze codebase structure", "left"),
+            (f" • {CYAN}/init{RESET}           Generate OPENDEV.md documentation", "left"),
             ("", "left"),
             (f"{BOLD}MCP Integration{RESET}", "left"),
             (f" • {CYAN}/mcp list{RESET}       List MCP servers", "left"),

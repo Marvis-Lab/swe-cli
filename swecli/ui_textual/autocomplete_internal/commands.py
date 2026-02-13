@@ -67,7 +67,7 @@ BUILTIN_COMMANDS.register(SlashCommand("models", "interactive model/provider sel
 BUILTIN_COMMANDS.register(SlashCommand("mode", "switch between NORMAL and PLAN mode"))
 
 # Advanced commands
-BUILTIN_COMMANDS.register(SlashCommand("init", "analyze codebase and generate AGENTS.md"))
+BUILTIN_COMMANDS.register(SlashCommand("init", "analyze codebase and generate OPENDEV.md"))
 BUILTIN_COMMANDS.register(SlashCommand("mcp", "manage MCP servers and tools"))
 
 # Background task management commands

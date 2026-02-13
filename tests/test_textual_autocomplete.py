@@ -1,16 +1,20 @@
 """Autocomplete behavior for the Textual chat input."""
 
 from pathlib import Path
+from unittest.mock import patch
 
 from swecli.ui_textual.autocomplete import SwecliCompleter
-from swecli.ui_textual.chat_app import ChatTextArea
+from swecli.ui_textual.widgets.chat_text_area import ChatTextArea
 
 
 def _build_area(tmp_path: Path) -> ChatTextArea:
     """Create a ChatTextArea wired to a swecli completer rooted at tmp_path."""
 
     completer = SwecliCompleter(tmp_path)
-    return ChatTextArea(completer=completer)
+    area = ChatTextArea(completer=completer)
+    # Bypass debounce timer: replace update_suggestion with direct _do_autocomplete
+    area.update_suggestion = area._do_autocomplete
+    return area
 
 
 def test_slash_command_suggestion(tmp_path) -> None:

@@ -375,11 +375,13 @@ class TestSpawnSubagentToolSchema:
     def mock_manager(self):
         """Create a mock SubAgentManager."""
         manager = MagicMock()
-        manager.get_available_types.return_value = ["Code-Explorer", "Web-clone"]
-        manager.get_descriptions.return_value = {
-            "Code-Explorer": "Codebase exploration agent",
-            "Web-clone": "Website cloning agent",
-        }
+        config1 = MagicMock()
+        config1.name = "Code-Explorer"
+        config1.description = "Codebase exploration agent"
+        config2 = MagicMock()
+        config2.name = "Web-clone"
+        config2.description = "Website cloning agent"
+        manager.get_agent_configs.return_value = [config1, config2]
         return manager
 
     def test_spawn_subagent_tool_name(self):

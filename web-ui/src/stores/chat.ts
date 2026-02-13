@@ -14,6 +14,7 @@ interface ChatState {
   status: StatusInfo | null;
   thinkingLevel: 'Off' | 'Low' | 'Medium' | 'High' | 'Self-Critique';
   pendingAskUser: AskUserRequest | null;
+  runningSessions: Set<string>;
 
   // Actions
   loadMessages: () => Promise<void>;
@@ -49,6 +50,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   status: null,
   thinkingLevel: 'Medium',
   pendingAskUser: null,
+  runningSessions: new Set<string>(),
   sessionListVersion: 0,
 
   bumpSessionList: () => set(state => ({ sessionListVersion: state.sessionListVersion + 1 })),
@@ -68,7 +70,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   loadSession: async (sessionId: string) => {
     console.log(`[Frontend] Loading session ${sessionId}`);
-    set({ isLoading: true, error: null });
+    set({ isLoading: true, error: null, pendingApproval: null, pendingAskUser: null });
     try {
       // Resume the session first
       console.log(`[Frontend] Resuming session ${sessionId}`);
@@ -178,7 +180,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       // Send via WebSocket for real-time updates
       wsClient.send({
         type: 'query',
-        data: { message: content },
+        data: { message: content, session_id: get().currentSessionId },
       });
     } catch (error) {
       set({
@@ -281,6 +283,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 }));
 
+// Helper: check if a WS event belongs to the currently viewed session
+function isCurrentSession(data: any): boolean {
+  const sid = data?.session_id;
+  if (!sid) return true; // backward compat: events without session_id apply everywhere
+  return sid === useChatStore.getState().currentSessionId;
+}
+
 // Setup WebSocket listeners
 wsClient.on('connected', () => {
   useChatStore.getState().setConnected(true);
@@ -294,11 +303,13 @@ wsClient.on('user_message', () => {
   // Message already added optimistically
 });
 
-wsClient.on('message_start', () => {
+wsClient.on('message_start', (message) => {
+  if (!isCurrentSession(message.data)) return;
   useChatStore.setState({ isLoading: true });
 });
 
 wsClient.on('message_chunk', (message) => {
+  if (!isCurrentSession(message.data)) return;
   console.log('[Frontend] Received message_chunk:', message.data.content.substring(0, 100));
   const { messages } = useChatStore.getState();
   const lastMessage = messages[messages.length - 1];
@@ -323,12 +334,14 @@ wsClient.on('message_chunk', (message) => {
   }
 });
 
-wsClient.on('message_complete', () => {
+wsClient.on('message_complete', (message) => {
+  if (!isCurrentSession(message.data)) return;
   console.log('[Frontend] Received message_complete');
   useChatStore.setState({ isLoading: false });
 });
 
 wsClient.on('error', (message) => {
+  if (!isCurrentSession(message.data)) return;
   useChatStore.setState({
     error: message.data.message,
     isLoading: false,
@@ -336,17 +349,18 @@ wsClient.on('error', (message) => {
 });
 
 wsClient.on('approval_required', (message) => {
+  if (!isCurrentSession(message.data)) return;
   console.log('[Frontend] Received approval_required:', message.data);
   useChatStore.getState().setPendingApproval(message.data as ApprovalRequest);
 });
 
-wsClient.on('approval_resolved', () => {
-  // Clear pending approval when resolved
+wsClient.on('approval_resolved', (message) => {
+  if (!isCurrentSession(message.data)) return;
   useChatStore.getState().setPendingApproval(null);
 });
 
 wsClient.on('tool_call', (message) => {
-  // Add tool call message
+  if (!isCurrentSession(message.data)) return;
   const toolCallMessage: Message = {
     role: 'tool_call',
     content: message.data.description || `Calling ${message.data.tool_name}`,
@@ -360,18 +374,16 @@ wsClient.on('tool_call', (message) => {
 });
 
 wsClient.on('tool_result', (message) => {
-  // Update the existing tool_call message with the result
+  if (!isCurrentSession(message.data)) return;
   const { messages } = useChatStore.getState();
   const callId = message.data.tool_call_id;
 
-  // Find the most recent tool_call message with this call id that doesn't have a result yet
   for (let i = messages.length - 1; i >= 0; i--) {
     if (
       messages[i].role === 'tool_call' &&
       messages[i].tool_call_id === callId &&
       !messages[i].tool_result
     ) {
-      // Update this message with the result
       const updatedMessages = [...messages];
       updatedMessages[i] = {
         ...messages[i],
@@ -385,14 +397,15 @@ wsClient.on('tool_result', (message) => {
     }
   }
 
-  // If no matching tool_call found, log a warning
   console.warn(`Received tool_result for ${message.data.tool_name} but no matching tool_call found`);
 });
 
 wsClient.on('thinking_block', (message) => {
+  if (!isCurrentSession(message.data)) return;
   useChatStore.getState().addMessage({
     role: 'thinking',
     content: message.data.content,
+    metadata: { level: message.data.level },
   });
 });
 
@@ -409,10 +422,23 @@ wsClient.on('status_update', (message) => {
 });
 
 wsClient.on('ask_user_required', (message) => {
+  if (!isCurrentSession(message.data)) return;
   console.log('[Frontend] Received ask_user_required:', message.data);
   useChatStore.getState().setPendingAskUser(message.data as AskUserRequest);
 });
 
-wsClient.on('ask_user_resolved', () => {
+wsClient.on('ask_user_resolved', (message) => {
+  if (!isCurrentSession(message.data)) return;
   useChatStore.getState().setPendingAskUser(null);
+});
+
+wsClient.on('session_activity', (message) => {
+  const { session_id, status } = message.data;
+  useChatStore.setState((state) => {
+    const next = new Set(state.runningSessions);
+    if (status === 'running') next.add(session_id);
+    else next.delete(session_id);
+    return { runningSessions: next };
+  });
+  useChatStore.getState().bumpSessionList();
 });

@@ -66,6 +66,9 @@ class WebState:
         # Thinking level (matches TUI: Off, Low, Medium, High, Self-Critique)
         self._thinking_level: str = "Medium"
 
+        # Running sessions: session_id -> "running"
+        self._running_sessions: Dict[str, str] = {}
+
     def add_ws_client(self, client: Any) -> None:
         """Add a WebSocket client."""
         with self._lock:
@@ -126,7 +129,8 @@ class WebState:
         self,
         approval_id: str,
         tool_name: str,
-        arguments: Dict[str, Any]
+        arguments: Dict[str, Any],
+        session_id: Optional[str] = None,
     ) -> None:
         """Add a pending approval request."""
         with self._lock:
@@ -135,6 +139,7 @@ class WebState:
                 "arguments": arguments,
                 "resolved": False,
                 "approved": None,
+                "session_id": session_id,
             }
 
     def resolve_approval(self, approval_id: str, approved: bool, auto_approve: bool = False) -> bool:
@@ -200,9 +205,28 @@ class WebState:
         with self._lock:
             self._thinking_level = level
 
+    # --- Running sessions ---
+
+    def set_session_running(self, session_id: str) -> None:
+        """Mark a session as having a running agent."""
+        with self._lock:
+            self._running_sessions[session_id] = "running"
+
+    def set_session_idle(self, session_id: str) -> None:
+        """Mark a session as idle (no running agent)."""
+        with self._lock:
+            self._running_sessions.pop(session_id, None)
+
+    def is_session_running(self, session_id: str) -> bool:
+        """Check if a session has a running agent."""
+        with self._lock:
+            return session_id in self._running_sessions
+
     # --- Ask-user state ---
 
-    def add_pending_ask_user(self, request_id: str, data: Dict[str, Any]) -> None:
+    def add_pending_ask_user(
+        self, request_id: str, data: Dict[str, Any], session_id: Optional[str] = None
+    ) -> None:
         """Add a pending ask-user request."""
         with self._lock:
             self._pending_ask_users[request_id] = {
@@ -210,6 +234,7 @@ class WebState:
                 "resolved": False,
                 "answers": None,
                 "cancelled": False,
+                "session_id": session_id,
             }
 
     def resolve_ask_user(

@@ -1,6 +1,7 @@
 """ReAct loop executor."""
 
 import json
+import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from enum import Enum, auto
@@ -21,6 +22,8 @@ from swecli.ui_textual.utils.tool_display import format_tool_call
 from swecli.ui_textual.components.task_progress import TaskProgressDisplay
 from swecli.core.utils.tool_result_summarizer import summarize_tool_result
 from swecli.core.agents.prompts import get_injection
+
+logger = logging.getLogger(__name__)
 
 
 def _debug_log(message: str) -> None:
@@ -106,6 +109,10 @@ class ReactExecutor:
 
         # Track current task monitor for interrupt support (thinking phase uses this)
         self._current_task_monitor: Optional[TaskMonitor] = None
+
+        # Auto-compaction support
+        self._compactor = None
+        self._force_compact_next = False  # Set by /compact command
 
         self._conversation_summarizer = ConversationSummarizer(
             regenerate_threshold=5,  # Regenerate summary after 5 new messages
@@ -525,6 +532,30 @@ Please provide refined reasoning that addresses these concerns. Keep it concise 
                 return False
         return False
 
+    def _maybe_compact(self, ctx: IterationContext) -> None:
+        """Auto-compact messages if approaching the context window limit."""
+        if self._compactor is None:
+            from swecli.core.context_engineering.compaction import ContextCompactor
+
+            self._compactor = ContextCompactor(self.config, ctx.agent._http_client)
+
+        system_prompt = ctx.agent.system_prompt
+        should = self._force_compact_next or self._compactor.should_compact(
+            ctx.messages, system_prompt
+        )
+
+        if should:
+            self._force_compact_next = False
+            before_count = len(ctx.messages)
+            compacted = self._compactor.compact(ctx.messages, system_prompt)
+            ctx.messages[:] = compacted  # Mutate in-place
+            after_count = len(ctx.messages)
+            logger.info("Compacted %d messages → %d", before_count, after_count)
+            if ctx.ui_callback and hasattr(ctx.ui_callback, "on_message"):
+                ctx.ui_callback.on_message(
+                    f"Context auto-compacted ({before_count} → {after_count} messages)"
+                )
+
     def _run_iteration(self, ctx: IterationContext) -> LoopAction:
         """Run a single ReAct iteration."""
 
@@ -592,6 +623,9 @@ Please provide refined reasoning that addresses these concerns. Keep it concise 
                     "content": get_injection("subagent_complete_signal"),
                 }
             )
+
+        # AUTO-COMPACTION: Compact messages if approaching context limit
+        self._maybe_compact(ctx)
 
         # ACTION PHASE: Call LLM with tools (no force_think)
         task_monitor = TaskMonitor()

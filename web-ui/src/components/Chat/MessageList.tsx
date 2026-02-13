@@ -134,7 +134,7 @@ export function MessageList() {
           // Render thinking blocks (only when thinking level is not Off)
           if (message.role === 'thinking') {
             if (thinkingLevel === 'Off') return null;
-            return <ThinkingBlock key={index} content={message.content} />;
+            return <ThinkingBlock key={index} content={message.content} level={message.metadata?.level} />;
           }
 
           const isUser = message.role === 'user';

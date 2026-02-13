@@ -14,15 +14,22 @@ from swecli.web.logging_config import logger
 class WebAskUserManager:
     """Ask-user manager for web UI that uses WebSocket for question prompts."""
 
-    def __init__(self, ws_manager: Any, loop: asyncio.AbstractEventLoop):
+    def __init__(
+        self,
+        ws_manager: Any,
+        loop: asyncio.AbstractEventLoop,
+        session_id: Optional[str] = None,
+    ):
         """Initialize web ask-user manager.
 
         Args:
             ws_manager: WebSocket manager for broadcasting
             loop: Event loop for async operations
+            session_id: Session ID for scoping broadcasts
         """
         self.ws_manager = ws_manager
         self.loop = loop
+        self.session_id = session_id
         self.state = get_state()
 
     def prompt_user(self, questions: List[Any]) -> Optional[Dict[str, Any]]:
@@ -59,10 +66,11 @@ class WebAskUserManager:
         ask_user_request = {
             "request_id": request_id,
             "questions": serialized_questions,
+            "session_id": self.session_id,
         }
 
         # Store pending request in shared state
-        self.state.add_pending_ask_user(request_id, ask_user_request)
+        self.state.add_pending_ask_user(request_id, ask_user_request, session_id=self.session_id)
 
         # Broadcast ask-user request via WebSocket
         logger.info(f"Requesting ask-user: {request_id} ({len(questions)} questions)")

@@ -591,6 +591,8 @@ class REPL:
             self.skills_commands.handle(args)
         elif cmd == "/plugins":
             self.plugins_commands.handle(args)
+        elif cmd == "/compact":
+            self.session_commands.compact()
         else:
             self.console.print(f"  ⎿  [{ERROR}]Unknown command[/{ERROR}]")
             self.console.print("  ⎿  Type /help for available commands")

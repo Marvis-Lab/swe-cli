@@ -44,15 +44,22 @@ SAFE_COMMANDS = [
 class WebApprovalManager:
     """Approval manager for web UI that uses WebSocket for approval requests."""
 
-    def __init__(self, ws_manager: Any, loop: asyncio.AbstractEventLoop):
+    def __init__(
+        self,
+        ws_manager: Any,
+        loop: asyncio.AbstractEventLoop,
+        session_id: Optional[str] = None,
+    ):
         """Initialize web approval manager.
 
         Args:
             ws_manager: WebSocket manager for broadcasting
             loop: Event loop for async operations
+            session_id: Session ID for scoping broadcasts
         """
         self.ws_manager = ws_manager
         self.loop = loop
+        self.session_id = session_id
         self.state = get_state()
 
     def request_approval(
@@ -108,6 +115,7 @@ class WebApprovalManager:
             "arguments": operation.parameters,
             "description": description,
             "preview": preview[:500] if preview else "",  # Truncate long previews
+            "session_id": self.session_id,
         }
 
         # Store pending approval in shared state
@@ -115,6 +123,7 @@ class WebApprovalManager:
             approval_id,
             tool_name,
             operation.parameters,
+            session_id=self.session_id,
         )
 
         # Broadcast approval request via WebSocket

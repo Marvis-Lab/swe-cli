@@ -22,6 +22,9 @@ class DummyConfigManager(ConfigManager):
         config.session_dir = str(base / "sessions")
         config.log_dir = str(base / "logs")
         config.command_dir = ".swecli-test/commands"
+        config.model_provider = "openai"
+        config.model = "gpt-4o-mini"
+        config.api_key = "test-key-for-unit-tests"
         self._config = config
         return config
 
@@ -51,6 +54,11 @@ class DummyRepl:
             format_tool_result=lambda **_: "tool-output"
         )
         self.tool_registry = SimpleNamespace()
+        self.task_manager = SimpleNamespace(
+            get_running_tasks=lambda: [],
+            add_listener=lambda cb: None,
+            remove_listener=lambda cb: None,
+        )
         self.cleaned = False
 
     def _process_query(self, message: str) -> None:

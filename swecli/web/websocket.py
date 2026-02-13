@@ -93,7 +93,11 @@ class WebSocketManager:
 
     async def _handle_query(self, websocket: WebSocket, data: Dict[str, Any]):
         """Handle a query message."""
+        import asyncio
+
         message = data.get("data", {}).get("message")
+        session_id = data.get("data", {}).get("session_id")
+
         if not message:
             await self.send_message(
                 websocket,
@@ -101,20 +105,50 @@ class WebSocketManager:
             )
             return
 
-        # Add user message to state
         state = get_state()
+
+        # Resolve session_id: use provided, fall back to current
+        if not session_id:
+            session_id = state.get_current_session_id()
+        if not session_id:
+            await self.send_message(websocket, {
+                "type": "error", "data": {"message": "No active session"}
+            })
+            return
+
+        # Prevent concurrent queries on same session
+        if state.is_session_running(session_id):
+            await self.send_message(websocket, {
+                "type": "error",
+                "data": {
+                    "message": "Session already has a running query",
+                    "session_id": session_id,
+                },
+            })
+            return
+
+        # Load session without mutating current_session
+        try:
+            session = state.session_manager.get_session_by_id(session_id)
+        except FileNotFoundError:
+            await self.send_message(websocket, {
+                "type": "error",
+                "data": {"message": f"Session {session_id} not found"},
+            })
+            return
+
+        # Add user message directly to the session object
         user_msg = ChatMessage(role=Role.USER, content=message)
-        state.add_message(user_msg)
+        session.add_message(user_msg)
+        state.session_manager.save_session(session)
 
-        # Save session immediately to persist user message
-        state.session_manager.save_session()
-
-        # Broadcast user message to all clients
+        # Broadcast user message with session_id
         await self.broadcast({
             "type": "user_message",
             "data": {
                 "role": "user",
                 "content": message,
+                "session_id": session_id,
             }
         })
 
@@ -122,10 +156,9 @@ class WebSocketManager:
         from swecli.web.agent_executor import AgentExecutor
 
         executor = AgentExecutor(state)
-
-        # Create background task so WebSocket handler can continue processing messages
-        import asyncio
-        asyncio.create_task(executor.execute_query(message, self))
+        asyncio.create_task(
+            executor.execute_query(message, self, session_id=session_id, session=session)
+        )
 
     async def _handle_approval(self, websocket: WebSocket, data: Dict[str, Any]):
         """Handle an approval response from the web UI."""
@@ -158,12 +191,16 @@ class WebSocketManager:
             return
 
         logger.info(f"✓ Approval {approval_id} resolved successfully")
+        # Retrieve session_id from the pending approval
+        pending = state.get_pending_approval(approval_id)
+        resolved_session_id = pending.get("session_id") if pending else None
         # Broadcast the resolution to all clients
         await self.broadcast({
             "type": "approval_resolved",
             "data": {
                 "approvalId": approval_id,
                 "approved": approved,
+                "session_id": resolved_session_id,
             }
         })
 
@@ -195,9 +232,12 @@ class WebSocketManager:
             return
 
         logger.info(f"✓ Ask-user {request_id} resolved")
+        # Retrieve session_id from the pending ask-user request
+        pending = state.get_pending_ask_user(request_id)
+        resolved_session_id = pending.get("session_id") if pending else None
         await self.broadcast({
             "type": "ask_user_resolved",
-            "data": {"requestId": request_id},
+            "data": {"requestId": request_id, "session_id": resolved_session_id},
         })
 
 

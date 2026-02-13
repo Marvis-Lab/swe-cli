@@ -25,18 +25,21 @@ class TestThinkingPhaseArchitecture:
         """Verify _get_thinking_trace makes a separate LLM call without tools."""
         from swecli.repl.react_executor import ReactExecutor
 
-        # Create a minimal executor
+        # Create a minimal executor with proper session manager mock
+        mock_session_manager = MagicMock()
+        mock_session_manager.current_session = None
+
         executor = ReactExecutor(
             console=MagicMock(),
-            session_manager=MagicMock(),
+            session_manager=mock_session_manager,
             config=MagicMock(),
             llm_caller=MagicMock(),
             tool_executor=MagicMock(),
         )
 
-        # Mock the agent
+        # Mock the agent - template must contain {context} placeholder
         mock_agent = MagicMock()
-        mock_agent.build_system_prompt.return_value = "Thinking system prompt"
+        mock_agent.build_system_prompt.return_value = "Thinking system prompt\n{context}"
         mock_agent.call_thinking_llm.return_value = {
             "success": True,
             "content": "Analysis: The user wants to list files. Next step: call list_files."
@@ -56,16 +59,16 @@ class TestThinkingPhaseArchitecture:
         # Should call build_system_prompt with thinking_visible=True
         mock_agent.build_system_prompt.assert_called_once_with(thinking_visible=True)
 
-        # Should call call_thinking_llm with modified messages
+        # Should call call_thinking_llm with dual-memory messages
         mock_agent.call_thinking_llm.assert_called_once()
         call_args = mock_agent.call_thinking_llm.call_args[0][0]
 
-        # First message should be thinking system prompt
+        # First message should be thinking system prompt (with context injected)
         assert call_args[0]["role"] == "system"
-        assert call_args[0]["content"] == "Thinking system prompt"
+        assert "Thinking system prompt" in call_args[0]["content"]
 
-        # User message should be preserved
-        assert any(m.get("content") == "List files in this directory" for m in call_args)
+        # Second message should be the thinking analysis prompt (not the original user message)
+        assert call_args[1]["role"] == "user"
 
         # Should display thinking via UI callback
         mock_ui_callback.on_thinking.assert_called_once()
@@ -78,16 +81,19 @@ class TestThinkingPhaseArchitecture:
         """Verify _get_thinking_trace returns None when LLM call fails."""
         from swecli.repl.react_executor import ReactExecutor
 
+        mock_session_manager = MagicMock()
+        mock_session_manager.current_session = None
+
         executor = ReactExecutor(
             console=MagicMock(),
-            session_manager=MagicMock(),
+            session_manager=mock_session_manager,
             config=MagicMock(),
             llm_caller=MagicMock(),
             tool_executor=MagicMock(),
         )
 
         mock_agent = MagicMock()
-        mock_agent.build_system_prompt.return_value = "Thinking system prompt"
+        mock_agent.build_system_prompt.return_value = "Thinking system prompt\n{context}"
         mock_agent.call_thinking_llm.return_value = {
             "success": False,
             "error": "API Error",
@@ -102,9 +108,12 @@ class TestThinkingPhaseArchitecture:
         """Verify regular tools still add tool role messages."""
         from swecli.repl.react_executor import ReactExecutor
 
+        mock_session_manager = MagicMock()
+        mock_session_manager.current_session = None
+
         executor = ReactExecutor(
             console=MagicMock(),
-            session_manager=MagicMock(),
+            session_manager=mock_session_manager,
             config=MagicMock(),
             llm_caller=MagicMock(),
             tool_executor=MagicMock(),
@@ -132,7 +141,7 @@ class TestThinkingSystemPrompt:
     """Test thinking system prompt has correct guidance."""
 
     def test_prompt_describes_thinking_phase(self):
-        """Verify system prompt explains the thinking phase."""
+        """Verify system prompt explains the reasoning/analysis phase."""
         prompt_path = os.path.join(
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
             "swecli/core/agents/prompts/templates/thinking_system_prompt.txt"
@@ -141,12 +150,12 @@ class TestThinkingSystemPrompt:
         with open(prompt_path, "r") as f:
             content = f.read()
 
-        assert "THINKING PHASE" in content, \
-            "Prompt should mention THINKING PHASE"
-        assert "pre-processing" in content.lower() or "separate" in content.lower(), \
-            "Prompt should mention pre-processing or separate"
-        assert "NO tools" in content or "reasoning trace" in content.lower(), \
-            "Prompt should mention no tools or reasoning trace"
+        # Prompt should describe reasoning/analysis responsibilities
+        assert "reasoning" in content.lower() or "analyze" in content.lower(), \
+            "Prompt should mention reasoning or analysis"
+        # Should have context placeholder for dual memory injection
+        assert "{context}" in content, \
+            "Prompt should have {context} placeholder"
 
     def test_prompt_has_no_think_tool_reference(self):
         """Verify system prompt does not reference think tool."""

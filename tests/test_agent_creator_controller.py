@@ -109,46 +109,38 @@ class TestCreateAgentFallback:
         self.controller = AgentCreatorController(mock_app)
 
     def test_fallback_creates_agent_file(self):
-        """Test that fallback creates a basic agent file."""
+        """Test that fallback stores agent name and prompt in state."""
         import asyncio
 
-        with tempfile.TemporaryDirectory() as tmpdir:
-            self.controller._get_agents_dir = MagicMock(return_value=Path(tmpdir))
-            self.controller.state = {"panel_start": 0}
+        self.controller.state = {"panel_start": 0}
+        self.controller._render_current_panel = MagicMock()
 
-            asyncio.get_event_loop().run_until_complete(
-                self.controller._create_agent_fallback("An agent that helps debug code", "Error")
-            )
+        asyncio.run(
+            self.controller._create_agent_fallback("An agent that helps debug code", "Error")
+        )
 
-            # Verify agent was created
-            agent_files = list(Path(tmpdir).glob("*.md"))
-            assert len(agent_files) == 1
-
-            content = agent_files[0].read_text()
-            assert "debug" in content.lower()
-            assert "---" in content  # Has frontmatter
-            assert "name:" in content
-            assert "description:" in content
+        # Verify agent state was set
+        assert "agent_name" in self.controller.state
+        assert "system_prompt" in self.controller.state
+        assert "debug" in self.controller.state["system_prompt"].lower()
+        assert len(self.controller.state["agent_name"]) > 0
 
     def test_fallback_name_extraction(self):
         """Test that fallback extracts meaningful name from description."""
         import asyncio
 
-        with tempfile.TemporaryDirectory() as tmpdir:
-            self.controller._get_agents_dir = MagicMock(return_value=Path(tmpdir))
-            self.controller.state = {"panel_start": 0}
+        self.controller.state = {"panel_start": 0}
+        self.controller._render_current_panel = MagicMock()
 
-            asyncio.get_event_loop().run_until_complete(
-                self.controller._create_agent_fallback(
-                    "An agent for testing Python applications", "Error"
-                )
+        asyncio.run(
+            self.controller._create_agent_fallback(
+                "An agent for testing Python applications", "Error"
             )
+        )
 
-            agent_files = list(Path(tmpdir).glob("*.md"))
-            assert len(agent_files) == 1
-            # Name should contain meaningful words from description
-            filename = agent_files[0].stem
-            assert "agent" in filename or "testing" in filename or "python" in filename
+        # Name should contain meaningful words from description
+        name = self.controller.state["agent_name"]
+        assert "agent" in name or "testing" in name or "python" in name
 
 
 class TestAgentGeneratorPromptExists:
@@ -158,7 +150,7 @@ class TestAgentGeneratorPromptExists:
         """Test that the agent generator prompt file exists."""
         prompt_path = (
             Path(__file__).parent.parent
-            / "swecli/core/agents/prompts/agent_generator_prompt.txt"
+            / "swecli/core/agents/prompts/templates/agent_generator_prompt.txt"
         )
         assert prompt_path.exists(), f"Prompt file not found at {prompt_path}"
 
@@ -166,7 +158,7 @@ class TestAgentGeneratorPromptExists:
         """Test that prompt contains key instructions."""
         prompt_path = (
             Path(__file__).parent.parent
-            / "swecli/core/agents/prompts/agent_generator_prompt.txt"
+            / "swecli/core/agents/prompts/templates/agent_generator_prompt.txt"
         )
         content = prompt_path.read_text()
 

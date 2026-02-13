@@ -19,7 +19,9 @@ class TestSwecliAgentTaskComplete:
         tool_registry = MagicMock()
         mode_manager = MagicMock()
 
-        agent = SwecliAgent(config, tool_registry, mode_manager)
+        with patch.object(SwecliAgent, 'build_system_prompt', return_value="Test prompt"), \
+             patch.object(SwecliAgent, 'build_tool_schemas', return_value=[]):
+            agent = SwecliAgent(config, tool_registry, mode_manager)
 
         # Mock HTTP client to return task_complete tool call
         mock_response = MagicMock()
@@ -68,7 +70,9 @@ class TestSwecliAgentTaskComplete:
         tool_registry = MagicMock()
         mode_manager = MagicMock()
 
-        agent = SwecliAgent(config, tool_registry, mode_manager)
+        with patch.object(SwecliAgent, 'build_system_prompt', return_value="Test prompt"), \
+             patch.object(SwecliAgent, 'build_tool_schemas', return_value=[]):
+            agent = SwecliAgent(config, tool_registry, mode_manager)
 
         mock_response = MagicMock()
         mock_response.success = True
@@ -119,7 +123,9 @@ class TestSwecliAgentTaskComplete:
         }
         mode_manager = MagicMock()
 
-        agent = SwecliAgent(config, tool_registry, mode_manager)
+        with patch.object(SwecliAgent, 'build_system_prompt', return_value="Test prompt"), \
+             patch.object(SwecliAgent, 'build_tool_schemas', return_value=[]):
+            agent = SwecliAgent(config, tool_registry, mode_manager)
 
         responses = [
             # First call - run_command tool call
@@ -162,7 +168,8 @@ class TestSwecliAgentTaskComplete:
             ),
         ]
 
-        with patch.object(agent, '_SwecliAgent__http_client') as mock_client:
+        with patch.object(agent, '_SwecliAgent__http_client') as mock_client, \
+             patch.object(agent, '_check_todo_completion', return_value=(True, "")):
             mock_client.post_json.side_effect = responses
 
             deps = MagicMock()
@@ -191,7 +198,9 @@ class TestSwecliAgentTaskComplete:
         ]
         mode_manager = MagicMock()
 
-        agent = SwecliAgent(config, tool_registry, mode_manager)
+        with patch.object(SwecliAgent, 'build_system_prompt', return_value="Test prompt"), \
+             patch.object(SwecliAgent, 'build_tool_schemas', return_value=[]):
+            agent = SwecliAgent(config, tool_registry, mode_manager)
 
         responses = [
             # First call - run_command (will fail)
@@ -272,7 +281,8 @@ class TestSwecliAgentTaskComplete:
             ),
         ]
 
-        with patch.object(agent, '_SwecliAgent__http_client') as mock_client:
+        with patch.object(agent, '_SwecliAgent__http_client') as mock_client, \
+             patch.object(agent, '_check_todo_completion', return_value=(True, "")):
             mock_client.post_json.side_effect = responses
 
             deps = MagicMock()

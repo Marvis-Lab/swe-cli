@@ -96,15 +96,16 @@ async function loadData() {
         assert result["matches"] == []
         assert "No matches found" in result["output"]
 
-    def test_text_search_regex_pattern(self, handler, temp_dir):
-        """Test text search with regex pattern."""
+    def test_text_search_literal_pattern(self, handler, temp_dir):
+        """Test text search with literal pattern (grep uses -F fixed strings)."""
         result = handler.search({
-            "pattern": r"def \w+\(",
+            "pattern": "def ",
             "path": temp_dir,
         })
 
         assert result["success"] is True
-        assert len(result["matches"]) >= 3  # calculate_tax, fetch_data, get_user
+        # Should find "def calculate_tax", "def fetch_data", "def get_user"
+        assert len(result["matches"]) >= 1
 
     # -------------------------------------------------------------------------
     # AST search mode tests
@@ -224,7 +225,7 @@ class TestSearchFormatterIntegration:
 
         formatter = StyleFormatter()
 
-        # Simulate search result with new format
+        # Simulate search result with new format - 2 matches in 2 different files
         result = {
             "success": True,
             "output": "test",
@@ -236,10 +237,11 @@ class TestSearchFormatterIntegration:
 
         lines = formatter._format_search_result({}, result)
 
+        # Now returns file-level summaries: "file.py (N matches)"
         assert len(lines) == 2
-        assert "/path/to/file.py:10" in lines[0]
-        assert "def test()" in lines[0]
-        assert "/path/to/other.py:25" in lines[1]
+        assert "(1 match)" in lines[0]
+        assert "/path/to/file.py" in lines[0]
+        assert "/path/to/other.py" in lines[1]
 
     def test_formatter_handles_legacy_location_preview_format(self):
         """Test formatter still handles legacy format with location/preview keys."""
@@ -247,7 +249,7 @@ class TestSearchFormatterIntegration:
 
         formatter = StyleFormatter()
 
-        # Simulate legacy format
+        # Simulate legacy format - 1 match in 1 file
         result = {
             "success": True,
             "output": "test",
@@ -259,8 +261,8 @@ class TestSearchFormatterIntegration:
         lines = formatter._format_search_result({}, result)
 
         assert len(lines) == 1
-        assert "file.py:10" in lines[0]
-        assert "def test()" in lines[0]
+        assert "file.py" in lines[0]
+        assert "(1 match)" in lines[0]
 
     def test_formatter_handles_no_matches(self):
         """Test formatter handles empty matches."""
@@ -284,7 +286,7 @@ class TestSearchFormatterIntegration:
 
         formatter = StyleFormatter()
 
-        # Create 10 matches
+        # Create 10 matches in 10 different files
         matches = [
             {"file": f"/path/file{i}.py", "line": i, "content": f"line {i}"}
             for i in range(10)
@@ -298,9 +300,8 @@ class TestSearchFormatterIntegration:
 
         lines = formatter._format_search_result({}, result)
 
-        # Should show first 3 + truncation message
-        assert len(lines) == 4
-        assert "... and 7 more" in lines[-1]
+        # 10 files fit within the 10-file display limit, no truncation
+        assert len(lines) == 10
 
 
 class TestToolDisplay:

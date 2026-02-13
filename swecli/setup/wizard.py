@@ -5,15 +5,25 @@ import os
 from typing import Optional
 
 from rich.console import Console
-from rich.panel import Panel
-from rich.prompt import Prompt, Confirm
-from rich.table import Table
 
 from .providers import get_provider_config, get_provider_choices, get_provider_models
 from .validator import validate_api_key
 from .interactive_menu import InteractiveMenu
+from .wizard_ui import (
+    rail_answer,
+    rail_confirm,
+    rail_error,
+    rail_info_box,
+    rail_intro,
+    rail_outro,
+    rail_prompt,
+    rail_separator,
+    rail_step,
+    rail_success,
+    rail_summary_box,
+    rail_warning,
+)
 from swecli.core.paths import get_paths, APP_DIR_NAME
-from swecli.ui_textual.style_tokens import ERROR, SUCCESS, WARNING
 
 
 console = Console()
@@ -25,17 +35,13 @@ def run_setup_wizard() -> bool:
     Returns:
         True if setup completed successfully, False otherwise
     """
-    console.print()
-    console.print(
-        Panel(
-            "[bold cyan]Welcome to OpenDev! [/bold cyan]\n\n"
-            "First-time setup detected.\n"
+    rail_intro(
+        "Welcome to OpenDev!",
+        [
+            "First-time setup detected.",
             "Let's configure your AI provider.",
-            title="Setup Wizard",
-            border_style="cyan",
-        )
+        ],
     )
-    console.print()
 
     # Step 1: Select provider
     provider_id = select_provider()
@@ -44,7 +50,7 @@ def run_setup_wizard() -> bool:
 
     provider_config = get_provider_config(provider_id)
     if not provider_config:
-        console.print(f"[{ERROR}]Error: Provider '{provider_id}' not found[/{ERROR}]")
+        rail_error(f"Provider '{provider_id}' not found")
         return False
 
     # Step 2: Get API key
@@ -53,11 +59,10 @@ def run_setup_wizard() -> bool:
         return False
 
     # Step 3: Validate API key (optional)
-    if Confirm.ask(f"\n[{WARNING}]Validate API key?[/{WARNING}]", default=True):
+    if rail_confirm("Validate API key?", default=True):
         if not validate_key(provider_id, api_key):
-            console.print(
-                f"[{WARNING}]Continuing without validation. "
-                f"You may encounter errors if the key is invalid.[/{WARNING}]"
+            rail_warning(
+                "Continuing without validation. " "You may encounter errors if the key is invalid."
             )
 
     # Step 4: Select model
@@ -126,18 +131,14 @@ def run_setup_wizard() -> bool:
 
     show_config_summary(config, collected_keys)
 
-    if not Confirm.ask(f"\n[{WARNING}]Save configuration?[/{WARNING}]", default=True):
-        console.print(f"\n[{WARNING}]Setup cancelled[/{WARNING}]")
+    if not rail_confirm("Save configuration?", default=True):
+        rail_warning("Setup cancelled")
         return False
 
     if save_config(config):
-        console.print()
-        console.print(
-            f"[bold {SUCCESS}]{SUCCESS}[/bold {SUCCESS}] "
-            f"Configuration saved to ~/{APP_DIR_NAME}/settings.json"
-        )
-        console.print(f"[bold {SUCCESS}]{SUCCESS}[/bold {SUCCESS}] All set! Starting OpenDev...")
-        console.print()
+        rail_success(f"Configuration saved to ~/{APP_DIR_NAME}/settings.json")
+        rail_separator()
+        rail_outro("All set! Starting OpenDev...")
         return True
 
     return False
@@ -171,14 +172,7 @@ def configure_slot_model(
     """
     model_name = normal_model_info.name if normal_model_info else "your model"
 
-    console.print()
-    console.print(
-        Panel(
-            slot_description,
-            title=f"{slot_name} Model ── Step {step_label}",
-            border_style="cyan",
-        )
-    )
+    rail_info_box(f"{slot_name} Model", [slot_description], step_label=step_label)
 
     # Build 2-item menu
     menu_items = [
@@ -212,7 +206,7 @@ def configure_slot_model(
 
     slot_provider_config = get_provider_config(slot_provider_id)
     if not slot_provider_config:
-        console.print(f"[{ERROR}]Error: Provider '{slot_provider_id}' not found[/{ERROR}]")
+        rail_error(f"Provider '{slot_provider_id}' not found")
         return normal_provider_id, normal_model_id
 
     # Collect API key if not already collected for this provider
@@ -221,15 +215,12 @@ def configure_slot_model(
         if not slot_api_key:
             return normal_provider_id, normal_model_id
         # Optional validation
-        if Confirm.ask(f"\n[{WARNING}]Validate API key?[/{WARNING}]", default=True):
+        if rail_confirm("Validate API key?", default=True):
             if not validate_key(slot_provider_id, slot_api_key):
-                console.print(f"[{WARNING}]Continuing without validation.[/{WARNING}]")
+                rail_warning("Continuing without validation.")
         collected_keys[slot_provider_id] = slot_api_key
     else:
-        console.print(
-            f"[{SUCCESS}]{SUCCESS}[/{SUCCESS}] "
-            f"Using previously collected API key for {slot_provider_config['name']}"
-        )
+        rail_success(f"Using previously collected API key for {slot_provider_config['name']}")
 
     slot_model_id = select_model(slot_provider_id, slot_provider_config)
     if not slot_model_id:
@@ -263,10 +254,9 @@ def show_config_summary(config: dict, collected_keys: dict[str, str]) -> None:
         else _model_display(config["model_thinking_provider"], config["model_thinking"])
     )
 
-    critique_same = (
-        config.get("model_critique") == config.get("model_thinking")
-        and config.get("model_critique_provider") == config.get("model_thinking_provider")
-    )
+    critique_same = config.get("model_critique") == config.get("model_thinking") and config.get(
+        "model_critique_provider"
+    ) == config.get("model_thinking_provider")
     critique_display = (
         "(same as Thinking)"
         if critique_same or not config.get("model_critique")
@@ -283,8 +273,15 @@ def show_config_summary(config: dict, collected_keys: dict[str, str]) -> None:
         else _model_display(config["model_vlm_provider"], config["model_vlm"])
     )
 
+    rows = [
+        ("Normal:", normal_display),
+        ("Thinking:", thinking_display),
+        ("Critique:", critique_display),
+        ("Vision:", vlm_display),
+    ]
+
     # Build API key status lines
-    key_lines = []
+    extra_lines = ["API Keys:"]
     seen_providers: set[str] = set()
     for provider_id in collected_keys:
         if provider_id in seen_providers:
@@ -293,31 +290,17 @@ def show_config_summary(config: dict, collected_keys: dict[str, str]) -> None:
         provider = registry.get_provider(provider_id)
         env_var = provider.api_key_env if provider else f"{provider_id.upper()}_API_KEY"
         env_set = bool(os.getenv(env_var))
-        status = f"[bold {SUCCESS}]{SUCCESS}[/bold {SUCCESS}]" if env_set else "set"
-        key_lines.append(f"  ${env_var} {status}")
+        status = "✓" if env_set else "set"
+        extra_lines.append(f"  ${env_var} {status}")
 
-    keys_text = "\n".join(key_lines) if key_lines else "  (none)"
-
-    table = Table(show_header=False, show_edge=True, border_style="cyan", padding=(0, 2))
-    table.add_column("Label", style="dim", width=12)
-    table.add_column("Value")
-
-    table.add_row("Normal:", normal_display)
-    table.add_row("Thinking:", thinking_display)
-    table.add_row("Critique:", critique_display)
-    table.add_row("Vision:", vlm_display)
-    table.add_row("", "")
-    table.add_row("API Keys:", keys_text)
-
-    console.print()
-    console.print(Panel(table, title="Configuration Summary", border_style="cyan"))
+    rail_summary_box("Configuration Summary", rows, extra_lines=extra_lines)
 
 
 def select_provider() -> Optional[str]:
     """Display provider selection menu and get user choice with arrow key navigation."""
     choices = get_provider_choices()
 
-    console.print()
+    rail_step("Select AI Provider")
     menu = InteractiveMenu(
         items=choices,
         title="Select AI Provider",
@@ -327,12 +310,12 @@ def select_provider() -> Optional[str]:
     provider_id = menu.show()
 
     if provider_id:
-        # Find the provider name for confirmation message
         provider_name = next((name for pid, name, _ in choices if pid == provider_id), provider_id)
-        console.print(f"\n[{SUCCESS}]{SUCCESS}[/{SUCCESS}] Selected: {provider_name}")
+        rail_step("Select AI Provider")
+        rail_answer(provider_name)
         return provider_id
 
-    console.print(f"\n[{WARNING}]Provider selection cancelled[/{WARNING}]")
+    rail_warning("Provider selection cancelled")
     return None
 
 
@@ -341,45 +324,38 @@ def get_api_key(provider_id: str, provider_config: dict) -> Optional[str]:
     env_var = provider_config["env_var"]
     env_key = os.getenv(env_var)
 
-    console.print()
+    rail_step(f"{provider_config['name']} API Key")
+
     if env_key:
-        use_env = Confirm.ask(
-            f"[{WARNING}]Found ${env_var} in environment. Use it?[/{WARNING}]",
-            default=True,
-        )
-        if use_env:
-            console.print(f"[{SUCCESS}]{SUCCESS}[/{SUCCESS}] Using API key from environment")
+        if rail_confirm(f"Found ${env_var} in environment. Use it?", default=True):
+            rail_success("Using API key from environment")
             return env_key
 
     # Prompt for manual entry
-    console.print(f"\n[{WARNING}]Enter your {provider_config['name']} API key:[/{WARNING}]")
-    console.print(f"[dim](or press Enter to use ${env_var})[/dim]")
-
-    api_key = Prompt.ask("API Key", password=True)
+    api_key = rail_prompt(f"Enter your {provider_config['name']} API key:", password=True)
 
     if not api_key:
         if env_key:
-            console.print(f"[{SUCCESS}]{SUCCESS}[/{SUCCESS}] Using ${env_var}")
+            rail_success(f"Using ${env_var}")
             return env_key
-        console.print(f"[{ERROR}]![/{ERROR}] No API key provided")
+        rail_error("No API key provided")
         return None
 
-    console.print(f"[{SUCCESS}]{SUCCESS}[/{SUCCESS}] API key received")
+    rail_success("API key received")
     return api_key
 
 
 def validate_key(provider_id: str, api_key: str) -> bool:
     """Validate the API key with the provider."""
-    console.print(f"\n[{WARNING}]Validating API key...[/{WARNING}]", end="")
+    rail_answer("Validating API key...")
 
     success, error = validate_api_key(provider_id, api_key)
 
     if success:
-        console.print(f" [bold {SUCCESS}]{SUCCESS} Valid![/bold {SUCCESS}]")
+        rail_success("Valid!")
         return True
     else:
-        console.print(f" [bold {ERROR}]! Failed[/bold {ERROR}]")
-        console.print(f"[{ERROR}]Error: {error}[/{ERROR}]")
+        rail_error(f"Failed: {error}")
         return False
 
 
@@ -391,7 +367,7 @@ def select_model(provider_id: str, provider_config: dict) -> Optional[str]:
     model_choices = [(model["id"], model["name"], model["description"]) for model in models]
     model_choices.append(("__custom__", "Custom Model", "Enter a custom model ID"))
 
-    console.print()
+    rail_step(f"Select Model for {provider_config['name']}")
     menu = InteractiveMenu(
         items=model_choices,
         title=f"Select Model for {provider_config['name']}",
@@ -401,22 +377,23 @@ def select_model(provider_id: str, provider_config: dict) -> Optional[str]:
     model_id = menu.show()
 
     if not model_id:
-        console.print(f"\n[{WARNING}]Model selection cancelled[/{WARNING}]")
+        rail_warning("Model selection cancelled")
         return None
 
     # Handle custom model input
     if model_id == "__custom__":
-        console.print()
-        custom_id = Prompt.ask(f"[{WARNING}]Enter custom model ID[/{WARNING}]")
+        custom_id = rail_prompt("Enter custom model ID")
         if custom_id:
-            console.print(f"[{SUCCESS}]{SUCCESS}[/{SUCCESS}] Custom model: {custom_id}")
+            rail_step(f"Select Model for {provider_config['name']}")
+            rail_answer(f"Custom: {custom_id}")
             return custom_id
-        console.print(f"[{WARNING}]No custom model ID provided[/{WARNING}]")
+        rail_warning("No custom model ID provided")
         return None
 
     # Find the model name for confirmation message
     model_name = next((name for mid, name, _ in model_choices if mid == model_id), model_id)
-    console.print(f"\n[{SUCCESS}]{SUCCESS}[/{SUCCESS}] Selected: {model_name}")
+    rail_step(f"Select Model for {provider_config['name']}")
+    rail_answer(model_name)
     return model_id
 
 
@@ -432,7 +409,7 @@ def save_config(config: dict) -> bool:
 
         return True
     except Exception as e:
-        console.print(f"[{ERROR}]! Failed to save configuration: {e}[/{ERROR}]")
+        rail_error(f"Failed to save configuration: {e}")
         return False
 
 

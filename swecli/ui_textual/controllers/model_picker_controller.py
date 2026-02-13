@@ -683,21 +683,9 @@ class ModelPickerController:
         )
         self._post_model_panel(panel)
 
-    def _get_configured_provider_ids(self) -> set[str]:
-        """Get provider IDs from config/providers/*.json (excluding _archived_providers)."""
-        from pathlib import Path
-
-        providers_dir = Path(__file__).parent.parent.parent / "config" / "providers"
-        if not providers_dir.exists():
-            return set()
-        return {f.stem for f in providers_dir.glob("*.json")}
-
     def _compute_providers_for_slot(self, slot: str, registry) -> list[dict[str, Any]]:
         if registry is None:
             return []
-
-        # Get only configured providers (from config/providers/*.json)
-        configured_ids = self._get_configured_provider_ids()
 
         capability_map = {
             "normal": None,
@@ -708,11 +696,7 @@ class ModelPickerController:
         universal_providers = {"openai", "anthropic"}
 
         providers: list[dict[str, Any]] = []
-        for provider in sorted(registry.list_providers(), key=lambda info: info.name.lower()):
-            # Skip providers not in config directory
-            if configured_ids and provider.id not in configured_ids:
-                continue
-
+        for provider in registry.list_providers():
             is_universal = provider.id in universal_providers
             if slot == "normal":
                 models = provider.list_models()

@@ -24,6 +24,7 @@ def load_skill_generator_prompt() -> str:
         / "core"
         / "agents"
         / "prompts"
+        / "templates"
         / "skill_generator_prompt.txt"
     )
     if prompt_path.exists():

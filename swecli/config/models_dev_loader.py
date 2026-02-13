@@ -9,7 +9,7 @@ import time
 import urllib.error
 import urllib.request
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from swecli.core.paths import get_paths
 
@@ -125,3 +125,156 @@ def load_models_dev_catalog(
             pass
 
     return None
+
+
+# ---------------------------------------------------------------------------
+# Per-provider cache (sync_provider_cache)
+# ---------------------------------------------------------------------------
+
+
+def is_cache_stale(providers_dir: Path, ttl: int = DEFAULT_CACHE_TTL) -> bool:
+    """Check if the per-provider cache needs refreshing."""
+    marker = providers_dir / ".last_sync"
+    if not marker.exists():
+        return True
+    try:
+        return time.time() - marker.stat().st_mtime > ttl
+    except OSError:
+        return True
+
+
+def sync_provider_cache(
+    cache_dir: Optional[Path] = None,
+    cache_ttl: int = DEFAULT_CACHE_TTL,
+) -> bool:
+    """Fetch models.dev and write per-provider JSON files to cache.
+
+    Cache location: ~/.opendev/cache/providers/{provider_id}.json
+    Uses a .last_sync marker file for TTL checks.
+
+    Returns True if cache was updated.
+    """
+    if cache_dir is None:
+        cache_dir = get_paths().global_cache_dir
+    providers_dir = cache_dir / "providers"
+
+    # Check TTL via marker file
+    marker = providers_dir / ".last_sync"
+    if marker.exists():
+        try:
+            if time.time() - marker.stat().st_mtime <= cache_ttl:
+                return False  # Still fresh
+        except OSError:
+            pass
+
+    # Respect env overrides
+    if os.getenv("OPENDEV_DISABLE_REMOTE_MODELS", "").lower() in {"1", "true", "yes"}:
+        return False
+
+    # Support OPENDEV_MODELS_DEV_PATH override
+    override_path = os.getenv("OPENDEV_MODELS_DEV_PATH")
+    if override_path:
+        override = Path(override_path).expanduser()
+        if override.exists():
+            try:
+                catalog = _load_from_path(override)
+            except Exception as exc:
+                _LOG.warning("Failed to load override %s: %s", override, exc)
+                return False
+        else:
+            _LOG.warning("OPENDEV_MODELS_DEV_PATH %s does not exist", override)
+            return False
+    else:
+        catalog = _fetch_models_dev()
+
+    if not catalog:
+        return False
+
+    providers_dir.mkdir(parents=True, exist_ok=True)
+
+    for provider_id, provider_data in catalog.items():
+        try:
+            provider_json = _convert_provider_to_internal(provider_id, provider_data)
+            if provider_json and provider_json.get("models"):
+                path = providers_dir / f"{provider_id}.json"
+                path.write_text(json.dumps(provider_json, indent=2), encoding="utf-8")
+        except Exception as exc:
+            _LOG.debug("Failed to write cache for provider %s: %s", provider_id, exc)
+
+    # Touch marker
+    try:
+        marker.touch()
+    except OSError:
+        pass
+
+    return True
+
+
+def _convert_provider_to_internal(
+    provider_id: str, provider_data: Dict[str, Any]
+) -> Dict[str, Any]:
+    """Convert a models.dev provider entry to our internal JSON format.
+
+    Input (models.dev):
+        { "name": "Anthropic", "env": ["ANTHROPIC_API_KEY"], "api": "...",
+          "models": { "model-id": { "id", "name", "limit", "cost", "modalities", ... } } }
+
+    Output (our format):
+        { "id", "name", "description", "api_key_env", "api_base_url",
+          "models": { "model-id": { "id", "name", "provider", "context_length",
+                      "capabilities", "pricing", "max_tokens", "supports_temperature" } } }
+    """
+    provider_name = provider_data.get("name") or provider_id.title()
+    env_vars: List[str] = provider_data.get("env") or []
+    models_block: Dict[str, Any] = provider_data.get("models") or {}
+
+    converted_models: Dict[str, Any] = {}
+    first_model = True
+    for model_key, md in models_block.items():
+        limit = md.get("limit") or {}
+        context = int(limit.get("context") or 0)
+        if context <= 0:
+            continue
+
+        modalities = md.get("modalities") or {}
+        input_mods: List[str] = modalities.get("input") or []
+        if input_mods and "text" not in input_mods:
+            continue  # Skip embedding-only / non-text models
+
+        cost = md.get("cost") or {}
+        capabilities: List[str] = []
+        if not input_mods or "text" in input_mods:
+            capabilities.append("text")
+        if "image" in input_mods:
+            capabilities.append("vision")
+        if md.get("reasoning"):
+            capabilities.append("reasoning")
+        if "audio" in input_mods:
+            capabilities.append("audio")
+
+        max_tokens_raw = int(limit.get("output") or 0)
+        converted_models[model_key] = {
+            "id": md.get("id") or model_key,
+            "name": md.get("name") or model_key,
+            "provider": provider_name,
+            "context_length": context,
+            "capabilities": capabilities,
+            "pricing": {
+                "input": float(cost.get("input") or 0),
+                "output": float(cost.get("output") or 0),
+                "unit": "per 1M tokens",
+            },
+            "recommended": first_model,
+            "max_tokens": max_tokens_raw if max_tokens_raw > 0 else None,
+            "supports_temperature": md.get("temperature", True),
+        }
+        first_model = False
+
+    return {
+        "id": provider_id,
+        "name": provider_name,
+        "description": f"{provider_name} models",
+        "api_key_env": env_vars[0] if env_vars else "",
+        "api_base_url": provider_data.get("api") or "",
+        "models": converted_models,
+    }

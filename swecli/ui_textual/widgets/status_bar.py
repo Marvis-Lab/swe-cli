@@ -145,6 +145,11 @@ class StatusBar(Static):
         self.thinking_level = level
         self.update_status()
 
+    @property
+    def thinking_enabled(self) -> bool:
+        """Legacy property - True if thinking level is not Off."""
+        return self.thinking_level != "Off"
+
     # Legacy compatibility
     def set_thinking_enabled(self, enabled: bool) -> None:
         """Legacy method - sets level to Medium if enabled, Off if disabled."""

@@ -41,11 +41,25 @@ def build_max_tokens_param(model: str, max_tokens: int) -> dict[str, int]:
     return {"max_tokens": max_tokens}
 
 
+_NO_TEMPERATURE_PATTERNS = ("o1", "o3", "o4", "codex")
+
+
+def _is_reasoning_model(model_id: str) -> bool:
+    """Check if model ID matches known reasoning model patterns."""
+    lower = model_id.lower()
+    for pattern in _NO_TEMPERATURE_PATTERNS:
+        if lower == pattern or lower.startswith(f"{pattern}-") or f"/{pattern}" in lower:
+            return True
+    if "codex" in lower:
+        return True
+    return False
+
+
 def build_temperature_param(model_id: str, temperature: float) -> dict[str, float]:
     """Build temperature parameter if the model supports it.
 
     Checks model registry for supports_temperature field.
-    Falls back to including temperature if model not found in registry.
+    Falls back to name-based detection for known reasoning models (o1, o3, o4, codex).
 
     Args:
         model_id: The model ID string
@@ -54,6 +68,9 @@ def build_temperature_param(model_id: str, temperature: float) -> dict[str, floa
     Returns:
         Dict with {"temperature": value} or empty dict for models that don't support it
     """
+    if _is_reasoning_model(model_id):
+        return {}
+
     from swecli.config.models import get_model_registry
 
     registry = get_model_registry()

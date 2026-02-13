@@ -12,10 +12,9 @@ def test_history_navigation_roundtrip() -> None:
     app.conversation = ConversationLog()
     app.input_field = ChatTextArea()
 
-    # Seed history
-    app._message_history = ["first", "second"]
-    app._history_index = -1
-    app._current_input = ""
+    # Seed history via the MessageHistory API
+    app._history.record("first")
+    app._history.record("second")
 
     # Start with empty field so we can verify restoration later.
     app.input_field.load_text("")

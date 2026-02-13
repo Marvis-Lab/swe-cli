@@ -115,7 +115,7 @@ class TestCreateSkillFallback:
             self.controller._get_skills_dir = MagicMock(return_value=Path(tmpdir))
             self.controller.state = {"panel_start": 0}
 
-            asyncio.get_event_loop().run_until_complete(
+            asyncio.run(
                 self.controller._create_skill_fallback("A skill for debugging Python code", "Error")
             )
 
@@ -141,7 +141,7 @@ class TestCreateSkillFallback:
             self.controller._get_skills_dir = MagicMock(return_value=Path(tmpdir))
             self.controller.state = {"panel_start": 0}
 
-            asyncio.get_event_loop().run_until_complete(
+            asyncio.run(
                 self.controller._create_skill_fallback(
                     "A skill for testing Python applications", "Error"
                 )
@@ -161,7 +161,7 @@ class TestSkillGeneratorPromptExists:
         """Test that the skill generator prompt file exists."""
         prompt_path = (
             Path(__file__).parent.parent
-            / "swecli/core/agents/prompts/skill_generator_prompt.txt"
+            / "swecli/core/agents/prompts/templates/skill_generator_prompt.txt"
         )
         assert prompt_path.exists(), f"Prompt file not found at {prompt_path}"
 
@@ -169,7 +169,7 @@ class TestSkillGeneratorPromptExists:
         """Test that prompt contains key instructions."""
         prompt_path = (
             Path(__file__).parent.parent
-            / "swecli/core/agents/prompts/skill_generator_prompt.txt"
+            / "swecli/core/agents/prompts/templates/skill_generator_prompt.txt"
         )
         content = prompt_path.read_text()
 
@@ -206,7 +206,7 @@ class TestSkillCreatorWizardStates:
         """Test starting the wizard initializes state correctly."""
         import asyncio
 
-        asyncio.get_event_loop().run_until_complete(self.controller.start())
+        asyncio.run(self.controller.start())
 
         assert self.controller.active is True
         assert self.controller.state is not None
@@ -217,7 +217,7 @@ class TestSkillCreatorWizardStates:
         """Test cancelling the wizard clears state."""
         import asyncio
 
-        asyncio.get_event_loop().run_until_complete(self.controller.start())
+        asyncio.run(self.controller.start())
         assert self.controller.active is True
 
         self.controller.cancel()
@@ -228,7 +228,7 @@ class TestSkillCreatorWizardStates:
         """Test up/down navigation in selection panels."""
         import asyncio
 
-        asyncio.get_event_loop().run_until_complete(self.controller.start())
+        asyncio.run(self.controller.start())
 
         # Start at index 0
         assert self.controller.state["selected_index"] == 0
@@ -249,7 +249,7 @@ class TestSkillCreatorWizardStates:
         """Test that going back from location cancels the wizard."""
         import asyncio
 
-        asyncio.get_event_loop().run_until_complete(self.controller.start())
+        asyncio.run(self.controller.start())
         assert self.controller.state["stage"] == "location"
 
         self.controller.back()

@@ -682,7 +682,7 @@ class AgentCreatorController:
             # Load system prompt for agent generation
             prompt_path = (
                 Path(__file__).parent.parent.parent
-                / "core/agents/prompts/agent_generator_prompt.txt"
+                / "core/agents/prompts/templates/agent_generator_prompt.txt"
             )
             generator_system_prompt = prompt_path.read_text(encoding="utf-8")
 

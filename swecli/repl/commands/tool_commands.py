@@ -8,7 +8,8 @@ from rich.console import Console
 from swecli.core.runtime.approval import ApprovalManager
 from swecli.core.runtime import ModeManager
 from swecli.core.context_engineering.history import SessionManager, UndoManager
-from swecli.models.agent_deps import AgentDependencies
+from swecli.core.agents.prompts import load_prompt
+from swecli.core.agents.subagents.manager import SubAgentDeps
 from swecli.repl.commands.base import CommandHandler, CommandResult
 
 
@@ -30,22 +31,7 @@ class ToolCommands(CommandHandler):
         error_handler: Any,
         agent: Any,
     ):
-        """Initialize tool commands handler.
-
-        Args:
-            console: Rich console for output
-            config: Configuration object
-            config_manager: Configuration manager
-            mode_manager: Mode manager
-            approval_manager: Approval manager
-            undo_manager: Undo manager
-            session_manager: Session manager
-            mcp_manager: MCP manager
-            runtime_suite: Runtime suite containing agents
-            bash_tool: Bash tool for /run command
-            error_handler: Error handler
-            agent: Current agent
-        """
+        """Initialize tool commands handler."""
         super().__init__(console)
         self.config = config
         self.config_manager = config_manager
@@ -64,51 +50,80 @@ class ToolCommands(CommandHandler):
         return CommandResult(success=False, message="Use specific methods for each command")
 
     def init_codebase(self, command: str) -> None:
-        """Handle /init command to analyze codebase and generate AGENTS.md.
+        """Handle /init command to analyze codebase and generate OPENDEV.md.
+
+        Uses Code-Explorer subagent to thoroughly explore the codebase and
+        generate a comprehensive OPENDEV.md file.
 
         Args:
             command: The full command string (e.g., "/init" or "/init /path/to/project")
         """
-        from swecli.commands.init_command import InitCommandHandler
+        # Parse path from command
+        parts = command.strip().split()
+        if len(parts) > 1:
+            target_path = Path(parts[1]).expanduser().absolute()
+        else:
+            target_path = Path.cwd()
 
-        # Create handler
-        handler = InitCommandHandler(self.agent, self.console)
-
-        # Parse arguments
-        try:
-            args = handler.parse_args(command)
-        except Exception as e:
+        # Validate path
+        if not target_path.exists():
             self.print_command_header("init")
-            self.print_error(f"Error parsing command: {e}")
+            self.print_error(f"Path does not exist: {target_path}")
             return
 
-        # Create dependencies
-        deps = AgentDependencies(
+        if not target_path.is_dir():
+            self.print_command_header("init")
+            self.print_error(f"Path is not a directory: {target_path}")
+            return
+
+        self.print_command_header("init")
+        self.console.print(f"[cyan]Analyzing codebase at {target_path}...[/cyan]")
+
+        # Load the init system prompt and substitute path
+        try:
+            task_prompt = load_prompt("init_system_prompt")
+            task_prompt = task_prompt.replace("{path}", str(target_path))
+        except Exception as e:
+            self.print_error(f"Failed to load init prompt: {e}")
+            return
+
+        # Get subagent manager from runtime suite's agents
+        subagent_manager = getattr(
+            getattr(self.runtime_suite, "agents", None), "subagent_manager", None
+        )
+        if subagent_manager is None:
+            self.print_error("Subagent manager not available")
+            return
+
+        # Create dependencies for subagent execution
+        deps = SubAgentDeps(
             mode_manager=self.mode_manager,
             approval_manager=self.approval_manager,
             undo_manager=self.undo_manager,
-            session_manager=self.session_manager,
-            working_dir=Path.cwd(),
-            console=self.console,
-            config=self.config,
         )
 
-        # Execute init command
+        # Execute Init subagent with the init task
         try:
-            result = handler.execute(args, deps)
+            result = subagent_manager.execute_subagent(
+                name="Init",
+                task=task_prompt,
+                deps=deps,
+                ui_callback=None,  # No UI callback for CLI mode
+                working_dir=str(target_path),
+            )
 
-            self.print_command_header("init")
-            if result["success"]:
-                self.print_success(result['message'])
-
-                # Show summary of what was generated
-                if "content" in result:
-                    self.console.print(f"  ⎿  [dim]{result['content']}[/dim]")
+            if result.get("success"):
+                opendev_path = target_path / "OPENDEV.md"
+                if opendev_path.exists():
+                    self.print_success(f"Generated OPENDEV.md at {opendev_path}")
+                else:
+                    self.print_success("Analysis complete")
+                    if "content" in result:
+                        self.console.print(f"[dim]{result['content'][:500]}...[/dim]")
             else:
-                self.print_error(result['message'])
+                self.print_error(result.get("error", "Unknown error"))
 
         except Exception as e:
-            self.print_command_header("init")
             self.print_error(f"Error during initialization: {e}")
             import traceback
             traceback.print_exc()

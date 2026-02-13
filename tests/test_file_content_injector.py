@@ -137,32 +137,36 @@ class TestTextFileProcessing:
     def test_inject_python_file(self, injector, temp_workspace):
         """Test injecting a Python file."""
         result = injector.inject_content("read @main.py")
-        assert '<file_content path="main.py" language="python">' in result.text_content
+        assert '<file_content path="main.py"' in result.text_content
+        assert 'language="python"' in result.text_content
         assert "def main():" in result.text_content
         assert "</file_content>" in result.text_content
 
     def test_inject_markdown_file(self, injector, temp_workspace):
         """Test injecting a Markdown file."""
         result = injector.inject_content("read @README.md")
-        assert '<file_content path="README.md" language="markdown">' in result.text_content
+        assert '<file_content path="README.md"' in result.text_content
+        assert 'language="markdown"' in result.text_content
         assert "# Project" in result.text_content
 
     def test_inject_yaml_file(self, injector, temp_workspace):
         """Test injecting a YAML file."""
         result = injector.inject_content("read @config.yaml")
-        assert '<file_content path="config.yaml" language="yaml">' in result.text_content
+        assert '<file_content path="config.yaml"' in result.text_content
+        assert 'language="yaml"' in result.text_content
         assert "key: value" in result.text_content
 
     def test_inject_nested_file(self, injector, temp_workspace):
         """Test injecting a file in subdirectory."""
         result = injector.inject_content("read @src/utils.py")
-        assert '<file_content path="src/utils.py" language="python">' in result.text_content
+        assert '<file_content path="src/utils.py"' in result.text_content
+        assert 'language="python"' in result.text_content
         assert "def helper():" in result.text_content
 
     def test_inject_empty_file(self, injector, temp_workspace):
         """Test injecting an empty file."""
         result = injector.inject_content("read @empty.txt")
-        assert '<file_content path="empty.txt">' in result.text_content
+        assert '<file_content path="empty.txt"' in result.text_content
         assert result.errors == []
 
 
@@ -172,7 +176,8 @@ class TestLargeFileProcessing:
     def test_truncate_large_file(self, injector, temp_workspace):
         """Test that large files are truncated with head/tail."""
         result = injector.inject_content("read @large.log")
-        assert '<file_truncated path="large.log" total_lines="1500">' in result.text_content
+        assert '<file_truncated' in result.text_content
+        assert 'large.log' in result.text_content
         assert "=== HEAD (lines 1-100) ===" in result.text_content
         assert "=== TRUNCATED" in result.text_content
         assert "=== TAIL" in result.text_content

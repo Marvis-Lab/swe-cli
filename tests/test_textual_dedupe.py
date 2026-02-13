@@ -1,9 +1,11 @@
 import types
+from types import SimpleNamespace
 
 import pytest
 from rich.text import Text
 
 from swecli.ui_textual.chat_app import SWECLIChatApp
+from swecli.ui_textual.managers.console_buffer_manager import ConsoleBufferManager
 
 
 def make_app() -> SWECLIChatApp:
@@ -14,6 +16,12 @@ def make_app() -> SWECLIChatApp:
     app._last_assistant_lines = set()
     app._last_rendered_assistant = None
     app._last_assistant_normalized = None
+    app._pending_assistant_normalized = None
+    app._spinner = SimpleNamespace(active=False)
+    app._console_buffer = ConsoleBufferManager(app)
+    # _tool_summary must not exist (hasattr check) or be a proper mock
+    # Delete the attribute so hasattr returns False
+    # (ConsoleBufferManager checks hasattr before calling)
     return app
 
 

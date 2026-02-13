@@ -114,17 +114,20 @@ class TestThinkingHandler:
         assert result["thinking_id"] == "think-1"  # ID reset to 1
 
     def test_toggle_visibility(self):
-        """Test visibility toggle."""
+        """Test visibility toggle cycles through levels."""
         handler = ThinkingHandler()
-        assert handler.is_visible is True
+        assert handler.is_visible is True  # Default MEDIUM
+
+        # toggle_visibility now cycles levels: MEDIUM -> HIGH -> SELF_CRITIQUE -> OFF -> LOW -> MEDIUM
+        new_state = handler.toggle_visibility()
+        assert new_state is True  # HIGH is still enabled
 
         new_state = handler.toggle_visibility()
-        assert new_state is False
+        assert new_state is True  # SELF_CRITIQUE is still enabled
+
+        new_state = handler.toggle_visibility()
+        assert new_state is False  # OFF
         assert handler.is_visible is False
-
-        new_state = handler.toggle_visibility()
-        assert new_state is True
-        assert handler.is_visible is True
 
     def test_block_count_property(self):
         """Test block_count property."""
@@ -188,7 +191,7 @@ class TestThinkingUICallback:
         callback = TextualUICallback(mock_conversation)
 
         assert hasattr(callback, "_thinking_visible")
-        assert callback._thinking_visible is True
+        assert callback._thinking_visible is False  # Default OFF
 
     def test_on_thinking_calls_add_thinking_block(self):
         """Test that on_thinking calls conversation.add_thinking_block."""
@@ -197,6 +200,7 @@ class TestThinkingUICallback:
         mock_conversation = MagicMock()
         mock_conversation.add_thinking_block = MagicMock()
         callback = TextualUICallback(mock_conversation)
+        callback._thinking_visible = True  # Enable visibility
 
         # Mock _run_on_ui to call function directly
         callback._run_on_ui = lambda f, *args: f(*args)
@@ -273,15 +277,15 @@ class TestThinkingUICallback:
         mock_conversation = MagicMock()
         callback = TextualUICallback(mock_conversation)
 
+        assert callback._thinking_visible is False  # Default OFF
+
+        new_state = callback.toggle_thinking_visibility()
+        assert new_state is True
         assert callback._thinking_visible is True
 
         new_state = callback.toggle_thinking_visibility()
         assert new_state is False
         assert callback._thinking_visible is False
-
-        new_state = callback.toggle_thinking_visibility()
-        assert new_state is True
-        assert callback._thinking_visible is True
 
     def test_toggle_thinking_visibility_syncs_with_app(self):
         """Test toggle_thinking_visibility syncs with chat_app._thinking_visible."""
@@ -382,11 +386,12 @@ class TestMessageRenderer:
         from rich.text import Text
 
         mock_log = MagicMock()
+        mock_log.lines = []  # Empty log so SpacingManager sees no prior content
         renderer = DefaultMessageRenderer(mock_log)
 
         renderer.add_thinking_block("My thinking content")
 
-        # Should write the thinking text and a blank line
+        # Should write the thinking text and a structural blank line
         assert mock_log.write.call_count == 2
 
     def test_add_thinking_block_skips_empty(self):
@@ -418,12 +423,13 @@ class TestStatusBar:
     """Tests for StatusBar thinking mode display."""
 
     def test_status_bar_has_thinking_enabled_attribute(self):
-        """Test StatusBar initializes with thinking_enabled OFF (synced with chat_app default)."""
+        """Test StatusBar initializes with thinking_enabled based on default thinking_level."""
         from swecli.ui_textual.widgets.status_bar import StatusBar
 
         status_bar = StatusBar()
         assert hasattr(status_bar, "thinking_enabled")
-        assert status_bar.thinking_enabled is False  # Default OFF, synced with chat_app._thinking_visible
+        # Default thinking_level is "Medium", so thinking_enabled is True
+        assert status_bar.thinking_enabled is True
 
     def test_set_thinking_enabled(self):
         """Test set_thinking_enabled method."""
@@ -509,7 +515,7 @@ class TestThinkingModelSelection:
     """Tests for using Thinking model when thinking mode is ON."""
 
     def test_thinking_model_used_when_configured_and_visible(self):
-        """Test agent uses Thinking model when thinking_visible=True and model configured."""
+        """Test agent always uses Normal model in call_llm (thinking happens in separate call)."""
         from swecli.core.agents.swecli_agent import SwecliAgent
 
         config = MagicMock()
@@ -527,28 +533,30 @@ class TestThinkingModelSelection:
 
         mode_manager = MagicMock()
 
-        agent = SwecliAgent(config, tool_registry, mode_manager)
+        with patch.object(SwecliAgent, 'build_system_prompt', return_value="Test prompt"), \
+             patch.object(SwecliAgent, 'build_tool_schemas', return_value=[]):
+            agent = SwecliAgent(config, tool_registry, mode_manager)
 
-        # Mock the HTTP client's post_json to return a successful response
-        mock_result = MagicMock()
-        mock_result.success = True
-        mock_result.response = MagicMock()
-        mock_result.response.status_code = 200
-        mock_result.response.json.return_value = {
-            "choices": [{"message": {"content": "test response", "reasoning_content": "my reasoning"}}]
-        }
+            # Mock the HTTP client's post_json to return a successful response
+            mock_result = MagicMock()
+            mock_result.success = True
+            mock_result.response = MagicMock()
+            mock_result.response.status_code = 200
+            mock_result.response.json.return_value = {
+                "choices": [{"message": {"content": "test response", "reasoning_content": "my reasoning"}}]
+            }
 
-        with patch.object(agent, "_SwecliAgent__http_client") as mock_client:
-            mock_client.post_json.return_value = mock_result
-            # Use the normal http client by patching _thinking_http_client to None
-            agent._SwecliAgent__thinking_http_client = None
+            with patch.object(agent, "_SwecliAgent__http_client") as mock_client:
+                mock_client.post_json.return_value = mock_result
+                # Use the normal http client by patching _thinking_http_client to None
+                agent._SwecliAgent__thinking_http_client = None
 
-            response = agent.call_llm([{"role": "user", "content": "test"}], thinking_visible=True)
+                response = agent.call_llm([{"role": "user", "content": "test"}], thinking_visible=True)
 
-            # Check payload used the thinking model
-            call_args = mock_client.post_json.call_args
-            payload = call_args[0][0]
-            assert payload["model"] == "o1-preview"
+                # Check payload used the normal model (thinking is a separate phase)
+                call_args = mock_client.post_json.call_args
+                payload = call_args[0][0]
+                assert payload["model"] == "gpt-4"
 
     def test_normal_model_used_when_not_visible(self):
         """Test agent uses Normal model when thinking_visible=False."""
@@ -569,24 +577,26 @@ class TestThinkingModelSelection:
 
         mode_manager = MagicMock()
 
-        agent = SwecliAgent(config, tool_registry, mode_manager)
+        with patch.object(SwecliAgent, 'build_system_prompt', return_value="Test prompt"), \
+             patch.object(SwecliAgent, 'build_tool_schemas', return_value=[]):
+            agent = SwecliAgent(config, tool_registry, mode_manager)
 
-        mock_result = MagicMock()
-        mock_result.success = True
-        mock_result.response = MagicMock()
-        mock_result.response.status_code = 200
-        mock_result.response.json.return_value = {
-            "choices": [{"message": {"content": "test response"}}]
-        }
+            mock_result = MagicMock()
+            mock_result.success = True
+            mock_result.response = MagicMock()
+            mock_result.response.status_code = 200
+            mock_result.response.json.return_value = {
+                "choices": [{"message": {"content": "test response"}}]
+            }
 
-        with patch.object(agent, "_SwecliAgent__http_client") as mock_client:
-            mock_client.post_json.return_value = mock_result
+            with patch.object(agent, "_SwecliAgent__http_client") as mock_client:
+                mock_client.post_json.return_value = mock_result
 
-            response = agent.call_llm([{"role": "user", "content": "test"}], thinking_visible=False)
+                response = agent.call_llm([{"role": "user", "content": "test"}], thinking_visible=False)
 
-            call_args = mock_client.post_json.call_args
-            payload = call_args[0][0]
-            assert payload["model"] == "gpt-4"
+                call_args = mock_client.post_json.call_args
+                payload = call_args[0][0]
+                assert payload["model"] == "gpt-4"
 
     def test_fallback_to_normal_when_no_thinking_model(self):
         """Test agent falls back to Normal model when no Thinking model configured."""
@@ -606,24 +616,26 @@ class TestThinkingModelSelection:
 
         mode_manager = MagicMock()
 
-        agent = SwecliAgent(config, tool_registry, mode_manager)
+        with patch.object(SwecliAgent, 'build_system_prompt', return_value="Test prompt"), \
+             patch.object(SwecliAgent, 'build_tool_schemas', return_value=[]):
+            agent = SwecliAgent(config, tool_registry, mode_manager)
 
-        mock_result = MagicMock()
-        mock_result.success = True
-        mock_result.response = MagicMock()
-        mock_result.response.status_code = 200
-        mock_result.response.json.return_value = {
-            "choices": [{"message": {"content": "test response"}}]
-        }
+            mock_result = MagicMock()
+            mock_result.success = True
+            mock_result.response = MagicMock()
+            mock_result.response.status_code = 200
+            mock_result.response.json.return_value = {
+                "choices": [{"message": {"content": "test response"}}]
+            }
 
-        with patch.object(agent, "_SwecliAgent__http_client") as mock_client:
-            mock_client.post_json.return_value = mock_result
+            with patch.object(agent, "_SwecliAgent__http_client") as mock_client:
+                mock_client.post_json.return_value = mock_result
 
-            response = agent.call_llm([{"role": "user", "content": "test"}], thinking_visible=True)
+                response = agent.call_llm([{"role": "user", "content": "test"}], thinking_visible=True)
 
-            call_args = mock_client.post_json.call_args
-            payload = call_args[0][0]
-            assert payload["model"] == "gpt-4"  # Falls back to normal model
+                call_args = mock_client.post_json.call_args
+                payload = call_args[0][0]
+                assert payload["model"] == "gpt-4"  # Falls back to normal model
 
 
 class TestReasoningContentExtraction:
@@ -647,28 +659,30 @@ class TestReasoningContentExtraction:
 
         mode_manager = MagicMock()
 
-        agent = SwecliAgent(config, tool_registry, mode_manager)
+        with patch.object(SwecliAgent, 'build_system_prompt', return_value="Test prompt"), \
+             patch.object(SwecliAgent, 'build_tool_schemas', return_value=[]):
+            agent = SwecliAgent(config, tool_registry, mode_manager)
 
-        mock_result = MagicMock()
-        mock_result.success = True
-        mock_result.response = MagicMock()
-        mock_result.response.status_code = 200
-        mock_result.response.json.return_value = {
-            "choices": [{
-                "message": {
-                    "content": "Final answer",
-                    "reasoning_content": "Step 1: analyze...\nStep 2: evaluate..."
-                }
-            }]
-        }
+            mock_result = MagicMock()
+            mock_result.success = True
+            mock_result.response = MagicMock()
+            mock_result.response.status_code = 200
+            mock_result.response.json.return_value = {
+                "choices": [{
+                    "message": {
+                        "content": "Final answer",
+                        "reasoning_content": "Step 1: analyze...\nStep 2: evaluate..."
+                    }
+                }]
+            }
 
-        with patch.object(agent, "_SwecliAgent__http_client") as mock_client:
-            mock_client.post_json.return_value = mock_result
+            with patch.object(agent, "_SwecliAgent__http_client") as mock_client:
+                mock_client.post_json.return_value = mock_result
 
-            response = agent.call_llm([{"role": "user", "content": "test"}])
+                response = agent.call_llm([{"role": "user", "content": "test"}])
 
-            assert response["success"] is True
-            assert response["reasoning_content"] == "Step 1: analyze...\nStep 2: evaluate..."
+                assert response["success"] is True
+                assert response["reasoning_content"] == "Step 1: analyze...\nStep 2: evaluate..."
 
     def test_reasoning_content_none_when_not_present(self):
         """Test reasoning_content is None when model doesn't provide it."""
@@ -688,23 +702,25 @@ class TestReasoningContentExtraction:
 
         mode_manager = MagicMock()
 
-        agent = SwecliAgent(config, tool_registry, mode_manager)
+        with patch.object(SwecliAgent, 'build_system_prompt', return_value="Test prompt"), \
+             patch.object(SwecliAgent, 'build_tool_schemas', return_value=[]):
+            agent = SwecliAgent(config, tool_registry, mode_manager)
 
-        mock_result = MagicMock()
-        mock_result.success = True
-        mock_result.response = MagicMock()
-        mock_result.response.status_code = 200
-        mock_result.response.json.return_value = {
-            "choices": [{"message": {"content": "Just content, no reasoning"}}]
-        }
+            mock_result = MagicMock()
+            mock_result.success = True
+            mock_result.response = MagicMock()
+            mock_result.response.status_code = 200
+            mock_result.response.json.return_value = {
+                "choices": [{"message": {"content": "Just content, no reasoning"}}]
+            }
 
-        with patch.object(agent, "_SwecliAgent__http_client") as mock_client:
-            mock_client.post_json.return_value = mock_result
+            with patch.object(agent, "_SwecliAgent__http_client") as mock_client:
+                mock_client.post_json.return_value = mock_result
 
-            response = agent.call_llm([{"role": "user", "content": "test"}])
+                response = agent.call_llm([{"role": "user", "content": "test"}])
 
-            assert response["success"] is True
-            assert response["reasoning_content"] is None
+                assert response["success"] is True
+                assert response["reasoning_content"] is None
 
 
 class TestReactExecutorReasoningDisplay:
@@ -777,11 +793,14 @@ class TestThinkingPromptBuilder:
         """Test ThinkingPromptBuilder loads thinking_system_prompt.txt."""
         from swecli.core.agents.components import ThinkingPromptBuilder
 
-        builder = ThinkingPromptBuilder(tool_registry=None, working_dir="/test/dir")
-        prompt = builder.build()
+        with patch("swecli.core.agents.components.prompts.builders.load_prompt") as mock_load:
+            mock_load.return_value = "Thinking Mode: You are in thinking mode.\nWorking directory context will be added."
 
-        assert "Thinking Mode" in prompt
-        assert "/test/dir" in prompt
+            builder = ThinkingPromptBuilder(tool_registry=None, working_dir="/test/dir")
+            prompt = builder.build()
+
+            assert "Thinking Mode" in prompt
+            assert "/test/dir" in prompt
 
     def test_thinking_prompt_builder_includes_mcp_tools(self):
         """Test ThinkingPromptBuilder includes MCP tools if available."""
@@ -789,15 +808,21 @@ class TestThinkingPromptBuilder:
 
         mock_registry = MagicMock()
         mock_registry.mcp_manager = MagicMock()
-        mock_registry.mcp_manager.get_all_tools.return_value = [
+        mock_registry.mcp_manager.list_servers.return_value = ["test_server"]
+        mock_registry.mcp_manager.is_connected.return_value = True
+        mock_registry.mcp_manager.get_server_tools.return_value = [
             {"name": "test_tool", "description": "A test tool"}
         ]
+        # Prevent MagicMock from _skill_loader attribute access
+        mock_registry._skill_loader = None
 
-        builder = ThinkingPromptBuilder(tool_registry=mock_registry)
-        prompt = builder.build()
+        with patch("swecli.core.agents.components.prompts.builders.load_prompt") as mock_load:
+            mock_load.return_value = "Thinking Mode prompt"
 
-        assert "test_tool" in prompt
-        assert "A test tool" in prompt
+            builder = ThinkingPromptBuilder(tool_registry=mock_registry, working_dir="/test")
+            prompt = builder.build()
+
+            assert "test_server" in prompt
 
 
 class TestHTTPClientFactory:
@@ -871,29 +896,31 @@ class TestToolChoiceBehavior:
 
         mode_manager = MagicMock()
 
-        agent = SwecliAgent(config, tool_registry, mode_manager)
+        with patch.object(SwecliAgent, 'build_system_prompt', return_value="Test prompt"), \
+             patch.object(SwecliAgent, 'build_tool_schemas', return_value=[]):
+            agent = SwecliAgent(config, tool_registry, mode_manager)
 
-        mock_result = MagicMock()
-        mock_result.success = True
-        mock_result.response = MagicMock()
-        mock_result.response.status_code = 200
-        mock_result.response.json.return_value = {
-            "choices": [{"message": {"content": "Hello!"}}]
-        }
+            mock_result = MagicMock()
+            mock_result.success = True
+            mock_result.response = MagicMock()
+            mock_result.response.status_code = 200
+            mock_result.response.json.return_value = {
+                "choices": [{"message": {"content": "Hello!"}}]
+            }
 
-        with patch.object(agent, "_SwecliAgent__http_client") as mock_client:
-            mock_client.post_json.return_value = mock_result
-            agent._SwecliAgent__thinking_http_client = None
+            with patch.object(agent, "_SwecliAgent__http_client") as mock_client:
+                mock_client.post_json.return_value = mock_result
+                agent._SwecliAgent__thinking_http_client = None
 
-            # Call without force_think (parameter removed)
-            agent.call_llm(
-                [{"role": "user", "content": "hello"}],
-                thinking_visible=True
-            )
+                # Call without force_think (parameter removed)
+                agent.call_llm(
+                    [{"role": "user", "content": "hello"}],
+                    thinking_visible=True
+                )
 
-            call_args = mock_client.post_json.call_args
-            payload = call_args[0][0]
-            assert payload["tool_choice"] == "auto", "tool_choice should always be auto"
+                call_args = mock_client.post_json.call_args
+                payload = call_args[0][0]
+                assert payload["tool_choice"] == "auto", "tool_choice should always be auto"
 
     def test_call_llm_no_force_think_parameter(self):
         """Verify call_llm no longer accepts force_think parameter."""

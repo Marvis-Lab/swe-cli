@@ -6,7 +6,7 @@ import asyncio
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 from swecli.web.state import WebState
 from swecli.web.logging_config import logger
@@ -32,18 +32,36 @@ class AgentExecutor:
         self,
         message: str,
         ws_manager: Any,
+        *,
+        session_id: str,
+        session: Any,
     ) -> None:
         """Execute query and stream results via WebSocket.
 
         Args:
             message: User query
             ws_manager: WebSocket manager for broadcasting
+            session_id: Session ID for scoping this execution
+            session: Pre-loaded Session object (avoids mutating current_session)
         """
         try:
+            # Mark session as running
+            self.state.set_session_running(session_id)
+            await ws_manager.broadcast({
+                "type": "session_activity",
+                "data": {"session_id": session_id, "status": "running"},
+            })
+
             # Broadcast message start
             try:
                 await ws_manager.broadcast(
-                    {"type": "message_start", "data": {"messageId": str(time.time())}}
+                    {
+                        "type": "message_start",
+                        "data": {
+                            "messageId": str(time.time()),
+                            "session_id": session_id,
+                        },
+                    }
                 )
             except Exception as e:
                 logger.error(f"Failed to broadcast message_start: {e}")
@@ -55,10 +73,12 @@ class AgentExecutor:
                 self._run_agent_sync,
                 message,
                 ws_manager,
-                loop,  # Pass the event loop
+                loop,
+                session_id,
+                session,
             )
 
-            # Add assistant response to session
+            # Add assistant response to the session object directly
             logger.info(
                 f"Agent response: success={response.get('success')}, has_content={bool(response.get('content'))}"
             )
@@ -88,15 +108,21 @@ class AgentExecutor:
                     reasoning_content=reasoning_content,
                     token_usage=token_usage,
                 )
-                self.state.add_message(assistant_msg)
+                session.add_message(assistant_msg)
 
             # Save session to persist messages immediately
-            self.state.session_manager.save_session()
+            self.state.session_manager.save_session(session)
 
             # Broadcast message complete
             try:
                 await ws_manager.broadcast(
-                    {"type": "message_complete", "data": {"messageId": str(time.time())}}
+                    {
+                        "type": "message_complete",
+                        "data": {
+                            "messageId": str(time.time()),
+                            "session_id": session_id,
+                        },
+                    }
                 )
             except Exception as e:
                 logger.error(f"Failed to broadcast message_complete: {e}")
@@ -108,12 +134,30 @@ class AgentExecutor:
 
             logger.error(traceback.format_exc())
             try:
-                await ws_manager.broadcast({"type": "error", "data": {"message": str(e)}})
+                await ws_manager.broadcast({
+                    "type": "error",
+                    "data": {"message": str(e), "session_id": session_id},
+                })
             except Exception as broadcast_err:
                 logger.error(f"Failed to broadcast error: {broadcast_err}")
+        finally:
+            # Always mark session as idle
+            self.state.set_session_idle(session_id)
+            try:
+                await ws_manager.broadcast({
+                    "type": "session_activity",
+                    "data": {"session_id": session_id, "status": "idle"},
+                })
+            except Exception:
+                pass
 
     def _run_agent_sync(
-        self, message: str, ws_manager: Any, loop: asyncio.AbstractEventLoop
+        self,
+        message: str,
+        ws_manager: Any,
+        loop: asyncio.AbstractEventLoop,
+        session_id: str,
+        session: Any,
     ) -> Dict[str, Any]:
         """Run agent synchronously in thread pool.
 
@@ -121,6 +165,8 @@ class AgentExecutor:
             message: User query
             ws_manager: WebSocket manager
             loop: Event loop for async operations
+            session_id: Session ID for scoping
+            session: Pre-loaded Session object
 
         Returns:
             Agent response
@@ -149,8 +195,8 @@ class AgentExecutor:
         # Clear any previous interrupt flags
         self.state.clear_interrupt()
 
-        # Resolve config/working directory for current session
-        config_manager, config, working_dir = self._resolve_runtime_context()
+        # Resolve config/working directory from session (no mutation of current_session)
+        config_manager, config, working_dir = self._resolve_runtime_context_for_session(session)
 
         # Initialize tools
         file_ops = FileOperations(config, working_dir)
@@ -160,14 +206,14 @@ class AgentExecutor:
         web_fetch_tool = WebFetchTool(config, working_dir)
         web_search_tool = WebSearchTool(config, working_dir)
         notebook_edit_tool = NotebookEditTool(working_dir)
-        # Create web-based ask-user manager
-        web_ask_user_manager = WebAskUserManager(ws_manager, loop)
+        # Create web-based ask-user manager with session_id
+        web_ask_user_manager = WebAskUserManager(ws_manager, loop, session_id=session_id)
         ask_user_tool = AskUserTool(ui_prompt_callback=web_ask_user_manager.prompt_user)
         open_browser_tool = OpenBrowserTool(config, working_dir)
         web_screenshot_tool = WebScreenshotTool(config, working_dir)
 
-        # Create web-based approval manager
-        web_approval_manager = WebApprovalManager(ws_manager, loop)
+        # Create web-based approval manager with session_id
+        web_approval_manager = WebApprovalManager(ws_manager, loop, session_id=session_id)
 
         # Build runtime suite
         runtime_service = RuntimeService(config_manager, self.state.mode_manager)
@@ -194,12 +240,13 @@ class AgentExecutor:
             thinking_level = ThinkingLevel.MEDIUM
         runtime_suite.tool_registry.thinking_handler.set_level(thinking_level)
 
-        # Wrap tool registry with WebSocket broadcaster
+        # Wrap tool registry with WebSocket broadcaster (includes session_id)
         wrapped_registry = WebSocketToolBroadcaster(
             runtime_suite.tool_registry,
             ws_manager,
             loop,
             working_dir=working_dir,
+            session_id=session_id,
         )
 
         # Get agent and replace its tool registry with wrapped version
@@ -208,11 +255,7 @@ class AgentExecutor:
         # Pass the state to the agent for interrupt checking
         agent.web_state = self.state
 
-        # Get session messages
-        session = self.state.session_manager.get_current_session()
-        if not session:
-            session = self.state.session_manager.create_session(working_directory=str(working_dir))
-
+        # Use session directly (no mutation of current_session)
         message_history = session.to_api_messages()
 
         # Create agent dependencies with web approval manager
@@ -226,6 +269,27 @@ class AgentExecutor:
             config=config,
         )
 
+        # === THINKING PRE-PHASE (mirrors ReactExecutor._get_thinking_trace) ===
+        thinking_trace = None
+        thinking_level_str = self.state.get_thinking_level()
+        if thinking_level_str != "Off":
+            thinking_trace = self._run_thinking_phase(
+                agent, message_history, ws_manager, loop, thinking_level_str,
+                session_id=session_id,
+            )
+            # Inject thinking trace into messages for the action phase
+            if thinking_trace:
+                from swecli.core.agents.prompts.injections import get_injection
+
+                message_history.append(
+                    {
+                        "role": "user",
+                        "content": get_injection(
+                            "thinking_trace_injection", thinking_trace=thinking_trace
+                        ),
+                    }
+                )
+
         # Run agent
         try:
             result = agent.run_sync(
@@ -235,20 +299,88 @@ class AgentExecutor:
             )
 
             # Broadcast the full response as a chunk
-            # (Streaming at character level will be added later)
             logger.info(f"Agent run_sync completed: success={result.get('success')}")
             if result.get("success"):
-                # Broadcast thinking block if present and thinking is enabled
-                thinking_content = result.get("thinking_trace") or result.get(
-                    "reasoning_content"
+                content = result.get("content", "")
+                logger.info(
+                    f"Broadcasting message_chunk with content length: {len(str(content))}"
                 )
-                if thinking_content and self.state.get_thinking_level() != "Off":
+                try:
+                    future = asyncio.run_coroutine_threadsafe(
+                        ws_manager.broadcast(
+                            {
+                                "type": "message_chunk",
+                                "data": {
+                                    "content": str(content),
+                                    "session_id": session_id,
+                                },
+                            }
+                        ),
+                        loop,
+                    )
+                    future.result(timeout=5)
+                    logger.info("message_chunk broadcasted successfully")
+                except Exception as e:
+                    logger.error(f"Failed to broadcast message_chunk: {e}")
+            else:
+                logger.warning("Agent returned success=False, not broadcasting message_chunk")
+
+            # Include thinking_trace in the returned result for session persistence
+            result["thinking_trace"] = thinking_trace
+            return result
+
+        except Exception as e:
+            return {"success": False, "error": str(e), "content": f"Error: {str(e)}"}
+
+    def _run_thinking_phase(
+        self,
+        agent: Any,
+        message_history: list,
+        ws_manager: Any,
+        loop: asyncio.AbstractEventLoop,
+        thinking_level_str: str,
+        session_id: Optional[str] = None,
+    ) -> Optional[str]:
+        """Run pre-thinking phase and broadcast result via WebSocket.
+
+        Mirrors ReactExecutor._get_thinking_trace() from the TUI.
+        """
+        from swecli.core.agents.prompts.injections import get_injection
+
+        try:
+            # Build thinking system prompt
+            thinking_system_prompt = agent.build_system_prompt(thinking_visible=True)
+
+            # Extract short-term context for thinking
+            short_term = self._extract_short_term_context(message_history, n_pairs=3)
+            context = get_injection("short_term_memory_header", short_term=short_term)
+            thinking_system_prompt = thinking_system_prompt.replace("{context}", context)
+
+            # Build minimal thinking messages
+            thinking_messages = [
+                {"role": "system", "content": thinking_system_prompt},
+                {
+                    "role": "user",
+                    "content": get_injection("thinking_analysis_prompt"),
+                },
+            ]
+
+            response = agent.call_thinking_llm(thinking_messages)
+
+            if response.get("success"):
+                thinking_trace = response.get("content", "")
+                if thinking_trace and thinking_trace.strip():
+                    # Broadcast as thinking_block
                     try:
                         future = asyncio.run_coroutine_threadsafe(
                             ws_manager.broadcast(
                                 {
                                     "type": "thinking_block",
-                                    "data": {"content": str(thinking_content)},
+                                    "data": {
+                                        "content": thinking_trace.strip(),
+                                        "level": thinking_level_str,
+                                        "session_id": session_id,
+                                    },
                                 }
                             ),
                             loop,
@@ -257,32 +389,85 @@ class AgentExecutor:
                     except Exception as e:
                         logger.error(f"Failed to broadcast thinking_block: {e}")
 
-                content = result.get("content", "")
-                logger.info(f"Broadcasting message_chunk with content length: {len(str(content))}")
-                try:
-                    # Schedule the broadcast coroutine in the event loop
-                    future = asyncio.run_coroutine_threadsafe(
-                        ws_manager.broadcast(
-                            {"type": "message_chunk", "data": {"content": str(content)}}
-                        ),
-                        loop,
-                    )
-                    # Wait for it to complete
-                    future.result(timeout=5)
-                    logger.info("message_chunk broadcasted successfully")
-                except Exception as e:
-                    logger.error(f"Failed to broadcast message_chunk: {e}")
-            else:
-                logger.warning("Agent returned success=False, not broadcasting message_chunk")
+                    # Handle Self-Critique level
+                    if thinking_level_str == "Self-Critique":
+                        thinking_trace = self._run_critique_phase(
+                            agent, thinking_trace, message_history, ws_manager, loop,
+                            session_id=session_id,
+                        )
 
-            return result
-
+                    return thinking_trace.strip()
         except Exception as e:
-            return {"success": False, "error": str(e), "content": f"Error: {str(e)}"}
+            logger.error(f"Thinking phase error: {e}")
+        return None
 
-    def _resolve_runtime_context(self) -> Tuple[ConfigManager, AppConfig, Path]:
-        """Determine config manager, config, and working dir for current session."""
-        session = self.state.session_manager.get_current_session()
+    def _extract_short_term_context(self, messages: list, n_pairs: int = 3) -> str:
+        """Extract last N user/assistant pairs for thinking context."""
+        non_system = [m for m in messages if m.get("role") != "system"]
+        if not non_system:
+            return "(No conversation history)"
+
+        # Find user message boundaries
+        pair_starts = [i for i, m in enumerate(non_system) if m.get("role") == "user"]
+        recent_starts = pair_starts[-n_pairs:] if len(pair_starts) >= n_pairs else pair_starts
+
+        if not recent_starts:
+            return "(No conversation history)"
+
+        recent_messages = non_system[recent_starts[0] :]
+        parts = []
+        for msg in recent_messages:
+            role = msg.get("role", "")
+            content = str(msg.get("content", ""))[:500]
+            if role == "user":
+                parts.append(f"USER:\n{content}\n")
+            elif role == "assistant":
+                parts.append(f"ASSISTANT:\n{content}\n")
+            elif role == "tool":
+                parts.append(f"TOOL RESULT:\n{content[:200]}\n")
+        return "\n".join(parts) if parts else "(No conversation history)"
+
+    def _run_critique_phase(
+        self,
+        agent: Any,
+        thinking_trace: str,
+        message_history: list,
+        ws_manager: Any,
+        loop: asyncio.AbstractEventLoop,
+        session_id: Optional[str] = None,
+    ) -> str:
+        """Run Self-Critique: critique and broadcast."""
+        try:
+            critique_response = agent.call_critique_llm(thinking_trace)
+            if critique_response.get("success"):
+                critique = critique_response.get("content", "")
+                if critique and critique.strip():
+                    # Broadcast critique block
+                    try:
+                        future = asyncio.run_coroutine_threadsafe(
+                            ws_manager.broadcast(
+                                {
+                                    "type": "thinking_block",
+                                    "data": {
+                                        "content": f"[Critique]\n{critique.strip()}",
+                                        "level": "Self-Critique",
+                                        "session_id": session_id,
+                                    },
+                                }
+                            ),
+                            loop,
+                        )
+                        future.result(timeout=5)
+                    except Exception:
+                        pass
+        except Exception as e:
+            logger.error(f"Critique phase error: {e}")
+        return thinking_trace
+
+    def _resolve_runtime_context_for_session(
+        self, session: Any
+    ) -> Tuple[ConfigManager, AppConfig, Path]:
+        """Determine config manager, config, and working dir for a specific session."""
         if session and session.working_directory:
             working_dir = Path(session.working_directory).expanduser().resolve()
             config_manager = ConfigManager(working_dir)

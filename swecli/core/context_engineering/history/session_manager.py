@@ -469,6 +469,45 @@ class SessionManager:
         # Remove from sessions index
         self._remove_index_entry(session_id)
 
+    def get_session_by_id(self, session_id: str) -> Session:
+        """Load a session by ID without changing current_session.
+
+        Unlike load_session(), this has no side effects on manager state.
+        Used by web agent executor threads for concurrent access.
+
+        Args:
+            session_id: Session ID to load
+
+        Returns:
+            Loaded Session instance
+
+        Raises:
+            FileNotFoundError: If session not found
+        """
+        # Check in-memory current_session first (handles unsaved new sessions)
+        if self.current_session and self.current_session.id == session_id:
+            return self.current_session
+
+        # Try local project dir
+        session_file = self.session_dir / f"{session_id}.json"
+        if session_file.exists():
+            return self._load_from_file(session_file)
+
+        # Fall back to scanning all project directories
+        from swecli.core.paths import get_paths
+
+        paths = get_paths()
+        projects_dir = paths.global_projects_dir
+        if projects_dir.exists():
+            for project_dir in projects_dir.iterdir():
+                if not project_dir.is_dir():
+                    continue
+                candidate = project_dir / f"{session_id}.json"
+                if candidate.exists():
+                    return self._load_from_file(candidate)
+
+        raise FileNotFoundError(f"Session {session_id} not found")
+
     def get_current_session(self) -> Optional[Session]:
         """Get the current active session."""
         return self.current_session

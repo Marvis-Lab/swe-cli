@@ -28,7 +28,7 @@ DEFAULT_SLASH_COMMANDS = [
     # Execution
     SlashCommand("mode", "switch between NORMAL and PLAN mode"),
     # Advanced
-    SlashCommand("init", "initialize codebase with AGENTS.md"),
+    SlashCommand("init", "analyze codebase and generate OPENDEV.md"),
     SlashCommand("mcp", "manage MCP servers and tools"),
 ]
 

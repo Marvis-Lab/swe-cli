@@ -19,7 +19,7 @@ def get_command_list() -> List[Dict[str, Any]]:
                 {
                     "name": "/init",
                     "args": "[path]",
-                    "description": "Analyze codebase and generate AGENTS.md with repository guidelines",
+                    "description": "Analyze codebase and generate OPENDEV.md with repository guidelines",
                 },
             ],
         },

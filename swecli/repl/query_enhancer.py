@@ -92,7 +92,22 @@ class QueryEnhancer:
         messages: list[dict] = []
 
         if session:
-            messages = session.to_api_messages(window_size=self.REFLECTION_WINDOW_SIZE)
+            compaction = getattr(session, "metadata", {}).get("compaction_point")
+            if compaction:
+                # Start with the compaction summary + messages added after compaction
+                summary_content = compaction["summary"]
+                at_count = compaction["at_message_count"]
+                messages = [{"role": "user", "content": summary_content}]
+                # Convert post-compaction messages via a temporary Session-like slice
+                post_msgs = session.messages[at_count:]
+                if post_msgs:
+                    from swecli.models.session import Session
+
+                    temp = Session(session_id="tmp", working_directory="")
+                    temp.messages = post_msgs
+                    messages.extend(temp.to_api_messages())
+            else:
+                messages = session.to_api_messages(window_size=self.REFLECTION_WINDOW_SIZE)
             if enhanced_query != query:
                 for entry in reversed(messages):
                     if entry.get("role") == "user":

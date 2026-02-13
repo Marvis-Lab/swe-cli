@@ -131,7 +131,7 @@ def test_mcp_tool_execution(registry):
     result = registry.execute_tool("mcp__server__tool", {"arg": 1})
 
     assert result == {"success": True, "mcp": "result"}
-    registry._mcp_handler.execute.assert_called_once_with("mcp__server__tool", {"arg": 1})
+    registry._mcp_handler.execute.assert_called_once_with("mcp__server__tool", {"arg": 1}, task_monitor=None)
 
 def test_subagent_spawn_no_manager(registry):
     registry._subagent_manager = None

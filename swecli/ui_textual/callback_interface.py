@@ -151,6 +151,10 @@ class BaseUICallback:
         """Called when the agent completes thinking."""
         pass
 
+    def on_thinking(self, content: str) -> None:
+        """Called when the model produces thinking content."""
+        pass
+
     def on_assistant_message(self, content: str) -> None:
         """Called when assistant provides a message."""
         pass
@@ -293,6 +297,9 @@ class ForwardingUICallback(BaseUICallback):
 
     def on_thinking_complete(self) -> None:
         self._forward('on_thinking_complete')
+
+    def on_thinking(self, content: str) -> None:
+        self._forward('on_thinking', content)
 
     def on_assistant_message(self, content: str) -> None:
         self._forward('on_assistant_message', content)

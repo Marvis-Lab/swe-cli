@@ -162,11 +162,13 @@ class TopicDetector:
         )
 
         # Build payload
+        from swecli.core.agents.components.api.configuration import build_temperature_param
+
         payload: dict[str, Any] = {
             "model": self._model_id,
             "messages": api_messages,
             "max_tokens": 100,
-            "temperature": 0.0,
+            **build_temperature_param(self._model_id, 0.0),
         }
 
         result = self._client.post_json(payload)

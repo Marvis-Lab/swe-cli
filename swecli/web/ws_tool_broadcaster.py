@@ -33,6 +33,7 @@ class WebSocketToolBroadcaster:
         ws_manager: Any,
         loop: asyncio.AbstractEventLoop,
         working_dir: Optional[Path] = None,
+        session_id: Optional[str] = None,
     ):
         """Initialize broadcaster.
 
@@ -40,11 +41,14 @@ class WebSocketToolBroadcaster:
             tool_registry: The tool registry to wrap
             ws_manager: WebSocket manager for broadcasting
             loop: Event loop for async operations
+            working_dir: Working directory for path resolution
+            session_id: Session ID for scoping broadcasts
         """
         self.tool_registry = tool_registry
         self.ws_manager = ws_manager
         self.loop = loop
         self.working_dir = Path(working_dir).resolve() if working_dir else None
+        self.session_id = session_id
 
     def execute_tool(
         self,
@@ -93,6 +97,7 @@ class WebSocketToolBroadcaster:
                     "arguments": arguments,
                     "arguments_display": display,
                     "description": f"Calling {tool_name}",
+                    "session_id": self.session_id,
                 }
             })
             future = asyncio.run_coroutine_threadsafe(
@@ -110,7 +115,7 @@ class WebSocketToolBroadcaster:
         try:
             safe_payload = self._make_json_safe({
                 "type": "tool_result",
-                "data": payload,
+                "data": {**payload, "session_id": self.session_id},
             })
             future = asyncio.run_coroutine_threadsafe(
                 self.ws_manager.broadcast(safe_payload),

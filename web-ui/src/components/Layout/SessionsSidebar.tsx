@@ -49,6 +49,7 @@ export function SessionsSidebar() {
   const loadSession = useChatStore(state => state.loadSession);
   const currentSessionId = useChatStore(state => state.currentSessionId);
   const sessionListVersion = useChatStore(state => state.sessionListVersion);
+  const runningSessions = useChatStore(state => state.runningSessions);
 
   useEffect(() => {
     fetchSessions();
@@ -480,6 +481,7 @@ export function SessionsSidebar() {
                           {workspace.sessions.map((session) => {
                             const isActiveSession = currentSessionId === session.id;
                             const sessionLabel = getSessionLabel(session);
+                            const isRunning = runningSessions.has(session.id);
 
                             return (
                               <div key={session.id} className="relative group">
@@ -491,10 +493,15 @@ export function SessionsSidebar() {
                                       : 'bg-white border border-beige-200 hover:border-amber-300 hover:bg-amber-50/30'
                                   }`}
                                 >
-                                  <div className={`text-xs font-medium truncate ${
-                                    isActiveSession ? 'text-amber-900' : 'text-gray-800'
-                                  }`} title={session.title || session.id}>
-                                    {sessionLabel}
+                                  <div className="flex items-center gap-1.5">
+                                    {isRunning && (
+                                      <div className="w-2 h-2 rounded-full bg-amber-500 animate-pulse flex-shrink-0" />
+                                    )}
+                                    <div className={`text-xs font-medium truncate ${
+                                      isActiveSession ? 'text-amber-900' : 'text-gray-800'
+                                    }`} title={session.title || session.id}>
+                                      {sessionLabel}
+                                    </div>
                                   </div>
                                   <div className="flex items-center justify-between text-xs mt-1">
                                     <span className={`${

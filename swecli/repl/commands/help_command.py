@@ -32,10 +32,11 @@ class HelpCommand(CommandHandler):
 
 ## Mode & Operations
 - `/mode <name>` - Switch mode: normal or plan
-- `/init [path]` - Analyze codebase and generate repository guidelines
+- `/init [path]` - Analyze codebase and generate OPENDEV.md
 
 ## Session Management
 - `/clear` - Clear current session context
+- `/compact` - Compact conversation history to reduce context size
 
 ## Configuration
 - `/models` - Interactive model/provider selector (use ↑/↓ arrows to choose)

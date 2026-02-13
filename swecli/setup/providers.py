@@ -57,33 +57,11 @@ def get_provider_choices() -> List[tuple[str, str, str]]:
         List of (id, name, description) tuples, sorted with popular providers first
     """
     registry = get_model_registry()
-    providers = [
+    # list_providers() already returns providers in priority order
+    return [
         (provider_info.id, provider_info.name, provider_info.description)
         for provider_info in registry.list_providers()
     ]
-
-    # Define priority order for popular providers
-    priority_providers = [
-        "anthropic",
-        "openai",
-        "fireworks",
-        "google",
-        "deepseek",
-        "groq",
-        "mistral",
-        "cohere",
-        "perplexity",
-        "together",
-    ]
-
-    def sort_key(provider: tuple[str, str, str]) -> tuple[int, str]:
-        """Sort key: priority providers first, then alphabetical."""
-        provider_id = provider[0]
-        if provider_id in priority_providers:
-            return (0, priority_providers.index(provider_id))
-        return (1, provider[1].lower())  # Sort by name alphabetically
-
-    return sorted(providers, key=sort_key)
 
 
 # Legacy PROVIDERS dict for backward compatibility

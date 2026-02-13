@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from swecli.core.agents.components.api.configuration import build_temperature_param
 from swecli.core.context_engineering.retrieval.token_monitor import ContextTokenMonitor
 from swecli.models.config import AppConfig
 
@@ -131,14 +132,15 @@ class ContextCompactor:
 
         conversation_text = "\n".join(parts)
 
+        model_id = getattr(self._config, "model", "gpt-4o-mini")
         payload = {
-            "model": getattr(self._config, "model", "gpt-4o-mini"),
+            "model": model_id,
             "messages": [
                 {"role": "system", "content": _SUMMARY_PROMPT},
                 {"role": "user", "content": conversation_text},
             ],
             "max_tokens": 1024,
-            "temperature": 0.2,
+            **build_temperature_param(model_id, 0.2),
         }
 
         try:
