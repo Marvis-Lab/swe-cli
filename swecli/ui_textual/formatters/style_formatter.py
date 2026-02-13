@@ -53,6 +53,10 @@ class StyleFormatter:
             result_lines = self._format_process_output_result(tool_args, result)
         elif tool_name == "write_todos":
             result_lines = self._format_write_todos_result(tool_args, result)
+        elif tool_name == "list_todos":
+            result_lines = self._format_list_todos_result(tool_args, result)
+        elif tool_name in {"update_todo", "complete_todo", "complete_and_activate_next"}:
+            result_lines = self._format_todo_status_result(tool_args, result)
         elif tool_name == "search_tools":
             result_lines = self._format_search_tools_result(tool_args, result)
         else:
@@ -486,18 +490,51 @@ class StyleFormatter:
     def _format_write_todos_result(
         self, tool_args: Dict[str, Any], result: Dict[str, Any]
     ) -> List[str]:
-        """Format write_todos result showing all created todos."""
+        """Format write_todos result as a brief 1-line summary."""
         if not result.get("success"):
             error_msg = result.get("error") or "Unknown error"
             return [self._error_line(error_msg)]
 
-        output = result.get("output", "")
-        if isinstance(output, str):
-            # Show all lines from the output (no truncation for todos)
-            lines = output.strip().splitlines()
-            return lines if lines else ["Todos created"]
-
+        count = result.get("created_count", 0)
+        if count:
+            return [f"Created {count} todo{'s' if count != 1 else ''}"]
         return ["Todos created"]
+
+    def _format_list_todos_result(
+        self, tool_args: Dict[str, Any], result: Dict[str, Any]
+    ) -> List[str]:
+        """Format list_todos result as a 1-line summary."""
+        if not result.get("success"):
+            return [self._error_line(result.get("error", "Unknown error"))]
+
+        count = result.get("count", 0)
+        todos = result.get("todos", [])
+        if not count:
+            return ["No todos"]
+
+        doing = sum(1 for t in todos if t.get("status") == "doing")
+        done = sum(1 for t in todos if t.get("status") == "done")
+        pending = count - doing - done
+        parts = []
+        if doing:
+            parts.append(f"{doing} active")
+        if done:
+            parts.append(f"{done} done")
+        if pending:
+            parts.append(f"{pending} pending")
+        return [f"{count} todo{'s' if count != 1 else ''} ({', '.join(parts)})"]
+
+    def _format_todo_status_result(
+        self, tool_args: Dict[str, Any], result: Dict[str, Any]
+    ) -> List[str]:
+        """Format update_todo / complete_todo / complete_and_activate_next results."""
+        if not result.get("success"):
+            return [self._error_line(result.get("error", "Unknown error"))]
+
+        output = result.get("output", "")
+        if not output:
+            return ["Updated"]
+        return output.strip().splitlines()
 
     def _format_search_tools_result(
         self, tool_args: Dict[str, Any], result: Dict[str, Any]

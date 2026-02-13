@@ -5,9 +5,6 @@ from dataclasses import dataclass, asdict
 from datetime import datetime
 from typing import Dict, List, Optional
 
-from rich.console import Console
-from rich.panel import Panel
-from rich.table import Table
 
 # Configure logger for todo ID validation warnings
 logger = logging.getLogger(__name__)
@@ -604,13 +601,6 @@ class TodoHandler:
                 "todos": [],
             }
 
-        # Create Rich table
-        table = Table(title="Current Todos", show_header=True, header_style="bold cyan")
-        table.add_column("ID", style="dim", width=4)
-        table.add_column("Status", width=8)
-        table.add_column("Title")
-        table.add_column("Log", style="dim")
-
         # Sort by status (doing -> todo -> done) then by ID
         status_order = {"doing": 0, "todo": 1, "done": 2}
 
@@ -625,24 +615,15 @@ class TodoHandler:
             key=lambda t: (status_order.get(t.status, 3), extract_id_number(t.id)),
         )
 
+        lines = []
         for todo in sorted_todos:
-            # Status with color
             if todo.status == "done":
-                status_str = "[green]✓ done[/green]"
+                lines.append(f"✓ [{todo.id}] {todo.title}")
             elif todo.status == "doing":
-                status_str = "[yellow]▶ doing[/yellow]"
+                lines.append(f"▶ [{todo.id}] {todo.title}")
             else:
-                status_str = "[cyan]○ todo[/cyan]"
-
-            # Truncate long logs
-            log_display = todo.log[:50] + "..." if len(todo.log) > 50 else todo.log
-
-            table.add_row(f"#{todo.id}", status_str, todo.title, log_display)
-
-        # Format as string for output
-        console = Console(record=True)
-        console.print(table)
-        output = console.export_text()
+                lines.append(f"○ [{todo.id}] {todo.title}")
+        output = "\n".join(lines) if lines else "No todos."
 
         return {
             "success": True,
