@@ -352,22 +352,37 @@ class SolidLanguageServer(ABC):
         """
         return self._ignore_spec
 
-    def is_ignored_path(self, relative_path: str, ignore_unsupported_files: bool = True) -> bool:
+    def is_ignored_path(
+        self,
+        relative_path: str,
+        ignore_unsupported_files: bool = True,
+        is_dir: bool | None = None,
+        is_file: bool | None = None,
+    ) -> bool:
         """
         Determine if a path should be ignored based on file type
         and ignore patterns.
 
         :param relative_path: Relative path to check
         :param ignore_unsupported_files: whether files that are not supported source files should be ignored
+        :param is_dir: whether the path is a directory (optional optimization)
+        :param is_file: whether the path is a file (optional optimization)
 
         :return: True if the path should be ignored, False otherwise
         """
         abs_path = os.path.join(self.repository_root_path, relative_path)
-        if not os.path.exists(abs_path):
-            raise FileNotFoundError(f"File {abs_path} not found, the ignore check cannot be performed")
+
+        if is_dir is None and is_file is None:
+            if not os.path.exists(abs_path):
+                raise FileNotFoundError(f"File {abs_path} not found, the ignore check cannot be performed")
+            is_file = os.path.isfile(abs_path)
+            is_dir = not is_file
+        elif is_dir is None:
+            is_dir = not is_file
+        elif is_file is None:
+            is_file = not is_dir
 
         # Check file extension if it's a file
-        is_file = os.path.isfile(abs_path)
         if is_file and ignore_unsupported_files:
             fn_matcher = self.language.get_source_fn_matcher()
             if not fn_matcher.is_relevant_filename(abs_path):
@@ -386,7 +401,9 @@ class SolidLanguageServer(ABC):
             if self.is_ignored_dirname(part):
                 return True
 
-        return match_path(relative_path, self.get_ignore_spec(), root_path=self.repository_root_path)
+        return match_path(
+            relative_path, self.get_ignore_spec(), root_path=self.repository_root_path, is_dir=is_dir
+        )
 
     def _shutdown(self, timeout: float = 5.0) -> None:
         """
@@ -1115,16 +1132,22 @@ class SolidLanguageServer(ABC):
 
         # Helper function to recursively process directories
         def process_directory(rel_dir_path: str) -> list[ls_types.UnifiedSymbolInformation]:
-            abs_dir_path = self.repository_root_path if rel_dir_path == "." else os.path.join(self.repository_root_path, rel_dir_path)
+            abs_dir_path = (
+                self.repository_root_path
+                if rel_dir_path == "."
+                else os.path.join(self.repository_root_path, rel_dir_path)
+            )
             abs_dir_path = os.path.realpath(abs_dir_path)
 
-            if self.is_ignored_path(str(Path(abs_dir_path).relative_to(self.repository_root_path))):
+            if self.is_ignored_path(
+                str(Path(abs_dir_path).relative_to(self.repository_root_path)), is_dir=True, is_file=False
+            ):
                 log.debug("Skipping directory: %s (because it should be ignored)", rel_dir_path)
                 return []
 
             result = []
             try:
-                contained_dir_or_file_names = os.listdir(abs_dir_path)
+                scandir_iter = os.scandir(abs_dir_path)
             except OSError:
                 return []
 
@@ -1136,44 +1159,57 @@ class SolidLanguageServer(ABC):
                     uri=str(pathlib.Path(abs_dir_path).as_uri()),
                     range={"start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 0}},
                     absolutePath=str(abs_dir_path),
-                    relativePath=str(Path(abs_dir_path).resolve().relative_to(self.repository_root_path)),
+                    relativePath=str(
+                        Path(abs_dir_path).resolve().relative_to(self.repository_root_path)
+                    ),
                 ),
                 children=[],
             )
             result.append(package_symbol)
 
-            for contained_dir_or_file_name in contained_dir_or_file_names:
-                contained_dir_or_file_abs_path = os.path.join(abs_dir_path, contained_dir_or_file_name)
+            with scandir_iter:
+                for entry in scandir_iter:
+                    contained_dir_or_file_name = entry.name
+                    contained_dir_or_file_abs_path = entry.path
 
-                # obtain relative path
-                try:
-                    contained_dir_or_file_rel_path = str(
-                        Path(contained_dir_or_file_abs_path).resolve().relative_to(self.repository_root_path)
-                    )
-                except ValueError as e:
-                    # Typically happens when the path is not under the repository root (e.g., symlink pointing outside)
-                    log.warning(
-                        "Skipping path %s; likely outside of the repository root %s [cause: %s]",
-                        contained_dir_or_file_abs_path,
-                        self.repository_root_path,
-                        e,
-                    )
-                    continue
+                    # obtain relative path
+                    try:
+                        contained_dir_or_file_rel_path = str(
+                            Path(contained_dir_or_file_abs_path)
+                            .resolve()
+                            .relative_to(self.repository_root_path)
+                        )
+                    except ValueError as e:
+                        # Typically happens when the path is not under the repository root (e.g., symlink pointing outside)
+                        log.warning(
+                            "Skipping path %s; likely outside of the repository root %s [cause: %s]",
+                            contained_dir_or_file_abs_path,
+                            self.repository_root_path,
+                            e,
+                        )
+                        continue
 
-                if self.is_ignored_path(contained_dir_or_file_rel_path):
-                    log.debug("Skipping item: %s (because it should be ignored)", contained_dir_or_file_rel_path)
-                    continue
+                    is_dir = entry.is_dir()
+                    is_file = entry.is_file()
 
-                if os.path.isdir(contained_dir_or_file_abs_path):
-                    child_symbols = process_directory(contained_dir_or_file_rel_path)
-                    package_symbol["children"].extend(child_symbols)
-                    for child in child_symbols:
-                        child["parent"] = package_symbol
+                    if self.is_ignored_path(
+                        contained_dir_or_file_rel_path, is_dir=is_dir, is_file=is_file
+                    ):
+                        log.debug(
+                            "Skipping item: %s (because it should be ignored)", contained_dir_or_file_rel_path
+                        )
+                        continue
 
-                elif os.path.isfile(contained_dir_or_file_abs_path):
-                    with self._open_file_context(contained_dir_or_file_rel_path) as file_data:
-                        document_symbols = self.request_document_symbols(contained_dir_or_file_rel_path, file_data)
-                        file_root_nodes = document_symbols.root_symbols
+                    if is_dir:
+                        child_symbols = process_directory(contained_dir_or_file_rel_path)
+                        package_symbol["children"].extend(child_symbols)
+                        for child in child_symbols:
+                            child["parent"] = package_symbol
+
+                    elif is_file:
+                        with self._open_file_context(contained_dir_or_file_rel_path) as file_data:
+                            document_symbols = self.request_document_symbols(contained_dir_or_file_rel_path, file_data)
+                            file_root_nodes = document_symbols.root_symbols
 
                         # Create file symbol, link with children
                         file_range = self._get_range_from_file_content(file_data.contents)
