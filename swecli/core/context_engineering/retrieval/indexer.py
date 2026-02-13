@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
+import fnmatch
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -13,10 +15,41 @@ from .token_monitor import ContextTokenMonitor
 class CodebaseIndexer:
     """Generate concise codebase summaries for context."""
 
+    IGNORED_DIRS = {
+        "node_modules",
+        "__pycache__",
+        ".git",
+        "venv",
+        "build",
+        "dist",
+        ".venv",
+        ".idea",
+        ".vscode",
+    }
+
     def __init__(self, working_dir: Optional[Path] = None) -> None:
         self.working_dir = Path(working_dir or Path.cwd())
         self.token_monitor = ContextTokenMonitor()
         self.target_tokens = 3000
+        self._file_cache: Optional[List[Path]] = None
+        self._dir_cache: Optional[List[Path]] = None
+
+    def _populate_cache(self) -> None:
+        if self._file_cache is not None:
+            return
+
+        self._file_cache = []
+        self._dir_cache = []
+
+        for root, dirs, files in os.walk(self.working_dir):
+            # Modify dirs in-place to skip ignored directories
+            dirs[:] = [d for d in dirs if d not in self.IGNORED_DIRS]
+
+            root_path = Path(root)
+            self._dir_cache.append(root_path)
+
+            for file in files:
+                self._file_cache.append(root_path / file)
 
     def generate_index(self, max_tokens: int = 3000) -> str:
         sections = []
@@ -36,20 +69,10 @@ class CodebaseIndexer:
         return content
 
     def _generate_overview(self) -> str:
+        self._populate_cache()
         lines = ["## Overview\n"]
-        try:
-            result = subprocess.run(
-                ["find", ".", "-type", "f"],
-                capture_output=True,
-                text=True,
-                cwd=self.working_dir,
-                timeout=5,
-            )
-            if result.returncode == 0:
-                file_count = len(result.stdout.strip().split("\n"))
-                lines.append(f"**Total Files:** {file_count}")
-        except Exception:
-            pass
+        if self._file_cache is not None:
+            lines.append(f"**Total Files:** {len(self._file_cache)}")
 
         readme_path = self._find_readme()
         if readme_path:
@@ -185,10 +208,24 @@ class CodebaseIndexer:
         return None
 
     def _find_files(self, patterns: List[str]) -> List[Path]:
+        self._populate_cache()
         matches: List[Path] = []
+
+        if self._file_cache is None or self._dir_cache is None:
+            return matches
+
         for pattern in patterns:
-            matches.extend(self.working_dir.glob(f"**/{pattern}"))
-        return matches
+            if pattern.endswith("/"):
+                clean_pattern = pattern.rstrip("/")
+                for d in self._dir_cache:
+                    if d.name == clean_pattern:
+                        matches.append(d)
+            else:
+                for f in self._file_cache:
+                    if fnmatch.fnmatch(f.name, pattern):
+                        matches.append(f)
+
+        return sorted(list(set(matches)))
 
     def _basic_structure(self) -> str:
         try:
