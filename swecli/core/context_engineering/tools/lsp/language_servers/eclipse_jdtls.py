@@ -14,7 +14,8 @@ from typing import cast
 
 from overrides import override
 
-from swecli.core.context_engineering.tools.lsp.ls import LSPFileBuffer, SolidLanguageServer
+from swecli.core.context_engineering.tools.lsp.ls_structs import LSPFileBuffer
+from swecli.core.context_engineering.tools.lsp.ls import SolidLanguageServer
 from swecli.core.context_engineering.tools.lsp.ls_config import LanguageServerConfig
 from swecli.core.context_engineering.tools.lsp.ls_types import UnifiedSymbolInformation
 from swecli.core.context_engineering.tools.lsp.ls_utils import FileUtils, PlatformUtils
