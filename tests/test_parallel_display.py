@@ -8,6 +8,8 @@ sys.path.insert(0, "/Users/nghibui/codes/swe-cli")
 from rich.text import Text
 from swecli.ui_textual.widgets.conversation.tool_renderer import (
     DefaultToolRenderer,
+)
+from swecli.ui_textual.widgets.conversation.renderers.parallel_agent_renderer import (
     ParallelAgentGroup,
     AgentInfo,
 )
@@ -51,7 +53,7 @@ def test_collapsed_mode_skips_line_writes():
     # Activate parallel group in collapsed mode using agent_infos
     renderer._parallel_expanded = False
     tool_call_id = "call_123"
-    renderer._parallel_group = ParallelAgentGroup(
+    renderer.parallel_renderer.group = ParallelAgentGroup(
         agents={tool_call_id: AgentInfo(
             agent_type="Explore",
             description="Explore documentation",
@@ -71,8 +73,8 @@ def test_collapsed_mode_skips_line_writes():
     assert (
         len(log.writes) == initial_writes
     ), f"Expected {initial_writes} writes in collapsed mode, got {len(log.writes)}"
-    assert renderer._parallel_group.agents[tool_call_id].tool_count == 1
-    assert "list_files" in renderer._parallel_group.agents[tool_call_id].current_tool
+    assert renderer.parallel_renderer.group.agents[tool_call_id].tool_count == 1
+    assert "list_files" in renderer.parallel_renderer.group.agents[tool_call_id].current_tool
     print("✅ Collapsed mode skips line writes correctly")
 
 
@@ -84,7 +86,7 @@ def test_expanded_mode_writes_lines():
     # Activate parallel group in expanded mode using agent_infos
     renderer._parallel_expanded = True
     tool_call_id = "call_456"
-    renderer._parallel_group = ParallelAgentGroup(
+    renderer.parallel_renderer.group = ParallelAgentGroup(
         agents={tool_call_id: AgentInfo(
             agent_type="Explore",
             description="Explore config",
@@ -93,6 +95,7 @@ def test_expanded_mode_writes_lines():
             status_line=2,
         )},
         header_line=0,
+        expanded=True,
     )
 
     initial_writes = len(log.writes)
@@ -103,7 +106,7 @@ def test_expanded_mode_writes_lines():
     assert (
         len(log.writes) > initial_writes
     ), f"Expected writes in expanded mode, got {len(log.writes) - initial_writes} new writes"
-    assert renderer._parallel_group.agents[tool_call_id].tool_count == 1
+    assert renderer.parallel_renderer.group.agents[tool_call_id].tool_count == 1
     print("✅ Expanded mode writes lines correctly")
 
 
@@ -121,7 +124,7 @@ def test_on_parallel_agents_start_creates_group():
     log = MockLog()
     renderer = DefaultToolRenderer(log, app_callback_interface=None)
 
-    assert renderer._parallel_group is None
+    assert renderer.parallel_renderer.group is None
 
     # react_executor passes agent_infos with tool_call_id for individual tracking
     agent_infos = [
@@ -130,12 +133,12 @@ def test_on_parallel_agents_start_creates_group():
     ]
     renderer.on_parallel_agents_start(agent_infos)
 
-    assert renderer._parallel_group is not None
-    assert len(renderer._parallel_group.agents) == 2
-    assert "call_1" in renderer._parallel_group.agents
-    assert "call_2" in renderer._parallel_group.agents
-    assert renderer._parallel_group.agents["call_1"].description == "Explore docs"
-    assert renderer._parallel_group.agents["call_2"].description == "Explore config"
+    assert renderer.parallel_renderer.group is not None
+    assert len(renderer.parallel_renderer.group.agents) == 2
+    assert "call_1" in renderer.parallel_renderer.group.agents
+    assert "call_2" in renderer.parallel_renderer.group.agents
+    assert renderer.parallel_renderer.group.agents["call_1"].description == "Explore docs"
+    assert renderer.parallel_renderer.group.agents["call_2"].description == "Explore config"
     print("✅ on_parallel_agents_start creates parallel group with agent infos")
 
 
@@ -149,15 +152,15 @@ def test_on_parallel_agents_done_clears_group():
         {"agent_type": "Explore", "description": "Explore config", "tool_call_id": "call_2"},
     ]
     renderer.on_parallel_agents_start(agent_infos)
-    assert renderer._parallel_group is not None
+    assert renderer.parallel_renderer.group is not None
 
     # Simulate tool calls
-    renderer._parallel_group.agents["call_1"].tool_count = 5
-    renderer._parallel_group.agents["call_2"].tool_count = 3
+    renderer.parallel_renderer.group.agents["call_1"].tool_count = 5
+    renderer.parallel_renderer.group.agents["call_2"].tool_count = 3
 
     renderer.on_parallel_agents_done()
 
-    assert renderer._parallel_group is None
+    assert renderer.parallel_renderer.group is None
     print("✅ on_parallel_agents_done clears parallel group")
 
 
@@ -172,17 +175,17 @@ def test_parallel_agent_complete_updates_status():
     ]
     renderer.on_parallel_agents_start(agent_infos)
 
-    assert renderer._parallel_group.agents["call_1"].status == "running"
-    assert renderer._parallel_group.agents["call_2"].status == "running"
+    assert renderer.parallel_renderer.group.agents["call_1"].status == "running"
+    assert renderer.parallel_renderer.group.agents["call_2"].status == "running"
 
     # First agent completes successfully
     renderer.on_parallel_agent_complete("call_1", success=True)
-    assert renderer._parallel_group.agents["call_1"].status == "completed"
-    assert renderer._parallel_group.agents["call_2"].status == "running"
+    assert renderer.parallel_renderer.group.agents["call_1"].status == "completed"
+    assert renderer.parallel_renderer.group.agents["call_2"].status == "running"
 
     # Second agent completes
     renderer.on_parallel_agent_complete("call_2", success=True)
-    assert renderer._parallel_group.agents["call_2"].status == "completed"
+    assert renderer.parallel_renderer.group.agents["call_2"].status == "completed"
 
     print("✅ on_parallel_agent_complete updates agent status")
 
