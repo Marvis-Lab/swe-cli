@@ -36,8 +36,17 @@ def dump_pickle(obj: Any, path: str) -> None:
         pickle.dump(obj, f)
 
 
-def getstate(obj: Any) -> Any:
+def getstate(
+    obj: Any, instance: Any = None, transient_properties: list[str] | None = None
+) -> Any:
     """Get state of an object for pickling."""
+    if instance is not None:
+        state = instance.__dict__.copy()
+        if transient_properties:
+            for prop in transient_properties:
+                state.pop(prop, None)
+        return state
+
     if hasattr(obj, "__getstate__"):
         return obj.__getstate__()
     return obj.__dict__.copy() if hasattr(obj, "__dict__") else None
