@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import fnmatch
 import json
+import os
 import subprocess
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -110,10 +112,13 @@ class CodebaseIndexer:
             "Docs": ["README.md", "CHANGELOG.md", "docs/"],
         }
 
-        for category, patterns in key_patterns.items():
-            found = self._find_files(patterns)
+        scanned_files = self._scan_key_files(key_patterns)
+
+        for category, found in scanned_files.items():
             if found:
                 lines.append(f"\n### {category}")
+                # Sort for deterministic output
+                found.sort(key=lambda p: str(p))
                 for f in found[:5]:
                     rel_path = f.relative_to(self.working_dir)
                     lines.append(f"- `{rel_path}`")
@@ -184,11 +189,44 @@ class CodebaseIndexer:
                 return project_type
         return None
 
-    def _find_files(self, patterns: List[str]) -> List[Path]:
-        matches: List[Path] = []
-        for pattern in patterns:
-            matches.extend(self.working_dir.glob(f"**/{pattern}"))
-        return matches
+    def _scan_key_files(self, key_patterns: Dict[str, List[str]]) -> Dict[str, List[Path]]:
+        results: Dict[str, List[Path]] = {k: [] for k in key_patterns}
+        ignored_dirs = {
+            "node_modules", "__pycache__", ".git", "venv", "build", "dist", ".venv", ".idea", ".vscode"
+        }
+
+        # Split patterns into file and dir patterns
+        cat_file_patterns = {}
+        cat_dir_patterns = {}
+
+        for cat, patterns in key_patterns.items():
+            cat_file_patterns[cat] = []
+            cat_dir_patterns[cat] = []
+            for p in patterns:
+                if p.endswith("/"):
+                    cat_dir_patterns[cat].append(p.rstrip("/"))
+                else:
+                    cat_file_patterns[cat].append(p)
+
+        for root, dirs, files in os.walk(self.working_dir):
+            dirs[:] = [d for d in dirs if d not in ignored_dirs and not d.startswith('.')]
+
+            root_path = Path(root)
+
+            # Check directories
+            for d in dirs:
+                for cat, patterns in cat_dir_patterns.items():
+                    if d in patterns:
+                         results[cat].append(root_path / d)
+
+            # Check files
+            for f in files:
+                for cat, patterns in cat_file_patterns.items():
+                    for p in patterns:
+                        if fnmatch.fnmatch(f, p):
+                            results[cat].append(root_path / f)
+
+        return results
 
     def _basic_structure(self) -> str:
         try:
