@@ -2,12 +2,25 @@
 
 from __future__ import annotations
 
+import fnmatch
 import json
-import subprocess
+import os
 from pathlib import Path
 from typing import Dict, List, Optional
 
 from .token_monitor import ContextTokenMonitor
+
+IGNORED_DIRS = {
+    "node_modules",
+    ".git",
+    ".venv",
+    "venv",
+    "__pycache__",
+    "build",
+    "dist",
+    ".idea",
+    ".vscode",
+}
 
 
 class CodebaseIndexer:
@@ -37,19 +50,13 @@ class CodebaseIndexer:
 
     def _generate_overview(self) -> str:
         lines = ["## Overview\n"]
-        try:
-            result = subprocess.run(
-                ["find", ".", "-type", "f"],
-                capture_output=True,
-                text=True,
-                cwd=self.working_dir,
-                timeout=5,
-            )
-            if result.returncode == 0:
-                file_count = len(result.stdout.strip().split("\n"))
-                lines.append(f"**Total Files:** {file_count}")
-        except Exception:
-            pass
+
+        file_count = 0
+        for _, dirs, files in os.walk(self.working_dir):
+            dirs[:] = [d for d in dirs if d not in IGNORED_DIRS]
+            file_count += len(files)
+
+        lines.append(f"**Total Files:** {file_count}")
 
         readme_path = self._find_readme()
         if readme_path:
@@ -66,34 +73,39 @@ class CodebaseIndexer:
 
     def _generate_structure(self) -> str:
         lines = ["## Structure\n", "```"]
-        try:
-            result = subprocess.run(
-                [
-                    "tree",
-                    "-L",
-                    "2",
-                    "-I",
-                    "node_modules|__pycache__|.git|venv|build|dist",
-                ],
-                capture_output=True,
-                text=True,
-                cwd=self.working_dir,
-                timeout=5,
-            )
-            if result.returncode == 0:
-                tree_output = result.stdout.strip()
-                if len(tree_output) > 1500:
-                    tree_output = "\n".join(tree_output.split("\n")[:30]) + "\n... (truncated)"
-                lines.append(tree_output)
-            else:
-                lines.append(self._basic_structure())
-        except FileNotFoundError:
-            lines.append(self._basic_structure())
-        except Exception:
-            lines.append("(Unable to generate structure)")
-
+        tree_output = self._generate_tree_string()
+        if len(tree_output) > 1500:
+            tree_output = "\n".join(tree_output.split("\n")[:30]) + "\n... (truncated)"
+        lines.append(tree_output)
         lines.append("```")
         return "\n".join(lines)
+
+    def _generate_tree_string(self, max_depth: int = 2) -> str:
+        output = ["."]
+
+        def _walk(path: Path, prefix: str = "", depth: int = 0):
+            if depth >= max_depth:
+                return
+
+            try:
+                # Get all items
+                items = sorted([p for p in path.iterdir()], key=lambda p: (p.is_file(), p.name))
+                # Filter ignored
+                items = [p for p in items if p.name not in IGNORED_DIRS]
+
+                count = len(items)
+                for index, item in enumerate(items):
+                    connector = "└── " if index == count - 1 else "├── "
+                    output.append(f"{prefix}{connector}{item.name}")
+
+                    if item.is_dir():
+                        extension = "    " if index == count - 1 else "│   "
+                        _walk(item, prefix + extension, depth + 1)
+            except (PermissionError, FileNotFoundError):
+                pass
+
+        _walk(self.working_dir)
+        return "\n".join(output)
 
     def _generate_key_files(self) -> str:
         lines = ["## Key Files\n"]
@@ -186,27 +198,25 @@ class CodebaseIndexer:
 
     def _find_files(self, patterns: List[str]) -> List[Path]:
         matches: List[Path] = []
-        for pattern in patterns:
-            matches.extend(self.working_dir.glob(f"**/{pattern}"))
-        return matches
+        file_patterns = [p for p in patterns if not p.endswith("/")]
+        dir_patterns = [p.rstrip("/") for p in patterns if p.endswith("/")]
 
-    def _basic_structure(self) -> str:
-        try:
-            result = subprocess.run(
-                ["ls", "-R"],
-                capture_output=True,
-                text=True,
-                cwd=self.working_dir,
-                timeout=5,
-            )
-            if result.returncode == 0:
-                output = result.stdout.strip()
-                if len(output) > 1200:
-                    output = "\n".join(output.split("\n")[:40]) + "\n... (truncated)"
-                return output
-        except Exception:
-            pass
-        return "(Unable to generate structure)"
+        for root, dirs, files in os.walk(self.working_dir):
+            dirs[:] = [d for d in dirs if d not in IGNORED_DIRS]
+
+            for file in files:
+                for pattern in file_patterns:
+                    if fnmatch.fnmatch(file, pattern):
+                        matches.append(Path(root) / file)
+                        break
+
+            for d in dirs:
+                 for pattern in dir_patterns:
+                     if fnmatch.fnmatch(d, pattern):
+                         matches.append(Path(root) / d)
+                         break
+
+        return matches
 
     def _compress_content(self, content: str, max_tokens: int) -> str:
         paragraphs = content.split("\n\n")
