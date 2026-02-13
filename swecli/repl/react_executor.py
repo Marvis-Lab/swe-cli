@@ -75,6 +75,7 @@ class IterationContext:
     iteration_count: int = 0
     consecutive_reads: int = 0
     consecutive_no_tool_calls: int = 0
+    continue_after_subagent: bool = False  # If True, don't inject stop signal after subagent
 
 
 class ReactExecutor:
@@ -150,6 +151,7 @@ class ReactExecutor:
         approval_manager: "ApprovalManager",
         undo_manager: "UndoManager",
         ui_callback=None,
+        continue_after_subagent: bool = False,
     ) -> tuple:
         """Execute ReAct loop."""
 
@@ -162,6 +164,7 @@ class ReactExecutor:
             approval_manager=approval_manager,
             undo_manager=undo_manager,
             ui_callback=ui_callback,
+            continue_after_subagent=continue_after_subagent,
         )
 
         # Notify UI start
@@ -615,7 +618,8 @@ Please provide refined reasoning that addresses these concerns. Keep it concise 
                 )
 
         # STOP SIGNAL: After subagent completion, tell agent to just summarize
-        if subagent_just_completed:
+        # Skip if continue_after_subagent is True (e.g., /init needs to continue)
+        if subagent_just_completed and not ctx.continue_after_subagent:
             _debug_log("[ITERATION] Injecting stop signal after subagent completion")
             ctx.messages.append(
                 {

@@ -1,6 +1,6 @@
 """Mode commands for REPL."""
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from rich.console import Console
 
@@ -8,8 +8,7 @@ from swecli.core.runtime import OperationMode
 from swecli.repl.commands.base import CommandHandler, CommandResult
 
 if TYPE_CHECKING:
-    from swecli.core.runtime import ModeManager
-    from swecli.core.runtime.approval import ApprovalManager
+    from swecli.repl.repl import REPL
 
 
 class ModeCommands(CommandHandler):
@@ -18,19 +17,25 @@ class ModeCommands(CommandHandler):
     def __init__(
         self,
         console: Console,
-        mode_manager: "ModeManager",
-        approval_manager: "ApprovalManager",
+        repl: "REPL",
     ):
         """Initialize mode commands handler.
 
         Args:
             console: Rich console for output
-            mode_manager: Mode manager instance
-            approval_manager: Approval manager instance
+            repl: Reference to REPL for accessing current managers
         """
         super().__init__(console)
-        self.mode_manager = mode_manager
-        self.approval_manager = approval_manager
+        self._repl = repl
+
+    # Properties to access managers dynamically (avoids stale references)
+    @property
+    def mode_manager(self) -> Any:
+        return self._repl.mode_manager
+
+    @property
+    def approval_manager(self) -> Any:
+        return self._repl.approval_manager
 
     def handle(self, args: str) -> CommandResult:
         """Handle mode command (not used, individual methods called directly)."""

@@ -453,6 +453,7 @@ class SwecliAgent(BaseAgent):
         ui_callback: Optional[Any] = None,
         max_iterations: Optional[int] = None,  # None = unlimited
         task_monitor: Optional[Any] = None,  # Task monitor for interrupt support
+        continue_after_subagent: bool = False,  # If True, don't inject stop signal after subagent
     ) -> dict:
         messages = message_history or []
 
@@ -671,11 +672,16 @@ class SwecliAgent(BaseAgent):
                         "interrupted": True,
                     }
 
-                tool_result = (
-                    result.get("output", "")
-                    if result["success"]
-                    else f"Error: {result.get('error', 'Tool execution failed')}"
-                )
+                # Build tool result - prefer separate_response (subagent output) over output
+                separate_response = result.get("separate_response")
+                if result["success"]:
+                    tool_result = separate_response if separate_response else result.get("output", "")
+                    # Prepend completion status so agent knows subagent is done
+                    completion_status = result.get("completion_status")
+                    if completion_status:
+                        tool_result = f"[completion_status={completion_status}]\n{tool_result}"
+                else:
+                    tool_result = f"Error: {result.get('error', 'Tool execution failed')}"
                 # Append LLM-only suffix (e.g., retry prompts) - hidden from UI
                 if result.get("_llm_suffix"):
                     tool_result += result["_llm_suffix"]

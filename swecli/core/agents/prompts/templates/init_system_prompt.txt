@@ -1,80 +1,28 @@
-Thoroughly explore this codebase at {path} to understand its structure, architecture, build systems, test setup, and conventions. Generate an OPENDEV.md file.
+Analyze the codebase at {path} and generate a CONCISE OPENDEV.md (max 200 words).
 
-## Phase 1: Discovery
+Use spawn_subagent with Code-Explorer:
+"Explore {path}. Read config files (package.json/pyproject.toml/Makefile) and README. Report: tech stack, install/run/test/lint commands, main directories."
 
-Investigate ALL of the following:
+After exploration, use write_file to create {path}/OPENDEV.md with this exact format:
 
-1. **Config files**: package.json, tsconfig.json, requirements.txt, pyproject.toml, Cargo.toml, go.mod, Makefile, docker-compose.yml, setup.py, setup.cfg
-2. **Source directory structure**: src/, lib/, app/, or main source folders
-3. **Tests directory**: tests/, test/, __tests__/, spec/ and test patterns
-4. **Documentation**: README.md, docs/, CONTRIBUTING.md
-5. **AI instruction files**: .cursor/rules/, .cursorrules, .github/copilot-instructions.md, OPENDEV.md, AGENTS.md, CLAUDE.md
-6. **Entry points**: main.py, app.py, index.ts, index.js, cli.py, __main__.py
-7. **Build/lint/test commands**: from package.json scripts, Makefile targets, pyproject.toml
-8. **Architecture patterns**: module organization, key classes, dependency injection
+```
+# Project Name
 
-Be very thorough - read all important files to understand the full picture.
-
-## Phase 2: Generate OPENDEV.md
-
-Create the file with these sections:
-
-```markdown
-# OPENDEV.md
-
-This file provides guidance to OpenDev when working with this repository.
-
-## Repository Overview
-
-[Brief description of the project, tech stack, and sub-projects if monorepo]
+One-sentence description.
 
 ## Commands
+- Install: `actual command`
+- Run: `actual command`
+- Test: `actual command`
+- Lint: `actual command`
 
-[Organize by project/context. Use ACTUAL commands from config files]
+## Structure
+- `src/` - Source code
+- `tests/` - Tests
+(only list 3-5 key directories)
 
-### [Project/Context Name]
-```bash
-# Install dependencies
-<actual command from package.json/requirements.txt>
-
-# Run development server
-<actual command>
-
-# Run tests
-<actual command>
-
-# Lint/Format
-<actual command>
+## Style
+- Brief bullet points only
 ```
 
-## Architecture
-
-[Key directories and their purposes, with actual file paths]
-
-```
-project/
-├── src/           # [describe purpose]
-├── tests/         # [describe test organization]
-└── ...
-```
-
-Key patterns:
-- [Architectural pattern used, e.g., "MVC", "Clean Architecture"]
-- [Important abstractions or base classes]
-- [Dependency injection approach if any]
-
-## Code Style & Conventions
-
-[Naming conventions, import patterns, testing patterns observed in the codebase]
-
-## Active Work (Optional)
-
-[Current feature branches or ongoing work if relevant]
-```
-
-## CRITICAL Instructions
-
-1. **Be thorough** - Read all config files and key source files
-2. **Use CONCRETE values** - Extract actual commands from package.json scripts, Makefile, pyproject.toml - NO placeholders
-3. **Handle monorepos** - If multiple sub-projects exist, document each separately
-4. **Write the file** - Use write_file to save to {path}/OPENDEV.md
+CRITICAL: Keep it under 200 words. No lengthy explanations. Use real commands from config files.

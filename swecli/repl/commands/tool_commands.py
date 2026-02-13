@@ -1,16 +1,16 @@
 """Command handlers for tool-related commands (/init)."""
 
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any, Optional
 
 from rich.console import Console
 
-from swecli.core.runtime.approval import ApprovalManager
-from swecli.core.runtime import ModeManager
-from swecli.core.context_engineering.history import SessionManager, UndoManager
 from swecli.core.agents.prompts import load_prompt
-from swecli.core.agents.subagents.manager import SubAgentDeps
+from swecli.models.agent_deps import AgentDependencies
 from swecli.repl.commands.base import CommandHandler, CommandResult
+
+if TYPE_CHECKING:
+    from swecli.repl.repl import REPL
 
 
 class ToolCommands(CommandHandler):
@@ -19,31 +19,43 @@ class ToolCommands(CommandHandler):
     def __init__(
         self,
         console: Console,
-        config: Any,
-        config_manager: Any,
-        mode_manager: ModeManager,
-        approval_manager: ApprovalManager,
-        undo_manager: UndoManager,
-        session_manager: SessionManager,
-        mcp_manager: Any,
-        runtime_suite: Any,
-        bash_tool: Any,
-        error_handler: Any,
-        agent: Any,
+        repl: "REPL",
     ):
-        """Initialize tool commands handler."""
+        """Initialize tool commands handler.
+
+        Args:
+            console: Rich console for output
+            repl: Reference to REPL for accessing current managers
+        """
         super().__init__(console)
-        self.config = config
-        self.config_manager = config_manager
-        self.mode_manager = mode_manager
-        self.approval_manager = approval_manager
-        self.undo_manager = undo_manager
-        self.session_manager = session_manager
-        self.mcp_manager = mcp_manager
-        self.runtime_suite = runtime_suite
-        self.bash_tool = bash_tool
-        self.error_handler = error_handler
-        self.agent = agent
+        self._repl = repl
+        # UI callback for TUI mode - set by runner
+        self.ui_callback: Optional[Any] = None
+
+    # Properties to access managers dynamically (avoids stale references)
+    @property
+    def config(self) -> Any:
+        return self._repl.config
+
+    @property
+    def mode_manager(self) -> Any:
+        return self._repl.mode_manager
+
+    @property
+    def approval_manager(self) -> Any:
+        return self._repl.approval_manager
+
+    @property
+    def undo_manager(self) -> Any:
+        return self._repl.undo_manager
+
+    @property
+    def session_manager(self) -> Any:
+        return self._repl.session_manager
+
+    @property
+    def agent(self) -> Any:
+        return self._repl.agent
 
     def handle(self, args: str) -> CommandResult:
         """Handle generic command - not used as this handler supports multiple commands."""
@@ -52,8 +64,8 @@ class ToolCommands(CommandHandler):
     def init_codebase(self, command: str) -> None:
         """Handle /init command to analyze codebase and generate OPENDEV.md.
 
-        Uses Code-Explorer subagent to thoroughly explore the codebase and
-        generate a comprehensive OPENDEV.md file.
+        Runs the main agent with an init system prompt that instructs it to use
+        spawn_subagent with Code-Explorer to explore the codebase, then write OPENDEV.md.
 
         Args:
             command: The full command string (e.g., "/init" or "/init /path/to/project")
@@ -76,54 +88,73 @@ class ToolCommands(CommandHandler):
             self.print_error(f"Path is not a directory: {target_path}")
             return
 
-        self.print_command_header("init")
-        self.console.print(f"[cyan]Analyzing codebase at {target_path}...[/cyan]")
-
-        # Load the init system prompt and substitute path
+        # Load init system prompt and substitute path
         try:
             task_prompt = load_prompt("init_system_prompt")
             task_prompt = task_prompt.replace("{path}", str(target_path))
         except Exception as e:
+            self.print_command_header("init")
             self.print_error(f"Failed to load init prompt: {e}")
             return
 
-        # Get subagent manager from runtime suite's agents
-        subagent_manager = getattr(
-            getattr(self.runtime_suite, "agents", None), "subagent_manager", None
-        )
-        if subagent_manager is None:
-            self.print_error("Subagent manager not available")
-            return
-
-        # Create dependencies for subagent execution
-        deps = SubAgentDeps(
+        # Create dependencies for agent execution
+        deps = AgentDependencies(
             mode_manager=self.mode_manager,
             approval_manager=self.approval_manager,
             undo_manager=self.undo_manager,
+            session_manager=self.session_manager,
+            working_dir=target_path,
+            console=self.console,
+            config=self.config,
         )
 
-        # Execute Init subagent with the init task
+        # Run main agent with the init prompt
+        # The agent will use spawn_subagent to call Code-Explorer
         try:
-            result = subagent_manager.execute_subagent(
-                name="Init",
-                task=task_prompt,
+            result = self.agent.run_sync(
+                message=task_prompt,
                 deps=deps,
-                ui_callback=None,  # No UI callback for CLI mode
-                working_dir=str(target_path),
+                ui_callback=self.ui_callback,
             )
 
-            if result.get("success"):
-                opendev_path = target_path / "OPENDEV.md"
-                if opendev_path.exists():
-                    self.print_success(f"Generated OPENDEV.md at {opendev_path}")
+            # Check if OPENDEV.md was created
+            opendev_path = target_path / "OPENDEV.md"
+
+            # Display final message if task succeeded
+            if result.get("success") and opendev_path.exists() and self.ui_callback:
+                final_content = result.get("content", "").strip()
+                if final_content:
+                    # Agent already provided a summary - display it
+                    self.ui_callback.on_assistant_message(final_content)
                 else:
+                    # No summary from agent - prompt LLM for one
+                    from swecli.core.agents.prompts import get_injection
+
+                    signal = get_injection("init_complete_signal", path=str(opendev_path))
+
+                    summary_result = self.agent.run_sync(
+                        message=signal,
+                        deps=deps,
+                        message_history=result.get("messages", []),
+                        max_iterations=1,
+                        ui_callback=self.ui_callback,
+                    )
+                    if summary_result.get("content"):
+                        self.ui_callback.on_assistant_message(summary_result["content"])
+
+            if not self.ui_callback:
+                # Only print result in non-TUI mode (TUI shows via callback)
+                self.print_command_header("init")
+                if result.get("success") and opendev_path.exists():
+                    self.print_success(f"Generated OPENDEV.md at {opendev_path}")
+                elif result.get("success"):
                     self.print_success("Analysis complete")
-                    if "content" in result:
-                        self.console.print(f"[dim]{result['content'][:500]}...[/dim]")
-            else:
-                self.print_error(result.get("error", "Unknown error"))
+                else:
+                    self.print_error(result.get("error", "Unknown error"))
 
         except Exception as e:
+            if not self.ui_callback:
+                self.print_command_header("init")
             self.print_error(f"Error during initialization: {e}")
             import traceback
             traceback.print_exc()

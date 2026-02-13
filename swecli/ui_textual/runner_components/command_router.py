@@ -73,6 +73,11 @@ class CommandRouter:
             self._handle_mcp_connect_command(command)
             return True
 
+        # /init command - needs ui_callback for proper display
+        if lowered.startswith("/init"):
+            self._handle_init_command(command)
+            return True
+
         return False
 
     def run_generic_command(self, command: str) -> None:
@@ -288,3 +293,37 @@ class CommandRouter:
 
         controller = MCPCommandController(self._app, self._repl)
         controller.handle_connect(command)
+
+    def _handle_init_command(self, command: str) -> None:
+        """Handle /init command with proper UI callback for collapsed agent display."""
+        if not self._app:
+            # Fallback to generic command if no app
+            self.run_generic_command(command)
+            return
+
+        # Create UI callback for proper spinner/collapsed agent display
+        from swecli.ui_textual.ui_callback import TextualUICallback
+
+        conversation_widget = getattr(self._app, "conversation", None)
+        if conversation_widget is None:
+            self.run_generic_command(command)
+            return
+
+        ui_callback = TextualUICallback(conversation_widget, self._app, self._working_dir)
+
+        # Set ui_callback on tool_commands so it uses proper display
+        if hasattr(self._repl, "tool_commands"):
+            self._repl.tool_commands.ui_callback = ui_callback
+
+        # Run the command (which will now use ui_callback)
+        try:
+            self._repl.tool_commands.init_codebase(command)
+        finally:
+            # Clear ui_callback after command completes
+            if hasattr(self._repl, "tool_commands"):
+                self._repl.tool_commands.ui_callback = None
+
+        # Refresh UI config after command
+        refresh_cb = self._callbacks.get("refresh_ui_config")
+        if refresh_cb:
+            refresh_cb()

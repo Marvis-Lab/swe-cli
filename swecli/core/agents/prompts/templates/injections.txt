@@ -59,3 +59,6 @@ You have {count} incomplete todo(s):
 {todo_list}
 
 Please complete these tasks or mark them done before finishing.
+
+--- init_complete_signal ---
+The OPENDEV.md file has been created at {path}. Provide a brief 1-sentence summary confirming what was generated.

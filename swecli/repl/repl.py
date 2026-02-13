@@ -263,8 +263,7 @@ class REPL:
 
         self.mode_commands = ModeCommands(
             self.console,
-            self.mode_manager,
-            self.approval_manager,
+            repl=self,
         )
 
         self.config_commands = ConfigCommands(
@@ -282,17 +281,7 @@ class REPL:
 
         self.tool_commands = ToolCommands(
             console=self.console,
-            config=self.config,
-            config_manager=self.config_manager,
-            mode_manager=self.mode_manager,
-            approval_manager=self.approval_manager,
-            undo_manager=self.undo_manager,
-            session_manager=self.session_manager,
-            mcp_manager=self.mcp_manager,
-            runtime_suite=self.runtime_suite,
-            bash_tool=self.bash_tool,
-            error_handler=self.error_handler,
-            agent=self.agent,
+            repl=self,
         )
 
         self.help_command = HelpCommand(
