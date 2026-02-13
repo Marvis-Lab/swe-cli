@@ -20,6 +20,10 @@ class ConfigUpdate(BaseModel):
     model_thinking: str | None = None
     model_vlm_provider: str | None = None
     model_vlm: str | None = None
+    model_critique_provider: str | None = None
+    model_critique: str | None = None
+    model_compact_provider: str | None = None
+    model_compact: str | None = None
     temperature: float | None = None
     max_tokens: int | None = None
     enable_bash: bool | None = None
@@ -62,6 +66,10 @@ async def get_config() -> Dict[str, Any]:
             "model_thinking": config.model_thinking,
             "model_vlm_provider": config.model_vlm_provider,
             "model_vlm": config.model_vlm,
+            "model_critique_provider": config.model_critique_provider,
+            "model_critique": config.model_critique,
+            "model_compact_provider": config.model_compact_provider,
+            "model_compact": config.model_compact,
             "api_key": masked_key,
             "temperature": config.temperature,
             "max_tokens": config.max_tokens,
@@ -107,6 +115,14 @@ async def update_config(update: ConfigUpdate) -> Dict[str, str]:
             config.model_vlm_provider = update.model_vlm_provider
         if update.model_vlm is not None:
             config.model_vlm = update.model_vlm
+        if update.model_critique_provider is not None:
+            config.model_critique_provider = update.model_critique_provider
+        if update.model_critique is not None:
+            config.model_critique = update.model_critique
+        if update.model_compact_provider is not None:
+            config.model_compact_provider = update.model_compact_provider
+        if update.model_compact is not None:
+            config.model_compact = update.model_compact
         if update.temperature is not None:
             config.temperature = update.temperature
         if update.max_tokens is not None:

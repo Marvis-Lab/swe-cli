@@ -21,6 +21,10 @@ interface Config {
   model_thinking?: string | null;
   model_vlm_provider?: string | null;
   model_vlm?: string | null;
+  model_critique_provider?: string | null;
+  model_critique?: string | null;
+  model_compact_provider?: string | null;
+  model_compact?: string | null;
   temperature: number;
   max_tokens: number;
 }
@@ -152,6 +156,14 @@ export function ModelSettings() {
   const [visionProvider, setVisionProvider] = useState<string>('');
   const [visionModel, setVisionModel] = useState<string>('');
 
+  // Critique model
+  const [critiqueProvider, setCritiqueProvider] = useState<string>('');
+  const [critiqueModel, setCritiqueModel] = useState<string>('');
+
+  // Compact model
+  const [compactProvider, setCompactProvider] = useState<string>('');
+  const [compactModel, setCompactModel] = useState<string>('');
+
   // Other settings
   const [temperature, setTemperature] = useState<number>(0.7);
   const [maxTokens, setMaxTokens] = useState<number>(4096);
@@ -183,6 +195,14 @@ export function ModelSettings() {
       setVisionProvider(configData.model_vlm_provider || '');
       setVisionModel(configData.model_vlm || '');
 
+      // Critique model
+      setCritiqueProvider(configData.model_critique_provider || '');
+      setCritiqueModel(configData.model_critique || '');
+
+      // Compact model
+      setCompactProvider(configData.model_compact_provider || '');
+      setCompactModel(configData.model_compact || '');
+
       // Other settings
       setTemperature(configData.temperature);
       setMaxTokens(configData.max_tokens);
@@ -205,6 +225,10 @@ export function ModelSettings() {
         model_thinking: thinkingModel || null,
         model_vlm_provider: visionProvider || null,
         model_vlm: visionModel || null,
+        model_critique_provider: critiqueProvider || null,
+        model_critique: critiqueModel || null,
+        model_compact_provider: compactProvider || null,
+        model_compact: compactModel || null,
         temperature,
         max_tokens: maxTokens,
       });
@@ -264,11 +288,12 @@ export function ModelSettings() {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
           <div className="flex-1">
-            <h4 className="text-sm font-semibold text-blue-900 mb-1">Three Model System</h4>
+            <h4 className="text-sm font-semibold text-blue-900 mb-1">Five Model System</h4>
             <p className="text-xs text-blue-700 leading-relaxed">
               Configure different models for different tasks: <strong>Normal</strong> for standard coding,
-              <strong> Thinking</strong> for complex reasoning (optional), and <strong>Vision</strong> for image
-              processing (optional). If optional models aren't set, the system falls back to the Normal model.
+              <strong> Thinking</strong> for complex reasoning, <strong>Critique</strong> for self-critique
+              of reasoning, <strong>Compact</strong> for context compaction summaries, and <strong>Vision</strong> for
+              image processing. Optional models fall back: Critique → Thinking → Normal, Compact → Normal, Vision → disabled.
             </p>
           </div>
         </div>
@@ -304,6 +329,42 @@ export function ModelSettings() {
         selectedModel={thinkingModel}
         onProviderChange={setThinkingProvider}
         onModelChange={setThinkingModel}
+        optional
+        notSetText="Use Normal Model"
+      />
+
+      {/* Critique Model */}
+      <ModelSlot
+        title="Critique Model"
+        description="For self-critique of reasoning outputs (falls back to Thinking, then Normal)"
+        icon={
+          <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+        }
+        providers={providers}
+        selectedProvider={critiqueProvider}
+        selectedModel={critiqueModel}
+        onProviderChange={setCritiqueProvider}
+        onModelChange={setCritiqueModel}
+        optional
+        notSetText="Use Thinking Model"
+      />
+
+      {/* Compact Model */}
+      <ModelSlot
+        title="Compact Model"
+        description="For context compaction summaries (falls back to Normal)"
+        icon={
+          <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+          </svg>
+        }
+        providers={providers}
+        selectedProvider={compactProvider}
+        selectedModel={compactModel}
+        onProviderChange={setCompactProvider}
+        onModelChange={setCompactModel}
         optional
         notSetText="Use Normal Model"
       />
