@@ -352,23 +352,32 @@ class SolidLanguageServer(ABC):
         """
         return self._ignore_spec
 
-    def is_ignored_path(self, relative_path: str, ignore_unsupported_files: bool = True) -> bool:
+    def is_ignored_path(
+        self,
+        relative_path: str,
+        ignore_unsupported_files: bool = True,
+        is_file: bool | None = None,
+        is_dir: bool | None = None,
+    ) -> bool:
         """
         Determine if a path should be ignored based on file type
         and ignore patterns.
 
         :param relative_path: Relative path to check
         :param ignore_unsupported_files: whether files that are not supported source files should be ignored
+        :param is_file: whether the path is a file (optimization to avoid disk check)
+        :param is_dir: whether the path is a directory (optimization to avoid disk check)
 
         :return: True if the path should be ignored, False otherwise
         """
         abs_path = os.path.join(self.repository_root_path, relative_path)
-        if not os.path.exists(abs_path):
-            raise FileNotFoundError(f"File {abs_path} not found, the ignore check cannot be performed")
+        if is_file is None and is_dir is None:
+            if not os.path.exists(abs_path):
+                raise FileNotFoundError(f"File {abs_path} not found, the ignore check cannot be performed")
 
         # Check file extension if it's a file
-        is_file = os.path.isfile(abs_path)
-        if is_file and ignore_unsupported_files:
+        is_file_local = is_file if is_file is not None else os.path.isfile(abs_path)
+        if is_file_local and ignore_unsupported_files:
             fn_matcher = self.language.get_source_fn_matcher()
             if not fn_matcher.is_relevant_filename(abs_path):
                 return True
@@ -378,7 +387,7 @@ class SolidLanguageServer(ABC):
 
         # Check each part of the path against always fulfilled ignore conditions
         dir_parts = rel_path.parts
-        if is_file:
+        if is_file_local:
             dir_parts = dir_parts[:-1]
         for part in dir_parts:
             if not part:  # Skip empty parts (e.g., from leading '/')
@@ -386,7 +395,7 @@ class SolidLanguageServer(ABC):
             if self.is_ignored_dirname(part):
                 return True
 
-        return match_path(relative_path, self.get_ignore_spec(), root_path=self.repository_root_path)
+        return match_path(relative_path, self.get_ignore_spec(), root_path=self.repository_root_path, is_dir=is_dir)
 
     def _shutdown(self, timeout: float = 5.0) -> None:
         """
@@ -1106,8 +1115,11 @@ class SolidLanguageServer(ABC):
             if not os.path.exists(within_abs_path):
                 raise FileNotFoundError(f"File or directory not found: {within_abs_path}")
             if os.path.isfile(within_abs_path):
-                if self.is_ignored_path(within_relative_path):
-                    log.error("You passed a file explicitly, but it is ignored. This is probably an error. File: %s", within_relative_path)
+                if self.is_ignored_path(within_relative_path, is_file=True):
+                    log.error(
+                        "You passed a file explicitly, but it is ignored. This is probably an error. File: %s",
+                        within_relative_path,
+                    )
                     return []
                 else:
                     root_nodes = self.request_document_symbols(within_relative_path).root_symbols
@@ -1118,64 +1130,70 @@ class SolidLanguageServer(ABC):
             abs_dir_path = self.repository_root_path if rel_dir_path == "." else os.path.join(self.repository_root_path, rel_dir_path)
             abs_dir_path = os.path.realpath(abs_dir_path)
 
-            if self.is_ignored_path(str(Path(abs_dir_path).relative_to(self.repository_root_path))):
+            if self.is_ignored_path(str(Path(abs_dir_path).relative_to(self.repository_root_path)), is_dir=True):
                 log.debug("Skipping directory: %s (because it should be ignored)", rel_dir_path)
                 return []
 
             result = []
             try:
-                contained_dir_or_file_names = os.listdir(abs_dir_path)
+                # Use os.scandir for better performance (avoids redundant stat calls)
+                scandir_iter = os.scandir(abs_dir_path)
             except OSError:
                 return []
 
-            # Create package symbol for directory
-            package_symbol = ls_types.UnifiedSymbolInformation(  # type: ignore
-                name=os.path.basename(abs_dir_path),
-                kind=ls_types.SymbolKind.Package,
-                location=ls_types.Location(
-                    uri=str(pathlib.Path(abs_dir_path).as_uri()),
-                    range={"start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 0}},
-                    absolutePath=str(abs_dir_path),
-                    relativePath=str(Path(abs_dir_path).resolve().relative_to(self.repository_root_path)),
-                ),
-                children=[],
-            )
-            result.append(package_symbol)
+            with scandir_iter as entries:
+                # Create package symbol for directory
+                package_symbol = ls_types.UnifiedSymbolInformation(  # type: ignore
+                    name=os.path.basename(abs_dir_path),
+                    kind=ls_types.SymbolKind.Package,
+                    location=ls_types.Location(
+                        uri=str(pathlib.Path(abs_dir_path).as_uri()),
+                        range={"start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 0}},
+                        absolutePath=str(abs_dir_path),
+                        relativePath=str(Path(abs_dir_path).resolve().relative_to(self.repository_root_path)),
+                    ),
+                    children=[],
+                )
+                result.append(package_symbol)
 
-            for contained_dir_or_file_name in contained_dir_or_file_names:
-                contained_dir_or_file_abs_path = os.path.join(abs_dir_path, contained_dir_or_file_name)
+                for entry in entries:
+                    contained_dir_or_file_name = entry.name
+                    contained_dir_or_file_abs_path = entry.path
 
-                # obtain relative path
-                try:
-                    contained_dir_or_file_rel_path = str(
-                        Path(contained_dir_or_file_abs_path).resolve().relative_to(self.repository_root_path)
-                    )
-                except ValueError as e:
-                    # Typically happens when the path is not under the repository root (e.g., symlink pointing outside)
-                    log.warning(
-                        "Skipping path %s; likely outside of the repository root %s [cause: %s]",
-                        contained_dir_or_file_abs_path,
-                        self.repository_root_path,
-                        e,
-                    )
-                    continue
+                    # obtain relative path
+                    try:
+                        contained_dir_or_file_rel_path = str(
+                            Path(contained_dir_or_file_abs_path).resolve().relative_to(self.repository_root_path)
+                        )
+                    except ValueError as e:
+                        # Typically happens when the path is not under the repository root (e.g., symlink pointing outside)
+                        log.warning(
+                            "Skipping path %s; likely outside of the repository root %s [cause: %s]",
+                            contained_dir_or_file_abs_path,
+                            self.repository_root_path,
+                            e,
+                        )
+                        continue
 
-                if self.is_ignored_path(contained_dir_or_file_rel_path):
-                    log.debug("Skipping item: %s (because it should be ignored)", contained_dir_or_file_rel_path)
-                    continue
+                    is_file = entry.is_file(follow_symlinks=True)
+                    is_dir = entry.is_dir(follow_symlinks=True)
 
-                if os.path.isdir(contained_dir_or_file_abs_path):
-                    child_symbols = process_directory(contained_dir_or_file_rel_path)
-                    package_symbol["children"].extend(child_symbols)
-                    for child in child_symbols:
-                        child["parent"] = package_symbol
+                    if self.is_ignored_path(contained_dir_or_file_rel_path, is_file=is_file, is_dir=is_dir):
+                        log.debug("Skipping item: %s (because it should be ignored)", contained_dir_or_file_rel_path)
+                        continue
 
-                elif os.path.isfile(contained_dir_or_file_abs_path):
-                    with self._open_file_context(contained_dir_or_file_rel_path) as file_data:
-                        document_symbols = self.request_document_symbols(contained_dir_or_file_rel_path, file_data)
-                        file_root_nodes = document_symbols.root_symbols
+                    if is_dir:
+                        child_symbols = process_directory(contained_dir_or_file_rel_path)
+                        package_symbol["children"].extend(child_symbols)
+                        for child in child_symbols:
+                            child["parent"] = package_symbol
 
-                        # Create file symbol, link with children
+                    elif is_file:
+                        with self._open_file_context(contained_dir_or_file_rel_path) as file_data:
+                            document_symbols = self.request_document_symbols(contained_dir_or_file_rel_path, file_data)
+                            file_root_nodes = document_symbols.root_symbols
+
+                            # Create file symbol, link with children
                         file_range = self._get_range_from_file_content(file_data.contents)
                         file_symbol = ls_types.UnifiedSymbolInformation(  # type: ignore
                             name=os.path.splitext(contained_dir_or_file_name)[0],
