@@ -12,7 +12,7 @@ if __name__ == "__main__":
     print("✅ Configuration Status:")
 
     # Check API key
-    config_file = os.path.expanduser("~/.swecli/settings.json")
+    config_file = os.path.expanduser("~/.opendev/settings.json")
     if os.path.exists(config_file):
         print(f"   Config file: {config_file} (found)")
         import json

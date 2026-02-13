@@ -115,6 +115,8 @@ class ConfigManager:
             "model_vlm",
             "model_critique_provider",
             "model_critique",
+            "model_compact_provider",
+            "model_compact",
             "api_base_url",
             "debug_logging",
         }
@@ -129,11 +131,11 @@ class ConfigManager:
         config = self.get_config()
 
         # Expand paths
-        swecli_dir = Path(config.swecli_dir).expanduser()
+        opendev_dir = Path(config.opendev_dir).expanduser()
         log_dir = Path(config.log_dir).expanduser()
 
         # Create directories
-        swecli_dir.mkdir(parents=True, exist_ok=True)
+        opendev_dir.mkdir(parents=True, exist_ok=True)
         log_dir.mkdir(parents=True, exist_ok=True)
 
         # Create projects directory for project-scoped sessions
@@ -238,6 +240,7 @@ class ConfigManager:
         2. User global skills (~/.opendev/skills/)
         3. Project bundle skills (.opendev/plugins/bundles/*/skills/)
         4. User bundle skills (~/.opendev/plugins/bundles/*/skills/)
+        5. Built-in skills (shipped with package)
 
         Returns:
             List of existing skill directories, highest priority first
@@ -251,6 +254,10 @@ class ConfigManager:
             dirs.append(self.user_skills_dir)
         # Bundle skills (from enabled bundles)
         dirs.extend(self._get_bundle_skill_dirs())
+        # Built-in skills (lowest priority)
+        builtin_dir = get_paths(self.working_dir).builtin_skills_dir
+        if builtin_dir.exists():
+            dirs.append(builtin_dir)
         return dirs
 
     def _get_bundle_skill_dirs(self) -> list[Path]:

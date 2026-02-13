@@ -121,6 +121,10 @@ class AppConfig(BaseModel):
     model_critique: Optional[str] = None
     model_critique_provider: Optional[str] = None
 
+    # Compact model: For context compaction summaries (optional, falls back to normal if not set)
+    model_compact: Optional[str] = None
+    model_compact_provider: Optional[str] = None
+
     api_key: Optional[str] = None
     api_base_url: Optional[str] = None
     max_tokens: int = 16384
@@ -153,7 +157,7 @@ class AppConfig(BaseModel):
     playbook: PlaybookConfig = Field(default_factory=PlaybookConfig)
 
     # Paths - using APP_DIR_NAME constant for consistency
-    swecli_dir: str = f"~/{APP_DIR_NAME}"
+    opendev_dir: str = f"~/{APP_DIR_NAME}"
     session_dir: str = f"~/{APP_DIR_NAME}/sessions"
     log_dir: str = f"~/{APP_DIR_NAME}/logs"
     command_dir: str = f"{APP_DIR_NAME}/commands"
@@ -279,6 +283,26 @@ class AppConfig(BaseModel):
         # Fallback to thinking model if configured
         if self.model_thinking and self.model_thinking_provider:
             result = registry.find_model_by_id(self.model_thinking)
+            if result:
+                return result
+
+        # Fallback to normal model
+        result = registry.find_model_by_id(self.model)
+        return result
+
+    def get_compact_model_info(self):
+        """Get compact model information, fallback to normal model if not set.
+
+        Returns:
+            Tuple of (provider_id, model_id, ModelInfo) or None
+        """
+        from swecli.config import get_model_registry
+
+        registry = get_model_registry()
+
+        # Use compact model if configured
+        if self.model_compact and self.model_compact_provider:
+            result = registry.find_model_by_id(self.model_compact)
             if result:
                 return result
 

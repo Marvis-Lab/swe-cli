@@ -18,7 +18,7 @@ class DummyConfigManager(ConfigManager):
     def load_config(self) -> AppConfig:
         config = AppConfig()
         base = Path(self.working_dir) / ".swecli-test"
-        config.swecli_dir = str(base)
+        config.opendev_dir = str(base)
         config.session_dir = str(base / "sessions")
         config.log_dir = str(base / "logs")
         config.command_dir = ".swecli-test/commands"
@@ -30,7 +30,7 @@ class DummyConfigManager(ConfigManager):
 
     def ensure_directories(self) -> None:
         config = self.get_config()
-        Path(config.swecli_dir).mkdir(parents=True, exist_ok=True)
+        Path(config.opendev_dir).mkdir(parents=True, exist_ok=True)
         Path(config.session_dir).mkdir(parents=True, exist_ok=True)
         Path(config.log_dir).mkdir(parents=True, exist_ok=True)
 

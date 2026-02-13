@@ -4,8 +4,8 @@
 
 Both the Web UI and Terminal CLI use **the same configuration files** as the single source of truth:
 
-- `~/.swecli/settings.json` (global settings)
-- `.swecli/config.json` (project-specific settings)
+- `~/.opendev/settings.json` (global settings)
+- `.opendev/settings.json` (project-specific settings)
 
 This ensures automatic synchronization without needing special sync logic.
 

@@ -85,7 +85,7 @@ Tool Layer (core/context_engineering/tools/)
   - implementations/: Bash, file ops, web tools, symbol tools
        ↓
 Persistence (core/context_engineering/history/)
-  - session_manager.py: Conversation persistence (~/.swecli/sessions/)
+  - session_manager.py: Conversation persistence (~/.opendev/sessions/)
 ```
 
 ## Key Patterns
@@ -98,9 +98,9 @@ Persistence (core/context_engineering/history/)
 
 **Tool Registry** (`registry.py`): Tools register with schemas; registry dispatches to specialized handlers. MCP tools integrate dynamically.
 
-**Hierarchical Config**: Priority: `.swecli/settings.json` (project) > `~/.swecli/settings.json` (user) > env vars > defaults.
+**Hierarchical Config**: Priority: `.opendev/settings.json` (project) > `~/.opendev/settings.json` (user) > env vars > defaults.
 
-**Session Storage**: JSON files in `~/.swecli/sessions/` with 8-character session IDs. Sessions auto-save on message add.
+**Session Storage**: JSON files in `~/.opendev/sessions/` with 8-character session IDs. Sessions auto-save on message add.
 
 ## Code Style
 
