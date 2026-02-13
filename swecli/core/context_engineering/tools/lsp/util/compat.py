@@ -193,13 +193,14 @@ class MatchedConsecutiveLines:
 # ============================================================================
 
 
-def match_path(relative_path: str, path_spec: PathSpec, root_path: str = "") -> bool:
+def match_path(relative_path: str, path_spec: PathSpec, root_path: str = "", is_dir: bool | None = None) -> bool:
     """
     Match a relative path against a given pathspec.
 
     :param relative_path: relative path to match against the pathspec
     :param path_spec: the pathspec to match against
     :param root_path: the root path from which the relative path is derived
+    :param is_dir: whether the path is a directory. If None, it will be checked on disk.
     :return: True if the path matches
     """
     normalized_path = str(relative_path).replace(os.path.sep, "/")
@@ -209,8 +210,11 @@ def match_path(relative_path: str, path_spec: PathSpec, root_path: str = "") -> 
         normalized_path = "/" + normalized_path
 
     # pathspec can't handle directory matching without trailing slash
-    abs_path = os.path.abspath(os.path.join(root_path, relative_path))
-    if os.path.isdir(abs_path) and not normalized_path.endswith("/"):
+    if is_dir is None:
+        abs_path = os.path.abspath(os.path.join(root_path, relative_path))
+        is_dir = os.path.isdir(abs_path)
+
+    if is_dir and not normalized_path.endswith("/"):
         normalized_path = normalized_path + "/"
 
     return path_spec.match_file(normalized_path)
