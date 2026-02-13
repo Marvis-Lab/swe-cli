@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import json
-import subprocess
+import os
 from pathlib import Path
 from typing import Dict, List, Optional
 
+from swecli.core.constants import IGNORED_DIRS
 from .token_monitor import ContextTokenMonitor
 
 
@@ -38,16 +39,11 @@ class CodebaseIndexer:
     def _generate_overview(self) -> str:
         lines = ["## Overview\n"]
         try:
-            result = subprocess.run(
-                ["find", ".", "-type", "f"],
-                capture_output=True,
-                text=True,
-                cwd=self.working_dir,
-                timeout=5,
-            )
-            if result.returncode == 0:
-                file_count = len(result.stdout.strip().split("\n"))
-                lines.append(f"**Total Files:** {file_count}")
+            file_count = 0
+            for _, dirs, files in os.walk(self.working_dir):
+                dirs[:] = [d for d in dirs if d not in IGNORED_DIRS]
+                file_count += len(files)
+            lines.append(f"**Total Files:** {file_count}")
         except Exception:
             pass
 
@@ -66,29 +62,50 @@ class CodebaseIndexer:
 
     def _generate_structure(self) -> str:
         lines = ["## Structure\n", "```"]
+
+        def add_to_tree(dir_path: Path, prefix: str = "", level: int = 0) -> None:
+            if level > 2:
+                return
+
+            try:
+                # Get all items, sorted
+                items = sorted(dir_path.iterdir(), key=lambda x: (x.is_file(), x.name))
+                filtered_items = [
+                    i
+                    for i in items
+                    if i.name not in IGNORED_DIRS and not i.name.startswith(".")
+                ]
+
+                # Limit number of items per level to avoid huge output
+                if len(filtered_items) > 50:
+                    filtered_items = filtered_items[:50]
+                    has_more = True
+                else:
+                    has_more = False
+
+                for i, item in enumerate(filtered_items):
+                    is_last = (i == len(filtered_items) - 1) and not has_more
+                    connector = "└── " if is_last else "├── "
+
+                    lines.append(f"{prefix}{connector}{item.name}")
+
+                    if item.is_dir() and level < 2:
+                        extension = "    " if is_last else "│   "
+                        add_to_tree(item, prefix + extension, level + 1)
+
+                if has_more:
+                    connector = "└── "  # approximate
+                    lines.append(f"{prefix}{connector}... (more)")
+
+            except PermissionError:
+                pass
+
         try:
-            result = subprocess.run(
-                [
-                    "tree",
-                    "-L",
-                    "2",
-                    "-I",
-                    "node_modules|__pycache__|.git|venv|build|dist",
-                ],
-                capture_output=True,
-                text=True,
-                cwd=self.working_dir,
-                timeout=5,
-            )
-            if result.returncode == 0:
-                tree_output = result.stdout.strip()
-                if len(tree_output) > 1500:
-                    tree_output = "\n".join(tree_output.split("\n")[:30]) + "\n... (truncated)"
-                lines.append(tree_output)
-            else:
-                lines.append(self._basic_structure())
-        except FileNotFoundError:
-            lines.append(self._basic_structure())
+            add_to_tree(self.working_dir)
+            content = "\n".join(lines)
+            if len(content) > 1500:
+                content = "\n".join(content.split("\n")[:30]) + "\n... (truncated)"
+            return content
         except Exception:
             lines.append("(Unable to generate structure)")
 
@@ -186,27 +203,32 @@ class CodebaseIndexer:
 
     def _find_files(self, patterns: List[str]) -> List[Path]:
         matches: List[Path] = []
-        for pattern in patterns:
-            matches.extend(self.working_dir.glob(f"**/{pattern}"))
+        try:
+            for root, dirs, files in os.walk(self.working_dir):
+                dirs[:] = [d for d in dirs if d not in IGNORED_DIRS]
+
+                for name in files + dirs:
+                    path = Path(root) / name
+                    try:
+                        rel_path = path.relative_to(self.working_dir)
+                        for pattern in patterns:
+                            # Use path matching to support folder patterns and recursive globs
+                            # Try both direct match (e.g. "src/*.py" matches "src/main.py")
+                            # and recursive match (e.g. "*.py" matches "src/main.py" via "**/*.py")
+                            if rel_path.match(pattern) or rel_path.match(f"**/{pattern}"):
+                                matches.append(path)
+                                break
+                    except ValueError:
+                        continue
+        except Exception:
+            pass
         return matches
 
     def _basic_structure(self) -> str:
-        try:
-            result = subprocess.run(
-                ["ls", "-R"],
-                capture_output=True,
-                text=True,
-                cwd=self.working_dir,
-                timeout=5,
-            )
-            if result.returncode == 0:
-                output = result.stdout.strip()
-                if len(output) > 1200:
-                    output = "\n".join(output.split("\n")[:40]) + "\n... (truncated)"
-                return output
-        except Exception:
-            pass
-        return "(Unable to generate structure)"
+        # Fallback now uses the same logic as _generate_structure or a simplified list
+        # Since _generate_structure is pure python now, it shouldn't fail due to missing tools.
+        # We can reuse it or do a simple walk.
+        return self._generate_structure()
 
     def _compress_content(self, content: str, max_tokens: int) -> str:
         paragraphs = content.split("\n\n")

@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import os
 import re
+import subprocess
 
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+from swecli.core.constants import IGNORED_DIRS
 
 
 class EntityExtractor:
@@ -143,12 +147,15 @@ class ContextRetriever:
         if path.exists():
             return path
 
-        # Use native python traversal instead of subprocess find
+        # Use native python traversal with pruning instead of rglob
         target_name = Path(file_path).name
         try:
-            for item in self.working_dir.rglob(target_name):
-                if item.is_file():
-                    return item
+            for root, dirs, files in os.walk(self.working_dir):
+                # Prune ignored directories
+                dirs[:] = [d for d in dirs if d not in IGNORED_DIRS]
+
+                if target_name in files:
+                    return Path(root) / target_name
         except Exception:
             pass
 
