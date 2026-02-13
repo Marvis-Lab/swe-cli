@@ -1,0 +1,110 @@
+\section{Tool System}
+\label{sec:tool_system}
+
+The tool system provides the agent with a comprehensive set of capabilities for interacting with the development environment. This section describes the tool registry architecture, the full tool catalog, MCP and LSP integrations, safety mechanisms, and batch execution.
+
+\subsection{Tool Registry}
+\label{sec:tool_registry}
+
+The \texttt{ToolRegistry} (\texttt{core/context\_engineering/tools/registry.py}) implements a dispatch pattern that routes tool calls to specialized handlers. Each handler registers its supported tool names and schemas; the registry aggregates these into a unified interface presented to the LLM.
+
+The registry performs several responsibilities:
+\begin{packeditemize}
+\item \textbf{Schema aggregation:} Collects tool schemas from all handlers and presents them to the agent.
+\item \textbf{Dispatch:} Routes incoming tool calls to the appropriate handler based on tool name.
+\item \textbf{Context injection:} Wraps each call with a \texttt{ToolExecutionContext} containing the mode manager, approval manager, undo manager, and task monitor.
+\item \textbf{Plan mode blocking:} Checks whether the current mode allows the requested tool. Tools not in the \texttt{PLAN\_READ\_ONLY\_TOOLS} set are blocked in Plan mode with an informative error.
+\end{packeditemize}
+
+\subsection{Tool Catalog}
+\label{sec:tool_catalog}
+
+\Cref{tab:tools} summarizes the tool categories and their constituent tools.
+
+\begin{table}[t]
+\centering
+\caption{Tool categories in \name with representative tools and their handlers.}
+\label{tab:tools}
+\small
+\begin{tabular}{@{}llp{4.5cm}@{}}
+\toprule
+\textbf{Category} & \textbf{Handler} & \textbf{Tools} \\
+\midrule
+File Operations & \texttt{FileToolHandler} & \texttt{read\_file}, \texttt{write\_file}, \texttt{edit\_file}, \texttt{list\_files}, \texttt{search} \\
+\addlinespace
+Process Mgmt & \texttt{ProcessToolHandler} & \texttt{run\_command}, \texttt{list\_processes}, \texttt{get\_process\_output}, \texttt{kill\_process} \\
+\addlinespace
+Web Fetch & \texttt{WebToolHandler} & \texttt{fetch\_url} \\
+\addlinespace
+Web Search & \texttt{WebSearchHandler} & \texttt{web\_search} \\
+\addlinespace
+Notebooks & \texttt{NotebookEditHandler} & \texttt{notebook\_edit} \\
+\addlinespace
+User Input & \texttt{AskUserHandler} & \texttt{ask\_user} \\
+\addlinespace
+MCP Tools & \texttt{McpToolHandler} & Dynamic (discovered at runtime) \\
+\addlinespace
+Screenshots & \texttt{ScreenshotToolHandler} & \texttt{capture\_screenshot}, \texttt{capture\_web\_screenshot} \\
+\addlinespace
+Task Mgmt & \texttt{TodoHandler} & \texttt{write\_todos}, \texttt{update\_todo}, \texttt{complete\_todo}, \texttt{list\_todos} \\
+\addlinespace
+Thinking & \texttt{ThinkingHandler} & \texttt{think} (visibility control) \\
+\addlinespace
+Discovery & \texttt{SearchToolsHandler} & \texttt{search\_tools} \\
+\addlinespace
+Batch & \texttt{BatchToolHandler} & \texttt{batch\_tool} (parallel/serial) \\
+\addlinespace
+PDF & \texttt{PDFTool} & \texttt{read\_pdf} \\
+\addlinespace
+Completion & \texttt{TaskCompleteTool} & \texttt{task\_complete} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Model Context Protocol (MCP) Integration}
+\label{sec:mcp}
+
+\name integrates the Model Context Protocol~\cite{anthropic2024mcp} for extensible tool discovery. MCP servers expose additional tools that can be dynamically loaded into the agent's tool set. The integration includes:
+
+\begin{packeditemize}
+\item \textbf{Server management:} Users add, enable, and disable MCP servers via CLI commands (\texttt{swecli mcp add/enable/disable}).
+\item \textbf{Token-efficient lazy discovery:} Rather than including all MCP tool schemas in every LLM call (which can consume significant context), \name maintains a \texttt{discovered\_mcp\_tools} set. Only tools that have been explicitly searched for or previously used are included in the schema payload. The \texttt{search\_tools} tool allows the agent to discover relevant MCP tools by keyword.
+\item \textbf{Dynamic dispatch:} The \texttt{McpToolHandler} forwards tool calls to the appropriate MCP server, handling serialization and error propagation.
+\end{packeditemize}
+
+\subsection{Language Server Protocol (LSP) Integration}
+\label{sec:lsp}
+
+\name leverages the Language Server Protocol~\cite{microsoft2016lsp} for semantic code operations. The symbol tools (\texttt{find\_symbol}, \texttt{find\_referencing\_symbols}) communicate with language servers to provide:
+
+\begin{packeditemize}
+\item Symbol definition lookup across the project
+\item Reference finding (all usages of a symbol)
+\item Type information and hover documentation
+\end{packeditemize}
+
+The system supports 20+ programming languages through their respective language servers, including Python (Pyright/Pylsp), TypeScript (tsserver), Rust (rust-analyzer), Go (gopls), Java (Eclipse JDT), C/C++ (clangd), and many others. Language servers are managed as background processes and communicate via JSON-RPC.
+
+\subsection{Safety Mechanisms}
+\label{sec:safety}
+
+The tool system implements multiple safety layers:
+
+\begin{packeditemize}
+\item \textbf{Dangerous command blocking:} The \texttt{BashTool} maintains a blocklist of dangerous commands (\eg \texttt{rm -rf /}, \texttt{mkfs}, \texttt{dd if=/dev/zero}) and rejects them outright.
+\item \textbf{Approval workflows:} The \texttt{ApprovalManager} (\texttt{core/runtime/approval/manager.py}) gates operations classified as potentially destructive. When triggered, the system presents an approval dialog to the user through the active UI interface.
+\item \textbf{Plan mode restrictions:} In Plan mode, the tool registry blocks all write operations, ensuring the planning agent cannot modify the codebase.
+\item \textbf{Undo tracking:} The \texttt{UndoManager} records file operations (create, modify, delete) with before/after state, enabling rollback of recent changes. The history is persisted to a JSONL log and capped at 50 operations.
+\end{packeditemize}
+
+\subsection{Batch Tool Execution}
+\label{sec:batch}
+
+The \texttt{BatchToolHandler} enables the agent to invoke multiple tools in a single turn, reducing round-trip overhead. It supports two execution modes:
+
+\begin{packeditemize}
+\item \textbf{Parallel:} Independent tool calls execute concurrently via thread pool.
+\item \textbf{Serial:} Dependent tool calls execute sequentially, with each result available to subsequent calls.
+\end{packeditemize}
+
+This is particularly useful for operations like reading multiple files simultaneously or running search queries in parallel.

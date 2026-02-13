@@ -52,8 +52,6 @@ _TOOL_DISPLAY_NAMES = {
     "task_complete": "Task Complete",
     "search_tools": "Search Tools",
     "invoke_skill": "Invoke Skill",
-    "configure_mcp_server": "Configure MCP Server",
-    "list_mcp_presets": "List MCP Presets",
     "get_subagent_output": "Get Subagent Output",
     "spawn_subagent": "Spawn Subagent",
 }
@@ -82,8 +80,6 @@ def get_available_tools(
     # Tools to exclude from selection (MCP tools that are for discovery only)
     excluded_tools = {
         "search_tools",  # For discovering MCP tools
-        "configure_mcp_server",  # MCP configuration
-        "list_mcp_presets",  # MCP presets listing
     } if exclude_mcp_tools else set()
 
     for schema in tool_schemas:

@@ -17,7 +17,6 @@ from swecli.core.context_engineering.tools.handlers.notebook_edit_handler import
 from swecli.core.context_engineering.tools.handlers.ask_user_handler import AskUserHandler
 from swecli.core.context_engineering.tools.handlers.screenshot_handler import ScreenshotToolHandler
 from swecli.core.context_engineering.tools.handlers.todo_handler import TodoHandler
-from swecli.core.context_engineering.tools.handlers.mcp_config_handler import MCPConfigHandler
 from swecli.core.context_engineering.tools.handlers.thinking_handler import ThinkingHandler
 from swecli.core.context_engineering.tools.handlers.search_tools_handler import SearchToolsHandler
 from swecli.core.context_engineering.tools.handlers.batch_handler import BatchToolHandler
@@ -102,7 +101,6 @@ class ToolRegistry:
         self._notebook_edit_handler = NotebookEditHandler(notebook_edit_tool)
         self._ask_user_handler = AskUserHandler(ask_user_tool)
         self._mcp_handler = McpToolHandler(mcp_manager)
-        self._mcp_config_handler = MCPConfigHandler(mcp_manager)
         self._screenshot_handler = ScreenshotToolHandler()
         self.todo_handler = TodoHandler()
         self.thinking_handler = ThinkingHandler()
@@ -110,6 +108,7 @@ class ToolRegistry:
         self._task_complete_tool = TaskCompleteTool()
         self._subagent_manager: Union[Any, None] = None
         self._skill_loader: Union["SkillLoader", None] = None
+        self._invoked_skills: set[str] = set()  # Track skills already loaded in this session
 
         # Token-efficient MCP tool discovery
         # Only tools in this set will have their schemas included in LLM context
@@ -157,9 +156,6 @@ class ToolRegistry:
             "get_subagent_output": self._get_subagent_output,
             # PDF extraction tool
             "read_pdf": self._read_pdf,
-            # MCP configuration tools
-            "configure_mcp_server": self._mcp_config_handler.configure_mcp_server,
-            "list_mcp_presets": self._mcp_config_handler.list_mcp_presets,
             # MCP tool discovery (token-efficient)
             "search_tools": self._search_tools_handler.search_tools,
             # Task completion tool
@@ -466,7 +462,6 @@ class ToolRegistry:
         """Update the MCP manager and refresh the handlers."""
         self.mcp_manager = mcp_manager
         self._mcp_handler = McpToolHandler(mcp_manager)
-        self._mcp_config_handler.set_mcp_manager(mcp_manager)
         self._search_tools_handler.set_mcp_manager(mcp_manager)
 
     def _open_browser(self, arguments: dict[str, Any]) -> dict[str, Any]:
@@ -693,6 +688,20 @@ class ToolRegistry:
                 "output": None,
             }
 
+        # Dedup: if already invoked this session, return a short reminder
+        if skill_name in self._invoked_skills:
+            return {
+                "success": True,
+                "output": (
+                    f"Skill '{skill.metadata.name}' is already loaded in this conversation. "
+                    "Refer to the skill content above and proceed with the next action step — "
+                    "do not invoke this skill again."
+                ),
+                "skill_name": skill.metadata.name,
+                "skill_namespace": skill.metadata.namespace,
+            }
+
+        self._invoked_skills.add(skill_name)
         return {
             "success": True,
             "output": f"Loaded skill: {skill.metadata.name}\n\n{skill.content}",

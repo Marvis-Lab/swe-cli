@@ -48,8 +48,6 @@ _TOOL_DISPLAY_PARTS: dict[str, tuple[str, str]] = {
     "ask_user": ("Ask", "user"),
     "web_search": ("Search", "web"),
     "get_subagent_output": ("Get Output", "subagent"),
-    "configure_mcp_server": ("Configure", "MCP server"),
-    "list_mcp_presets": ("List MCPs", "MCP presets"),
     "task_complete": ("Complete", "task"),
     "invoke_skill": ("Skill", "skill"),
 }

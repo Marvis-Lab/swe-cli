@@ -124,10 +124,6 @@ When processing file paths without explicit directories (like `app.py` or `READM
 
         lines.append("\nUse `search_tools` to discover and enable MCP tools.\n")
 
-        # Add configuration guidance
-        lines.append("\n### MCP Server Configuration\n")
-        lines.append("- `configure_mcp_server` - Add new server from preset\n")
-        lines.append("- `list_mcp_presets` - Show available presets\n")
 
         return "".join(lines)
 
@@ -135,12 +131,13 @@ When processing file paths without explicit directories (like `app.py` or `READM
         """Render the MCP configuration section when no servers are connected."""
         lines = [
             "\n## MCP Server Configuration\n",
-            "You can help users set up MCP (Model Context Protocol) servers for external integrations.\n\n",
-            "Available tools:\n",
-            "- `configure_mcp_server` - Configure a server from preset (github, postgres, slack, etc.)\n",
-            "- `list_mcp_presets` - Show available server presets\n\n",
-            "When users ask about setting up GitHub, database, Slack, or other integrations, ",
-            "use these tools to configure the appropriate MCP server.\n",
+            "You can help users set up MCP (Model Context Protocol) servers "
+            "for external integrations.\n\n",
+            "When users ask about setting up an MCP server:\n",
+            "1. Use `web_search` to find the MCP server package and docs\n",
+            "2. Use `fetch_url` to read the server's README/documentation\n",
+            "3. Read `~/.opendev/mcp.json` and add the server configuration\n",
+            "4. Tell the user to connect with `/mcp connect <name>`\n",
         ]
         return "".join(lines)
 

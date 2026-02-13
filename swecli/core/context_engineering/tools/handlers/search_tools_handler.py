@@ -205,7 +205,7 @@ class SearchToolsHandler:
         if not all_tools:
             return {
                 "success": True,
-                "output": "No MCP tools available. Connect to MCP servers first using configure_mcp_server().",
+                "output": "No MCP tools available. Connect to MCP servers first using /mcp connect <name>.",
                 "tools": [],
                 "count": 0,
             }

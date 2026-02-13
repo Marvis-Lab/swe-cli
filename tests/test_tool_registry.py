@@ -18,7 +18,6 @@ def mock_dependencies():
         'swecli.core.context_engineering.tools.handlers.web_handlers': MagicMock(),
         'swecli.core.context_engineering.tools.handlers.screenshot_handler': MagicMock(),
         'swecli.core.context_engineering.tools.handlers.todo_handler': MagicMock(),
-        'swecli.core.context_engineering.tools.handlers.mcp_config_handler': MagicMock(),
         'swecli.core.context_engineering.tools.implementations.pdf_tool': MagicMock(),
         'swecli.core.context_engineering.tools.symbol_tools': MagicMock(),
         'swecli.core.agents.subagents.manager': MagicMock(),
