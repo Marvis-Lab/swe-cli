@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import fnmatch
 import json
+import os
 import subprocess
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -12,6 +14,17 @@ from .token_monitor import ContextTokenMonitor
 
 class CodebaseIndexer:
     """Generate concise codebase summaries for context."""
+
+    IGNORED_DIRS = {
+        "node_modules",
+        "venv",
+        ".git",
+        "__pycache__",
+        "build",
+        "dist",
+        ".env",
+        ".venv",
+    }
 
     def __init__(self, working_dir: Optional[Path] = None) -> None:
         self.working_dir = Path(working_dir or Path.cwd())
@@ -186,8 +199,29 @@ class CodebaseIndexer:
 
     def _find_files(self, patterns: List[str]) -> List[Path]:
         matches: List[Path] = []
-        for pattern in patterns:
-            matches.extend(self.working_dir.glob(f"**/{pattern}"))
+
+        file_patterns = [p for p in patterns if not p.endswith("/")]
+        dir_patterns = [p.rstrip("/") for p in patterns if p.endswith("/")]
+
+        for root, dirs, files in os.walk(self.working_dir):
+            # Prune ignored directories
+            dirs[:] = [
+                d for d in dirs
+                if d not in self.IGNORED_DIRS and not d.startswith(".")
+            ]
+
+            root_path = Path(root)
+
+            # Match files
+            for pattern in file_patterns:
+                for filename in fnmatch.filter(files, pattern):
+                    matches.append(root_path / filename)
+
+            # Match directories
+            for pattern in dir_patterns:
+                for dirname in fnmatch.filter(dirs, pattern):
+                    matches.append(root_path / dirname)
+
         return matches
 
     def _basic_structure(self) -> str:
