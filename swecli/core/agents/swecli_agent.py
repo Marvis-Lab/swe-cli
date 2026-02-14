@@ -114,6 +114,17 @@ class SwecliAgent(BaseAgent):
         )
         return False, msg
 
+    @staticmethod
+    def _messages_contain_images(messages: list[dict]) -> bool:
+        """Check if any message contains multimodal image content blocks."""
+        for msg in messages:
+            content = msg.get("content")
+            if isinstance(content, list):
+                for block in content:
+                    if isinstance(block, dict) and block.get("type") == "image":
+                        return True
+        return False
+
     def __init__(
         self,
         config: AppConfig,
@@ -139,6 +150,7 @@ class SwecliAgent(BaseAgent):
         self.__http_client = None  # Lazy initialization - defer API key validation
         self.__thinking_http_client = None  # Lazy initialization for Thinking model
         self.__critique_http_client = None  # Lazy initialization for Critique model
+        self.__vlm_http_client = None  # Lazy initialization for VLM model
         self._compactor = None  # Lazy initialization for context compaction
         self._response_cleaner = ResponseCleaner()
         self._working_dir = working_dir
@@ -197,6 +209,38 @@ class SwecliAgent(BaseAgent):
                     # Same as thinking provider - reuse thinking client
                     return self._thinking_http_client or self._http_client
         return self.__critique_http_client
+
+    @property
+    def _vlm_http_client(self) -> Any:
+        """Lazily create HTTP client for VLM model provider.
+
+        Only created if VLM model is configured with a different provider.
+        Falls back to normal client on error.
+        """
+        if self.__vlm_http_client is None:
+            vlm_provider = self.config.model_vlm_provider
+            if vlm_provider and vlm_provider != self.config.model_provider:
+                try:
+                    self.__vlm_http_client = create_http_client_for_provider(
+                        vlm_provider, self.config
+                    )
+                except ValueError:
+                    return self._http_client
+        return self.__vlm_http_client
+
+    def _resolve_vlm_model_and_client(self, messages: list[dict]) -> tuple[str, Any]:
+        """Resolve model/client, routing to VLM when images are present."""
+        if self._messages_contain_images(messages):
+            vlm_info = self.config.get_vlm_model_info()
+            if vlm_info is not None:
+                _, vlm_model_id, _ = vlm_info
+                vlm_provider = self.config.model_vlm_provider
+                if vlm_provider and vlm_provider != self.config.model_provider:
+                    http_client = self._vlm_http_client or self._http_client
+                else:
+                    http_client = self._http_client
+                return vlm_model_id, http_client
+        return self.config.model, self._http_client
 
     def build_system_prompt(self, thinking_visible: bool = False) -> str:
         """Build the system prompt for the agent.
@@ -321,7 +365,7 @@ class SwecliAgent(BaseAgent):
             http_client = self._http_client
 
         # Load critique system prompt
-        critique_system_prompt = load_prompt("critique_system_prompt")
+        critique_system_prompt = load_prompt("system/critique_system_prompt")
 
         # Build messages for critique
         critique_messages = [
@@ -384,9 +428,8 @@ class SwecliAgent(BaseAgent):
         Returns:
             Dict with success status, content, tool_calls, etc.
         """
-        # Always use normal model for action phase (thinking happens in separate call)
-        model_id = self.config.model
-        http_client = self._http_client
+        # Route to VLM model when images are present, otherwise use normal model
+        model_id, http_client = self._resolve_vlm_model_and_client(messages)
 
         # Rebuild schemas with current thinking visibility
         # Think tool is excluded from schemas since thinking is now a pre-processing step
@@ -501,13 +544,16 @@ class SwecliAgent(BaseAgent):
             # Auto-compact context if approaching the model's token limit
             messages = self._maybe_compact(messages)
 
+            # Route to VLM model when images are present
+            model_id, http_client = self._resolve_vlm_model_and_client(messages)
+
             payload = {
-                "model": self.config.model,
+                "model": model_id,
                 "messages": messages,
                 "tools": self.tool_schemas,
                 "tool_choice": "auto",
-                **build_temperature_param(self.config.model, self.config.temperature),
-                **build_max_tokens_param(self.config.model, self.config.max_tokens),
+                **build_temperature_param(model_id, self.config.temperature),
+                **build_max_tokens_param(model_id, self.config.max_tokens),
             }
 
             # Use provided task_monitor, or create WebInterruptMonitor for web UI
@@ -515,7 +561,7 @@ class SwecliAgent(BaseAgent):
             if monitor is None and hasattr(self, "web_state"):
                 monitor = WebInterruptMonitor(self.web_state)
 
-            result = self._http_client.post_json(payload, task_monitor=monitor)
+            result = http_client.post_json(payload, task_monitor=monitor)
             if not result.success or result.response is None:
                 error_msg = result.error or "Unknown error"
                 return {

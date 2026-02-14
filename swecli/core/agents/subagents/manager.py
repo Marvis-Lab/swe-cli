@@ -353,7 +353,7 @@ class SubAgentManager:
 
         # Default prompt for custom agents
         return get_injection(
-            "custom_agent_default", name=config.name, description=config.description
+            "generators/custom_agent_default", name=config.name, description=config.description
         )
 
     def _is_docker_available(self) -> bool:
@@ -587,7 +587,7 @@ class SubAgentManager:
             new_task = re.sub(rf"\b{re.escape(local_file.name)}\b", docker_path, new_task)
 
         # Prepend Docker context with strong emphasis
-        docker_context = get_injection("docker_context", workspace_dir=workspace_dir)
+        docker_context = get_injection("docker/docker_context", workspace_dir=workspace_dir)
         return docker_context + "\n\n" + new_task
 
     def _create_docker_path_sanitizer(
@@ -1316,7 +1316,7 @@ class SubAgentManager:
                 base_prompt = spec["system_prompt"]
                 # When running in Docker, inject Docker context into system prompt
                 if docker_handler is not None:
-                    docker_preamble = get_injection("docker_preamble", working_dir=working_dir)
+                    docker_preamble = get_injection("docker/docker_preamble", working_dir=working_dir)
                     agent.system_prompt = docker_preamble + "\n\n" + base_prompt
                 else:
                     agent.system_prompt = base_prompt

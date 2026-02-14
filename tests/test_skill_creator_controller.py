@@ -161,7 +161,7 @@ class TestSkillGeneratorPromptExists:
         """Test that the skill generator prompt file exists."""
         prompt_path = (
             Path(__file__).parent.parent
-            / "swecli/core/agents/prompts/templates/skill_generator_prompt.txt"
+            / "swecli/core/agents/prompts/templates/generators/skill_generator_prompt.txt"
         )
         assert prompt_path.exists(), f"Prompt file not found at {prompt_path}"
 
@@ -169,7 +169,7 @@ class TestSkillGeneratorPromptExists:
         """Test that prompt contains key instructions."""
         prompt_path = (
             Path(__file__).parent.parent
-            / "swecli/core/agents/prompts/templates/skill_generator_prompt.txt"
+            / "swecli/core/agents/prompts/templates/generators/skill_generator_prompt.txt"
         )
         content = prompt_path.read_text()
 

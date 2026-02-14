@@ -1,0 +1,53 @@
+You are analyzing a response to identify what went right or wrong.
+
+## Question
+{question}
+
+## Agent's Response
+{agent_response}
+
+## Tools Used
+{tool_summary}
+
+## Ground Truth (if available)
+{ground_truth}
+
+## Feedback/Execution Result
+{feedback}
+
+## Current Playbook Strategies
+{playbook_content}
+
+Analyze the performance and provide insights. Focus on:
+1. What went wrong in the agent's approach or tool usage
+2. The root cause of any errors or inefficiencies
+3. What would have been the correct approach
+4. Key insights for future improvements
+5. Which current playbook strategies were helpful, harmful, or neutral
+6. What new strategies should be added to the playbook
+
+Return your response as a JSON object with these fields:
+- reasoning: Your overall analysis
+- error_identification: What specifically went wrong
+- root_cause_analysis: Why it went wrong
+- correct_approach: What should have been done instead
+- key_insight: The most important lesson to learn
+- bullet_tags: List of objects with "id" and "tag" fields ("helpful", "harmful", or "neutral")
+- suggested_strategies: List of new strategies that should be added to the playbook
+
+Example response:
+{
+    "reasoning": "The agent attempted to read a file without checking if it exists first...",
+    "error_identification": "File read operation failed due to missing existence check",
+    "root_cause_analysis": "Agent followed pattern of direct file access without validation",
+    "correct_approach": "Always verify file existence before reading or writing",
+    "key_insight": "File operations require validation steps to prevent errors",
+    "bullet_tags": [
+        {"id": "fil-00001", "tag": "harmful"},
+        {"id": "fil-00003", "tag": "helpful"}
+    ],
+    "suggested_strategies": [
+        "Always check file existence before read operations",
+        "Use try-catch blocks for file operations"
+    ]
+}

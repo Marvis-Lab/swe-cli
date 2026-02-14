@@ -1,0 +1,54 @@
+You are curating a playbook of strategies to improve future performance.
+
+## Progress Summary
+{progress}
+
+## Current Playbook Statistics
+{stats}
+
+## Reflector Analysis
+{reflection}
+
+## Current Playbook Content
+{playbook}
+
+## Question Context
+{question_context}
+
+Based on the reflector's analysis, decide what changes to make to the playbook. Your goal is to:
+1. Add new strategies for successful approaches
+2. Update existing strategies with better guidance
+3. Tag strategies as helpful/harmful/neutral based on performance
+4. Remove strategies that consistently cause problems
+
+Return your response as a JSON object with these fields:
+- reasoning: Your overall curation strategy
+- operations: List of operations to perform on the playbook
+
+Operations can be:
+- ADD: Add new bullet (requires section, content)
+- UPDATE: Modify existing bullet (requires bullet_id, optional content)
+- TAG: Tag bullet as helpful/harmful/neutral (requires bullet_id, metadata with tag counts)
+- REMOVE: Delete bullet (requires bullet_id)
+
+Example response:
+{
+    "reasoning": "Based on the reflection, we need to add a file validation strategy...",
+    "operations": [
+        {
+            "type": "ADD",
+            "section": "file_operations",
+            "content": "Always verify file existence before reading or writing"
+        },
+        {
+            "type": "TAG",
+            "bullet_id": "fil-00001",
+            "metadata": {"helpful": 1}
+        },
+        {
+            "type": "TAG",
+            "bullet_id": "fil-00002",
+            "metadata": {"harmful": 1}
+        }
+    ]
+}

@@ -25,6 +25,7 @@ def load_skill_generator_prompt() -> str:
         / "agents"
         / "prompts"
         / "templates"
+        / "generators"
         / "skill_generator_prompt.txt"
     )
     if prompt_path.exists():
@@ -289,6 +290,20 @@ Confirm that the desired outcome was achieved.
                 token_str = f"~{token_count:,}" if token_count else "—"
 
                 table.add_row(name, description, location, token_str)
+                skill_count += 1
+
+        # Add built-in skills (flat .md files with frontmatter)
+        builtin_dir = paths.builtin_skills_dir
+        if builtin_dir.exists():
+            for md_file in sorted(builtin_dir.glob("*.md")):
+                name, description = self._parse_skill_metadata(md_file)
+                if not name:
+                    name = md_file.stem
+                if len(description) > 50:
+                    description = description[:50] + "..."
+                token_count = self._estimate_tokens(md_file)
+                token_str = f"~{token_count:,}" if token_count else "\u2014"
+                table.add_row(name, description, "built-in", token_str)
                 skill_count += 1
 
         # Add plugin skills

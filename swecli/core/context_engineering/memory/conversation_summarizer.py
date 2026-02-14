@@ -93,7 +93,7 @@ class ConversationSummarizer:
             return self._cache.summary if self._cache else ""
 
         # Build prompt with both placeholders
-        prompt_template = load_prompt("conversation_summary_prompt")
+        prompt_template = load_prompt("memory/conversation_summary_prompt")
         prompt = prompt_template.format(
             previous_summary=previous_summary if previous_summary else "(No previous summary)",
             new_messages=self._format_conversation(new_messages),

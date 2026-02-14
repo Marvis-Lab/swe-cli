@@ -552,7 +552,7 @@ class SkillCreatorController:
             # Load system prompt for skill generation
             prompt_path = (
                 Path(__file__).parent.parent.parent
-                / "core/agents/prompts/skill_generator_prompt.txt"
+                / "core/agents/prompts/templates/generators/skill_generator_prompt.txt"
             )
             generator_system_prompt = prompt_path.read_text(encoding="utf-8")
 

@@ -194,7 +194,7 @@ class TestPromptTemplate:
     def test_prompt_loads_from_template_file(self):
         from swecli.core.agents.prompts.loader import load_prompt
 
-        prompt = load_prompt("topic_detection_prompt")
+        prompt = load_prompt("memory/topic_detection_prompt")
         assert "isNewTopic" in prompt
         assert "title" in prompt
         assert "JSON" in prompt

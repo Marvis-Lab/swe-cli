@@ -56,7 +56,7 @@ class TopicDetector:
 
     def __init__(self, config: "AppConfig") -> None:
         self._config = config
-        self._system_prompt = load_prompt("topic_detection_prompt")
+        self._system_prompt = load_prompt("memory/topic_detection_prompt")
 
         # Resolve cheap model and create HTTP client
         resolved = self._resolve_cheap_model(config)

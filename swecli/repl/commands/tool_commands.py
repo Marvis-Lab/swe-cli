@@ -90,7 +90,7 @@ class ToolCommands(CommandHandler):
 
         # Load init system prompt and substitute path
         try:
-            task_prompt = load_prompt("init_system_prompt")
+            task_prompt = load_prompt("system/init_system_prompt")
             task_prompt = task_prompt.replace("{path}", str(target_path))
         except Exception as e:
             self.print_command_header("init")

@@ -53,7 +53,7 @@ class SystemPromptBuilder:
 
     def _build_core_identity(self) -> str:
         """Load and return core identity from main_system_prompt.txt."""
-        return load_prompt("main_system_prompt")
+        return load_prompt("system/main_system_prompt")
 
     def _build_environment(self) -> str:
         """Build environment context section."""
@@ -178,7 +178,7 @@ class ThinkingPromptBuilder:
 
     def _build_core_identity(self) -> str:
         """Load thinking system prompt."""
-        return load_prompt("thinking_system_prompt")
+        return load_prompt("system/thinking_system_prompt")
 
     def _build_environment(self) -> str:
         """Build environment context section."""
@@ -252,7 +252,7 @@ class PlanningPromptBuilder:
 
     def build(self) -> str:
         """Return the planning prompt with working directory context."""
-        prompt = load_prompt("planner_system_prompt")
+        prompt = load_prompt("system/planner_system_prompt")
 
         # Add environment context
         env_section = self._build_environment()

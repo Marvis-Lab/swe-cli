@@ -11,6 +11,7 @@ import logging
 from typing import Any
 
 from swecli.core.agents.components.api.configuration import build_temperature_param
+from swecli.core.agents.prompts.loader import load_prompt
 from swecli.core.context_engineering.retrieval.token_monitor import ContextTokenMonitor
 from swecli.models.config import AppConfig
 
@@ -18,18 +19,6 @@ logger = logging.getLogger(__name__)
 
 # Trigger compaction when token usage exceeds this fraction of the context window
 COMPACTION_THRESHOLD = 0.70
-
-# Summary prompt sent to the model to create the compacted history
-_SUMMARY_PROMPT = (
-    "You are a conversation compactor. Summarize the following conversation "
-    "messages into a concise but complete summary. Preserve:\n"
-    "- All file paths, function names, and code references mentioned\n"
-    "- Decisions made and their rationale\n"
-    "- Tool call results that are still relevant\n"
-    "- Error messages and how they were resolved\n\n"
-    "Omit redundant tool output, greetings, and intermediate reasoning. "
-    "Output only the summary, no preamble."
-)
 
 
 class ContextCompactor:
@@ -43,6 +32,14 @@ class ContextCompactor:
         self._config = config
         self._http_client = http_client
         self._token_monitor = ContextTokenMonitor()
+        self._last_token_count = 0
+
+        # Resolve actual context window from model registry
+        model_info = config.get_model_info()
+        if model_info and model_info.context_length:
+            self._max_context = model_info.context_length
+        else:
+            self._max_context = getattr(config, "max_context_tokens", 100_000)
 
     def should_compact(
         self,
@@ -58,9 +55,16 @@ class ContextCompactor:
         Returns:
             True if total tokens exceed 70% of the model's context window.
         """
-        max_tokens = getattr(self._config, "max_context_tokens", 100_000)
         total = self._count_message_tokens(messages, system_prompt)
-        return total > int(max_tokens * COMPACTION_THRESHOLD)
+        self._last_token_count = total
+        return total > int(self._max_context * COMPACTION_THRESHOLD)
+
+    @property
+    def usage_pct(self) -> float:
+        """Context usage as percentage of the model's full context window (0-100+)."""
+        if self._max_context <= 0:
+            return 0.0
+        return (self._last_token_count / self._max_context) * 100
 
     def compact(
         self,
@@ -132,11 +136,17 @@ class ContextCompactor:
 
         conversation_text = "\n".join(parts)
 
-        model_id = getattr(self._config, "model", "gpt-4o-mini")
+        # Prefer compact model if configured, fallback to normal
+        compact_info = self._config.get_compact_model_info() if hasattr(self._config, 'get_compact_model_info') else None
+        if compact_info:
+            _, model_id, _ = compact_info
+        else:
+            model_id = getattr(self._config, "model", "gpt-4o-mini")
+
         payload = {
             "model": model_id,
             "messages": [
-                {"role": "system", "content": _SUMMARY_PROMPT},
+                {"role": "system", "content": load_prompt("system/compaction_system_prompt")},
                 {"role": "user", "content": conversation_text},
             ],
             "max_tokens": 1024,

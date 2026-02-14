@@ -150,7 +150,7 @@ class TestAgentGeneratorPromptExists:
         """Test that the agent generator prompt file exists."""
         prompt_path = (
             Path(__file__).parent.parent
-            / "swecli/core/agents/prompts/templates/agent_generator_prompt.txt"
+            / "swecli/core/agents/prompts/templates/generators/agent_generator_prompt.txt"
         )
         assert prompt_path.exists(), f"Prompt file not found at {prompt_path}"
 
@@ -158,7 +158,7 @@ class TestAgentGeneratorPromptExists:
         """Test that prompt contains key instructions."""
         prompt_path = (
             Path(__file__).parent.parent
-            / "swecli/core/agents/prompts/templates/agent_generator_prompt.txt"
+            / "swecli/core/agents/prompts/templates/generators/agent_generator_prompt.txt"
         )
         content = prompt_path.read_text()
 

@@ -144,7 +144,7 @@ class TestThinkingSystemPrompt:
         """Verify system prompt explains the reasoning/analysis phase."""
         prompt_path = os.path.join(
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-            "swecli/core/agents/prompts/templates/thinking_system_prompt.txt"
+            "swecli/core/agents/prompts/templates/system/thinking_system_prompt.txt"
         )
 
         with open(prompt_path, "r") as f:
@@ -161,7 +161,7 @@ class TestThinkingSystemPrompt:
         """Verify system prompt does not reference think tool."""
         prompt_path = os.path.join(
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-            "swecli/core/agents/prompts/templates/thinking_system_prompt.txt"
+            "swecli/core/agents/prompts/templates/system/thinking_system_prompt.txt"
         )
 
         with open(prompt_path, "r") as f:

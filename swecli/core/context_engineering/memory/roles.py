@@ -101,72 +101,27 @@ class Reflector:
     which playbook bullets were helpful, harmful, or neutral.
     """
 
-    DEFAULT_PROMPT = """You are analyzing a response to identify what went right or wrong.
-
-## Question
-{question}
-
-## Agent's Response
-{agent_response}
-
-## Tools Used
-{tool_summary}
-
-## Ground Truth (if available)
-{ground_truth}
-
-## Feedback/Execution Result
-{feedback}
-
-## Current Playbook Strategies
-{playbook_content}
-
-Analyze the performance and provide insights. Focus on:
-1. What went wrong in the agent's approach or tool usage
-2. The root cause of any errors or inefficiencies
-3. What would have been the correct approach
-4. Key insights for future improvements
-5. Which current playbook strategies were helpful, harmful, or neutral
-6. What new strategies should be added to the playbook
-
-Return your response as a JSON object with these fields:
-- reasoning: Your overall analysis
-- error_identification: What specifically went wrong
-- root_cause_analysis: Why it went wrong
-- correct_approach: What should have been done instead
-- key_insight: The most important lesson to learn
-- bullet_tags: List of objects with "id" and "tag" fields ("helpful", "harmful", or "neutral")
-- suggested_strategies: List of new strategies that should be added to the playbook
-
-Example response:
-{
-    "reasoning": "The agent attempted to read a file without checking if it exists first...",
-    "error_identification": "File read operation failed due to missing existence check",
-    "root_cause_analysis": "Agent followed pattern of direct file access without validation",
-    "correct_approach": "Always verify file existence before reading or writing",
-    "key_insight": "File operations require validation steps to prevent errors",
-    "bullet_tags": [
-        {"id": "fil-00001", "tag": "harmful"},
-        {"id": "fil-00003", "tag": "helpful"}
-    ],
-    "suggested_strategies": [
-        "Always check file existence before read operations",
-        "Use try-catch blocks for file operations"
-    ]
-}"""
-
     def __init__(
         self,
         llm_client: Any,  # swecli's AnyLLMClient
-        prompt_template: str = DEFAULT_PROMPT,
+        prompt_template: str | None = None,
         *,
         max_retries: int = 3,
-        retry_prompt: str = "\n\nIMPORTANT: Return ONLY a single valid JSON object. Escape all quotes properly or use single quotes. Do not include any additional text outside the JSON.",
+        retry_prompt: str | None = None,
     ) -> None:
+        from swecli.core.agents.prompts.injections import get_injection
+        from swecli.core.agents.prompts.loader import load_prompt
+
         self.llm_client = llm_client
-        self.prompt_template = prompt_template
+        self.prompt_template = (
+            prompt_template if prompt_template is not None
+            else load_prompt("memory/reflector_prompt")
+        )
         self.max_retries = max_retries
-        self.retry_prompt = retry_prompt
+        self.retry_prompt = (
+            retry_prompt if retry_prompt is not None
+            else get_injection("json_retry_simple")
+        )
 
     def reflect(
         self,
@@ -254,73 +209,27 @@ class Curator:
     existing ones, or removing harmful patterns.
     """
 
-    DEFAULT_PROMPT = """You are curating a playbook of strategies to improve future performance.
-
-## Progress Summary
-{progress}
-
-## Current Playbook Statistics
-{stats}
-
-## Reflector Analysis
-{reflection}
-
-## Current Playbook Content
-{playbook}
-
-## Question Context
-{question_context}
-
-Based on the reflector's analysis, decide what changes to make to the playbook. Your goal is to:
-1. Add new strategies for successful approaches
-2. Update existing strategies with better guidance
-3. Tag strategies as helpful/harmful/neutral based on performance
-4. Remove strategies that consistently cause problems
-
-Return your response as a JSON object with these fields:
-- reasoning: Your overall curation strategy
-- operations: List of operations to perform on the playbook
-
-Operations can be:
-- ADD: Add new bullet (requires section, content)
-- UPDATE: Modify existing bullet (requires bullet_id, optional content)
-- TAG: Tag bullet as helpful/harmful/neutral (requires bullet_id, metadata with tag counts)
-- REMOVE: Delete bullet (requires bullet_id)
-
-Example response:
-{
-    "reasoning": "Based on the reflection, we need to add a file validation strategy...",
-    "operations": [
-        {
-            "type": "ADD",
-            "section": "file_operations",
-            "content": "Always verify file existence before reading or writing"
-        },
-        {
-            "type": "TAG",
-            "bullet_id": "fil-00001",
-            "metadata": {"helpful": 1}
-        },
-        {
-            "type": "TAG",
-            "bullet_id": "fil-00002",
-            "metadata": {"harmful": 1}
-        }
-    ]
-}"""
-
     def __init__(
         self,
         llm_client: Any,  # swecli's AnyLLMClient
-        prompt_template: str = DEFAULT_PROMPT,
+        prompt_template: str | None = None,
         *,
         max_retries: int = 3,
-        retry_prompt: str = "\n\nIMPORTANT: Return ONLY a single valid JSON object. The JSON must be complete with ALL required fields:\n- reasoning (string)\n- operations (array)\nEscape all quotes properly and ensure the JSON is complete and well-formed.",
+        retry_prompt: str | None = None,
     ) -> None:
+        from swecli.core.agents.prompts.injections import get_injection
+        from swecli.core.agents.prompts.loader import load_prompt
+
         self.llm_client = llm_client
-        self.prompt_template = prompt_template
+        self.prompt_template = (
+            prompt_template if prompt_template is not None
+            else load_prompt("memory/curator_prompt")
+        )
         self.max_retries = max_retries
-        self.retry_prompt = retry_prompt
+        self.retry_prompt = (
+            retry_prompt if retry_prompt is not None
+            else get_injection("json_retry_with_fields")
+        )
 
     def curate(
         self,

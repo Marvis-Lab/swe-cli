@@ -1,5 +1,7 @@
 """Tests for the prompt injections module."""
 
+import re
+
 import pytest
 
 from swecli.core.agents.prompts.injections import get_injection, _parse_sections
@@ -16,6 +18,12 @@ class TestParseSections:
             "thinking_trace_injection",
             "subagent_complete_signal",
             "failed_tool_nudge",
+            "nudge_permission_error",
+            "nudge_file_not_found",
+            "nudge_syntax_error",
+            "nudge_rate_limit",
+            "nudge_timeout",
+            "nudge_edit_mismatch",
             "consecutive_reads_nudge",
             "safety_limit_summary",
             "episodic_memory_header",
@@ -23,6 +31,11 @@ class TestParseSections:
             "thinking_on_instruction",
             "thinking_off_instruction",
             "incomplete_todos_nudge",
+            "init_complete_signal",
+            "docker_command_failed_nudge",
+            "file_exists_warning",
+            "json_retry_simple",
+            "json_retry_with_fields",
         ]
         for name in expected:
             assert name in sections, f"Missing section: {name}"
@@ -32,6 +45,12 @@ class TestParseSections:
         sections = _parse_sections()
         for name, content in sections.items():
             assert content.strip(), f"Section {name!r} is empty"
+
+    def test_section_names_are_valid(self):
+        """Section names should be snake_case identifiers."""
+        sections = _parse_sections()
+        for name in sections:
+            assert re.match(r'^[a-z][a-z0-9_]*$', name), f"Invalid section name: {name!r}"
 
 
 class TestGetInjection:
@@ -101,17 +120,17 @@ class TestGetInjection:
     # --- File fallback (standalone .txt files) ---
 
     def test_docker_preamble(self):
-        result = get_injection("docker_preamble", working_dir="/workspace")
+        result = get_injection("docker/docker_preamble", working_dir="/workspace")
         assert "/workspace" in result
         assert "DOCKER CONTAINER" in result
 
     def test_docker_context(self):
-        result = get_injection("docker_context", workspace_dir="/testbed")
+        result = get_injection("docker/docker_context", workspace_dir="/testbed")
         assert "/testbed" in result
         assert "DOCKER CONTAINER" in result
 
     def test_custom_agent_default(self):
-        result = get_injection("custom_agent_default", name="MyAgent", description="Does things")
+        result = get_injection("generators/custom_agent_default", name="MyAgent", description="Does things")
         assert "MyAgent" in result
         assert "Does things" in result
 
@@ -125,3 +144,27 @@ class TestGetInjection:
         """Calling without kwargs returns the raw template with placeholders."""
         result = get_injection("episodic_memory_header")
         assert "{summary}" in result
+
+    # --- New injection sections ---
+
+    def test_docker_command_failed_nudge(self):
+        result = get_injection("docker_command_failed_nudge", exit_code="1")
+        assert "exit code 1" in result
+        assert "COMMAND FAILED" in result
+        assert "fix" in result.lower()
+
+    def test_file_exists_warning(self):
+        result = get_injection("file_exists_warning")
+        assert "already exists" in result
+        assert "Do NOT create" in result
+
+    def test_json_retry_simple(self):
+        result = get_injection("json_retry_simple")
+        assert "JSON" in result
+        assert "IMPORTANT" in result
+
+    def test_json_retry_with_fields(self):
+        result = get_injection("json_retry_with_fields")
+        assert "JSON" in result
+        assert "reasoning" in result
+        assert "operations" in result

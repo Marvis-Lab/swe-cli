@@ -29,6 +29,7 @@ SYSTEM_PROMPT_PATH = (
     / "agents"
     / "prompts"
     / "templates"
+    / "system"
     / "main_system_prompt.txt"
 )
 
