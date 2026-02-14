@@ -211,9 +211,17 @@ class CodebaseIndexer:
     def _compress_content(self, content: str, max_tokens: int) -> str:
         paragraphs = content.split("\n\n")
         compressed: List[str] = []
+        current_tokens = 0
+
         for paragraph in paragraphs:
-            compressed.append(paragraph)
-            tokens = self.token_monitor.count_tokens("\n\n".join(compressed))
-            if tokens >= max_tokens:
+            # Count tokens for this paragraph plus the separator if not the first
+            sep = "\n\n" if compressed else ""
+            added_tokens = self.token_monitor.count_tokens(sep + paragraph)
+
+            if current_tokens + added_tokens > max_tokens:
                 break
+
+            compressed.append(paragraph)
+            current_tokens += added_tokens
+
         return "\n\n".join(compressed)
