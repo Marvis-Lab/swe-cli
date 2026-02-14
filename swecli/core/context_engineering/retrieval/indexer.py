@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import fnmatch
 import json
+import os
 import subprocess
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -186,8 +188,43 @@ class CodebaseIndexer:
 
     def _find_files(self, patterns: List[str]) -> List[Path]:
         matches: List[Path] = []
-        for pattern in patterns:
-            matches.extend(self.working_dir.glob(f"**/{pattern}"))
+        ignored_dirs = {
+            "node_modules",
+            "__pycache__",
+            ".git",
+            "venv",
+            "build",
+            "dist",
+            ".venv",
+            "target",
+        }
+
+        # Pre-process patterns
+        file_patterns = [p for p in patterns if not p.endswith("/")]
+        dir_patterns = [p.rstrip("/") for p in patterns if p.endswith("/")]
+
+        for root, dirs, files in os.walk(self.working_dir):
+            # Prune ignored directories
+            dirs[:] = [
+                d
+                for d in dirs
+                if d not in ignored_dirs and not d.startswith(".")
+            ]
+
+            root_path = Path(root)
+
+            # Check directories against dir_patterns
+            for d in dirs:
+                if d in dir_patterns:
+                    matches.append(root_path / d)
+
+            # Check files against file_patterns
+            for f in files:
+                for p in file_patterns:
+                    if fnmatch.fnmatch(f, p):
+                        matches.append(root_path / f)
+                        break
+
         return matches
 
     def _basic_structure(self) -> str:
